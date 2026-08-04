@@ -1,0 +1,61 @@
+# Android and IDE outputs
+.gradle/
+.idea/
+.kotlin/
+.local-tools/
+local.properties
+*.iml
+build/
+**/build/
+.externalNativeBuild/
+.cxx/
+
+# Packaged artifacts
+artifacts/
+*.apk
+*.aab
+*.apks
+*.dex
+classes.jar
+classes.dex
+
+# JavaScript and Cloudflare outputs
+cloudflare/node_modules/
+cloudflare/dist/
+cloudflare/worker/.wrangler/
+node_modules/
+.wrangler/
+
+# Local service configuration and secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+credentials/
+/cloudflare/
+/supabase/
+keystore.properties
+signing-config.json
+*.dpapi
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.pk8
+
+# Logs, local databases, and editor files
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.swp
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Internal planning and source inputs
+*.pptx
+입력폴더/

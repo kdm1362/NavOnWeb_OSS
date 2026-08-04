@@ -1,0 +1,35 @@
+# Source revisions used by the Android port.
+
+[openauto]
+repository = https://github.com/f1xpl/openauto.git
+branch = development
+commit = aa90412bf93b5a5078495ea85ac9270c6297d369
+license = GPL-3.0-or-later
+
+[aasdk]
+repository = https://github.com/f1xpl/aasdk.git
+branch = development
+commit = 046b3b381595509d0939fa84b14a90978f46ff63
+license = GPL-3.0-or-later
+bundled = false
+reason = Embedded third-party certificate/private-key material requires a separate authorization review.
+
+[open_headunit]
+repository = https://github.com/andreknieriem/open-headunit.git
+branch = main
+commit = 738b07ff7e765d9b570d27dee6d15901ad30b80c
+license = AGPL-3.0-or-later
+bundled = false
+reason = Architecture and interoperability reference only; no program source or assets are included.
+
+[openauto_reference_sha256]
+third_party/openauto-reference/CMakeLists.txt = 042b4de6bedfae7e62c86a598b9377ba31d96fbc8ee6828e61b77ef8347f6007
+third_party/openauto-reference/Readme.md = 8303a61d2b9f322b30b6b6af322d86f85e2ee3e4911726b0d51d90cade49a92e
+third_party/openauto-reference/include/f1x/openauto/autoapp/Projection/IInputDevice.hpp = 01c6633a401d35c2d53fbfef35b6ef8735a2475350c686f08fa1dc239f5c613b
+third_party/openauto-reference/include/f1x/openauto/autoapp/Projection/IInputDeviceEventHandler.hpp = 5c063426210fe1d0ce2b21545b91b3b9e3510573df528344f5e909c30836cd8b
+third_party/openauto-reference/include/f1x/openauto/autoapp/Projection/InputEvent.hpp = cf4694fd02ea5e38877752e70bd8c5ce689d80335dcf3f4f3f92ac8a6fd13eec
+third_party/openauto-reference/include/f1x/openauto/autoapp/Projection/IVideoOutput.hpp = f4f5ef7b70ef9959c9feab72eb27f7635285dc2d23e73fd3b65fbb1704413800
+third_party/openauto-reference/src/autoapp/Service/InputService.cpp = 5ffa7be056ff4bca06cf48ecaa94eb0f57ea618ef797c9747e4888346e0bd716
+third_party/openauto-reference/src/autoapp/Service/SensorService.cpp = c0094be06f10a4a72f94abcf2b9c1291f68cc7f00a64264b3cca3f54030fce87
+third_party/openauto-reference/src/autoapp/Service/ServiceFactory.cpp = 60a34b44ce2aec1e59ada8b3f67547d08ea22c2ecf6d85e44f964f1d86f348ee
+third_party/openauto-reference/src/autoapp/Service/VideoService.cpp = 89457bc0c94ecb514399bcdac95031eb99456bb4a08b3e5667cf4b4f3c6aee3d

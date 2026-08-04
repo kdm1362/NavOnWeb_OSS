@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>NavOnWeb</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05080c;
+      --panel: #0d151e;
+      --line: #283746;
+      --accent: #67e8f9;
+      --muted: #9aacbe;
+      --navonweb-available-aspect-ratio: 5 / 3;
+      --navonweb-development-viewport-width: 100%;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: #eef6ff;
+      font: 16px/1.45 system-ui, sans-serif;
+    }
+    main {
+      width: min(1120px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: clamp(12px, 3vw, 32px);
+      display: grid;
+      align-content: center;
+      gap: 18px;
+    }
+    #pairing-panel {
+      width: min(420px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+    }
+    #pairing-form { display: grid; gap: 10px; }
+    label { color: var(--muted); }
+    #code, button {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font: inherit;
+    }
+    #code {
+      width: 100%;
+      padding: 14px;
+      background: #071019;
+      color: #fff;
+      font: 700 24px ui-monospace, monospace;
+      letter-spacing: .24em;
+      text-align: center;
+    }
+    button {
+      padding: 12px 18px;
+      background: var(--accent);
+      color: #041014;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button:focus-visible, #code:focus-visible, summary:focus-visible,
+    input[type="checkbox"]:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+    #pair-status {
+      min-height: 1.45em;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    #viewer {
+      min-width: 0;
+      position: relative;
+      display: grid;
+      gap: 12px;
+    }
+    #pad {
+      width: 100%;
+      aspect-ratio: var(--projection-aspect-ratio, 5 / 3);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #000;
+      touch-action: none;
+    }
+    body.navonweb-authenticated main { align-content: start; }
+    #projection-content {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      transform: translateX(-50%);
+    }
+    #frame, #webrtc-video {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: fill;
+      opacity: 0;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    #pad.frame-ready:not(.webrtc-ready) #frame { opacity: 1; }
+    #pad.webrtc-ready #webrtc-video { opacity: 1; }
+    #stream-state {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      color: #8294a6;
+      background: #05080c;
+      font-weight: 700;
+      text-align: center;
+      pointer-events: none;
+    }
+    #pad.frame-ready #stream-state,
+    #pad.webrtc-ready #stream-state { display: none; }
+    #pad.aa-unavailable #frame,
+    #pad.aa-unavailable #webrtc-video { opacity: .2; }
+    #pad.aa-unavailable #stream-state {
+      display: grid;
+      z-index: 2;
+      color: #d7e0e9;
+      background: #05080cdd;
+    }
+    #local-network-panel,
+    #media-permission-panel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+    #local-network-message,
+    #media-permission-message {
+      margin: 0;
+      color: var(--muted);
+    }
+    #local-network-allow,
+    #media-permission-allow { flex: 0 0 auto; }
+    #repair-pairing-panel {
+      display: flex;
+      justify-content: flex-end;
+    }
+    #repair-pairing {
+      width: auto;
+      border-color: #fbbf2470;
+      background: #fbbf24;
+      color: #1c1503;
+    }
+    #viewer-controls {
+      display: flex;
+      justify-content: flex-end;
+    }
+    #fullscreen {
+      width: auto;
+      min-width: 132px;
+      margin: 0;
+    }
+    #fullscreen-hint {
+      position: absolute;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 5;
+      width: max-content;
+      max-width: min(88%, 640px);
+      padding: 10px 16px;
+      border: 1px solid #ffffff40;
+      border-radius: 999px;
+      color: #fff;
+      background: #05080ce8;
+      box-shadow: 0 8px 28px #000a;
+      font-weight: 700;
+      text-align: center;
+      pointer-events: none;
+    }
+    #premium-prompt {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      pointer-events: none;
+    }
+    #premium-prompt-card {
+      width: min(520px, 100%);
+      padding: 20px;
+      border: 1px solid #67e8f980;
+      border-radius: 18px;
+      background: #071019f2;
+      box-shadow: 0 18px 48px #000c;
+      pointer-events: auto;
+    }
+    #premium-prompt-message {
+      margin: 0 0 16px;
+      font-weight: 700;
+    }
+    #premium-prompt-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    #premium-prompt-dismiss-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #dbe8f4;
+      cursor: pointer;
+    }
+    #premium-prompt-dismiss {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+    #premium-prompt-confirm { min-width: 88px; }
+    #notice-panel {
+      width: 100%;
+      padding: 14px 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+    #notice-panel > summary {
+      color: #eef6ff;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #notice-status {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    #notice-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .notice-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #071019;
+    }
+    .notice-title { margin: 0; font-size: 17px; }
+    .notice-time {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .notice-body {
+      margin: 10px 0 0;
+      color: #dbe8f4;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    #viewer:fullscreen {
+      width: 100vw;
+      height: 100vh;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      grid-template-rows: minmax(0, 1fr);
+      gap: 0;
+      background: #000;
+    }
+    #viewer:fullscreen #viewer-controls { display: none; }
+    #viewer:fullscreen + #notice-panel { display: none; }
+    #viewer:fullscreen #pad {
+      height: 100%;
+      border: 0;
+      border-radius: 0;
+      aspect-ratio: auto;
+    }
+    body.theater-mode { overflow: hidden; }
+    body.theater-mode #viewer {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      grid-template-rows: minmax(0, 1fr);
+      gap: 0;
+      background: #000;
+    }
+    body.theater-mode #viewer-controls { display: none; }
+    body.theater-mode #notice-panel { display: none; }
+    body.theater-mode #pad {
+      height: 100%;
+      border: 0;
+      border-radius: 0;
+      aspect-ratio: auto;
+    }
+    #viewer:fullscreen #local-network-panel,
+    #viewer:fullscreen #media-permission-panel,
+    body.theater-mode #local-network-panel,
+    body.theater-mode #media-permission-panel {
+      position: absolute;
+      z-index: 5;
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      background: #0d151eee;
+    }
+    #viewer:fullscreen #repair-pairing-panel,
+    body.theater-mode #repair-pairing-panel {
+      position: absolute;
+      z-index: 6;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
+    }
+    #viewer:fullscreen #repair-pairing,
+    body.theater-mode #repair-pairing {
+      max-width: min(52vw, 280px);
+      padding: 8px 12px;
+      border-color: #fbbf2490;
+      background: #1b1606dd;
+      color: #fde68a;
+      font-size: 14px;
+    }
+    body.navonweb-development-tesla-driving main {
+      width: min(100%, var(--navonweb-development-viewport-width));
+      margin-left: 0;
+      margin-right: auto;
+    }
+    body.navonweb-development-tesla-driving #viewer:fullscreen,
+    body.navonweb-development-tesla-driving.theater-mode #viewer {
+      left: 0;
+      right: auto;
+      width: min(100vw, var(--navonweb-development-viewport-width));
+    }
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section id="pairing-panel" aria-label="Browser pairing" data-i18n-aria-label="browserPairing">
+    <form id="pairing-form" novalidate>
+      <label for="code" data-i18n="pairingCodeLabel">8-digit pairing code shown on your phone</label>
+      <input id="code" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="00000000">
+      <button id="pair" type="submit" data-i18n="connect">Connect</button>
+      <p id="pair-status" role="status" aria-live="polite" data-i18n="pairingRememberedHint">Enter the code once and this browser will be remembered.</p>
+    </form>
+  </section>
+
+  <section id="viewer" aria-label="Android Auto screen" data-i18n-aria-label="androidAutoScreen" hidden>
+    <div id="pad" aria-label="Android Auto video and touch input area" data-i18n-aria-label="projectionInputArea" aria-describedby="fullscreen-state">
+      <div id="projection-content">
+        <video id="webrtc-video" autoplay muted playsinline></video>
+        <img id="frame" alt="Android Auto projection video" data-i18n-alt="projectionFrameAlt" draggable="false">
+        <div id="stream-state" role="status" aria-live="polite" data-i18n="androidAutoWaiting">Waiting for Android Auto</div>
+      </div>
+    </div>
+    <section id="local-network-panel" role="group" aria-labelledby="local-network-message" hidden>
+      <p id="local-network-message" role="status" aria-live="polite" data-i18n="localNetworkPrompt">Allow local network access to connect directly to your phone.</p>
+      <button id="local-network-allow" type="button" data-i18n="localNetworkAllow">Allow local network</button>
+    </section>
+    <section id="media-permission-panel" role="group" aria-labelledby="media-permission-message" hidden>
+      <p id="media-permission-message" role="status" aria-live="polite" data-i18n="mediaPermissionPrompt">Tap once to enable sound and the browser microphone.</p>
+      <button id="media-permission-allow" type="button" data-i18n="mediaPermissionAllow">Enable sound and microphone</button>
+    </section>
+    <div id="repair-pairing-panel" role="group" aria-label="Pair with a new code" data-i18n-aria-label="repairPairingLabel" hidden>
+      <button id="repair-pairing" type="button" data-i18n="repairPairing">Get a new pairing code</button>
+    </div>
+    <div id="viewer-controls">
+      <button id="fullscreen" type="button" aria-label="View Android Auto in fullscreen" data-i18n="fullscreenEnter" data-i18n-aria-label="fullscreenEnterLabel" aria-pressed="false">Fullscreen</button>
+    </div>
+    <section id="premium-prompt" role="dialog" aria-modal="false" aria-labelledby="premium-prompt-message" hidden>
+      <div id="premium-prompt-card">
+        <p id="premium-prompt-message" data-i18n="premiumUpgradeMessage">Please purchase the Premium tier to use high-resolution (1080p) video and stereo audio.</p>
+        <div id="premium-prompt-actions">
+          <label id="premium-prompt-dismiss-label" for="premium-prompt-dismiss">
+            <input id="premium-prompt-dismiss" type="checkbox">
+            <span data-i18n="premiumDoNotShowAgain">Don't show again</span>
+          </label>
+          <button id="premium-prompt-confirm" type="button" data-i18n="confirm">OK</button>
+        </div>
+      </div>
+    </section>
+    <span id="fullscreen-state" class="sr-only" aria-live="polite" data-i18n="normalViewState">Showing standard view</span>
+    <div id="fullscreen-hint" role="status" aria-live="polite" hidden></div>
+  </section>
+
+  <details id="notice-panel" aria-label="Announcements" data-i18n-aria-label="announcements" hidden>
+    <summary data-i18n="announcements">Announcements</summary>
+    <p id="notice-status" role="status" aria-live="polite" data-i18n="noticesLoading">Loading announcements…</p>
+    <div id="notice-list"></div>
+  </details>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The supplied artwork is inset so the butterfly remains inside the adaptive-icon safe zone.
+      Its black square blends into the black adaptive background without altering the source art.
+    -->
+    <item
+        android:width="52dp"
+        android:height="52dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/navonweb_icon" />
+    </item>
+</layer-list>
