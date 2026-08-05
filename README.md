@@ -10,8 +10,7 @@ Copyright (C) 2026 NavOnWeb contributors.
 
 NavOnWeb is distributed under the GNU General Public License, version 3 or (at your option) any later version. See [LICENSE](LICENSE).
 
-Some portions are based on or informed by other free and open-source projects. Their licenses, revisions, and the scope of reuse are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [third_party/UPSTREAM.lock](third_party/UPSTREAM.lock).
-Material changes and provenance boundaries are summarized in [docs/MODIFICATIONS.md](docs/MODIFICATIONS.md).
+Some portions are based on or informed by other free and open-source projects. Their licenses, revisions, and the scope of reuse are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [third_party/UPSTREAM.lock](third_party/UPSTREAM.lock). Material changes and provenance boundaries are summarized in [docs/MODIFICATIONS.md](docs/MODIFICATIONS.md).
 
 Android, Android Auto, Google Play, Cloudflare, Supabase, WebRTC, and Tesla are trademarks of their respective owners. This project is not endorsed by those owners.
 
@@ -21,6 +20,6 @@ See [docs/BUILDING.md](docs/BUILDING.md) for Android build and test instructions
 
 ## Source correspondence
 
-The source revision for a distributed APK or Android App Bundle should be identified by a Git commit or tag and embedded using the `sourceCodeUrl` Gradle property. See [docs/SOURCE_DISTRIBUTION.md](docs/SOURCE_DISTRIBUTION.md).
+Debug builds link to `https://github.com/kdm1362/NavOnWeb_OSS` by default. Release tasks require the `sourceCodeUrl` Gradle property to identify the exact matching public commit or immutable tag. See [docs/SOURCE_DISTRIBUTION.md](docs/SOURCE_DISTRIBUTION.md).
 
-`SOURCE_MANIFEST.sha256` records the SHA-256 digest of every tracked release-source candidate except the manifest itself. It is an audit aid; the immutable Git commit or tag remains the authoritative source identifier.
+`SOURCE_MANIFEST.sha256` records the SHA-256 digest of every release-source candidate except the manifest itself. It is an audit aid; the immutable Git commit or tag remains the authoritative source identifier.

@@ -169,7 +169,46 @@
       unableToConnect: 'Unable to connect. Try again in a moment.',
       repairPairing: 'Get a new pairing code',
       repairPairingLabel: 'Pair with a new code',
-      repairPairingHint: 'Check your phone for a new pairing code, then enter it here.'
+      repairPairingHint: 'Check your phone for a new pairing code, then enter it here.',
+      landingEyebrow: 'Your phone. Your browser. One connected drive.',
+      landingTitle: 'Bring a supported phone projection to a nearby browser.',
+      landingLead: 'NavOnWeb connects over your local network so you can see, hear and control the projection from a compatible browser.',
+      landingHighlightsLabel: 'NavOnWeb highlights',
+      landingHighlightLocal: 'Local-first connection',
+      landingHighlightMedia: 'Video, sound and touch',
+      landingHighlightResponsive: 'Responsive browser view',
+      landingPlayStoreLabel: 'Google Play availability',
+      landingPlayStoreComingSoon: 'Coming soon on Google Play',
+      landingPlayStoreCta: 'Get NavOnWeb on Google Play',
+      landingPlayStoreHint: 'The official app link will open here after internal testing is complete.',
+      landingPeek: 'See how NavOnWeb works',
+      landingWelcomeScreenshotAlt: 'NavOnWeb first-run welcome screen',
+      landingPremiumScreenshotAlt: 'NavOnWeb Premium service running screen',
+      landingPreviewCaption: 'First use and a live Premium session, localized for your language',
+      landingBrowserEyebrow: 'The connected experience',
+      landingBrowserTitle: 'Your projection, ready in the browser.',
+      landingBrowserLead: 'Once paired, the live Android Auto screen fills the available browser space with video, sound and touch controls.',
+      landingBrowserScreenshotAlt: 'NavOnWeb browser connected to a live projection',
+      landingBrowserCaption: 'A live local-network session shown in a desktop browser',
+      landingBenefitsEyebrow: 'Designed around the screen you already have',
+      landingBenefitsTitle: 'A familiar drive, without another vehicle adapter.',
+      landingBenefitsLead: 'Keep the supported projection session on your phone and bring it to a compatible vehicle, tablet or desktop browser on the same network.',
+      landingLocalTitle: 'Connect locally',
+      landingLocalBody: 'Use your phone\'s hotspot or the same Wi-Fi network. Projection media stays on the direct browser-to-phone path whenever the network allows it.',
+      landingAdaptiveTitle: 'Fits changing screens',
+      landingAdaptiveBody: 'The view adapts to wide, compact and portrait browser spaces while keeping touch coordinates aligned.',
+      landingRememberedTitle: 'Pair once, return quickly',
+      landingRememberedBody: 'Enter the one-time code to approve a browser. That browser is remembered for faster reconnection.',
+      landingStepsEyebrow: 'How it works',
+      landingStepsTitle: 'Ready in a few parked minutes.',
+      landingStepInstallTitle: 'Install and prepare NavOnWeb',
+      landingStepInstallBody: 'The first-use guide walks you through the required phone settings.',
+      landingStepServerTitle: 'Start the Android Auto™ head unit server',
+      landingStepServerBody: 'NavOnWeb can take you directly to the relevant Android Auto™ settings page.',
+      landingStepPairTitle: 'Open navonweb.com and pair',
+      landingStepPairBody: 'Connect the browser to the phone\'s network, enter the eight-digit code above and start viewing.',
+      landingSafety: 'Complete setup only while safely parked. Do not operate a phone or vehicle screen while driving.',
+      landingTrademark: 'Android Auto is a trademark of Google LLC. NavOnWeb is an independent product and is not affiliated with, endorsed by or sponsored by Google or any vehicle manufacturer.'
     }),
     ko: Object.freeze({
       browserPairing: '브라우저 페어링',
@@ -218,11 +257,54 @@
       unableToConnect: '연결할 수 없습니다. 잠시 후 다시 시도하세요.',
       repairPairing: '페어링 코드 다시 받기',
       repairPairingLabel: '새 코드로 다시 페어링',
-      repairPairingHint: '휴대전화 앱에서 새 페어링 코드를 확인한 뒤 입력하세요.'
+      repairPairingHint: '휴대전화 앱에서 새 페어링 코드를 확인한 뒤 입력하세요.',
+      landingEyebrow: '휴대전화 하나로, 익숙한 화면을 더 크게',
+      landingTitle: '휴대전화의 차량용 화면을 가까운 브라우저로',
+      landingLead: 'NavOnWeb은 같은 로컬 네트워크에서 호환 브라우저로 프로젝션 화면을 보고, 듣고, 조작할 수 있도록 연결합니다.',
+      landingHighlightsLabel: 'NavOnWeb 주요 특징',
+      landingHighlightLocal: '로컬 중심 연결',
+      landingHighlightMedia: '영상·소리·터치',
+      landingHighlightResponsive: '화면에 맞는 반응형 보기',
+      landingPlayStoreLabel: 'Google Play 출시 안내',
+      landingPlayStoreComingSoon: 'Google Play 출시 준비 중',
+      landingPlayStoreCta: 'Google Play에서 NavOnWeb 받기',
+      landingPlayStoreHint: '내부 테스트가 끝나면 이 버튼이 공식 앱 링크로 전환됩니다.',
+      landingPeek: '아래에서 NavOnWeb 이용 모습을 확인하세요',
+      landingWelcomeScreenshotAlt: 'NavOnWeb 첫 사용 안내 시작 화면',
+      landingPremiumScreenshotAlt: 'NavOnWeb 프리미엄 서비스 실행 화면',
+      landingPreviewCaption: '첫 사용 안내와 프리미엄 실행 화면을 시스템 언어에 맞춰 제공합니다',
+      landingBrowserEyebrow: '브라우저 연결 모습',
+      landingBrowserTitle: '연결되면 차량용 화면이 브라우저에 바로 표시됩니다',
+      landingBrowserLead: '한 번 페어링하면 Android Auto 실시간 화면이 브라우저 공간에 맞춰 표시되고 영상·소리·터치 입력을 이용할 수 있습니다.',
+      landingBrowserScreenshotAlt: '실시간 프로젝션에 연결된 NavOnWeb 브라우저 화면',
+      landingBrowserCaption: '같은 로컬 네트워크의 데스크톱 브라우저에서 연결한 실제 화면',
+      landingBenefitsEyebrow: '이미 가지고 있는 화면을 중심으로 설계했습니다',
+      landingBenefitsTitle: '별도 차량용 어댑터 없이 익숙한 주행 화면을',
+      landingBenefitsLead: '휴대전화에서 실행되는 지원 프로젝션 화면을 같은 네트워크의 호환 차량·태블릿·데스크톱 브라우저로 가져옵니다.',
+      landingLocalTitle: '가까운 네트워크에서 직접 연결',
+      landingLocalBody: '휴대전화 핫스팟이나 같은 Wi-Fi를 이용합니다. 네트워크가 허용하는 경우 프로젝션 미디어는 브라우저와 휴대전화 사이의 직접 경로로 전송됩니다.',
+      landingAdaptiveTitle: '달라지는 화면에도 알맞게',
+      landingAdaptiveBody: '넓은 화면, 좁아진 화면, 세로 화면에 맞춰 표시하면서 터치 좌표가 어긋나지 않도록 조정합니다.',
+      landingRememberedTitle: '한 번 승인하고 다음에는 빠르게',
+      landingRememberedBody: '일회용 코드로 브라우저를 승인하면 다음 방문부터 더 빠르게 다시 연결할 수 있습니다.',
+      landingStepsEyebrow: '이용 방법',
+      landingStepsTitle: '주차한 상태에서 몇 분이면 준비됩니다',
+      landingStepInstallTitle: 'NavOnWeb 설치 및 준비',
+      landingStepInstallBody: '첫 사용 안내가 휴대전화의 필수 설정을 차례로 설명합니다.',
+      landingStepServerTitle: 'Android Auto™ 헤드 유닛 서버 시작',
+      landingStepServerBody: 'NavOnWeb에서 필요한 Android Auto™ 설정 화면을 바로 열 수 있습니다.',
+      landingStepPairTitle: 'navonweb.com을 열고 페어링',
+      landingStepPairBody: '브라우저를 휴대전화 네트워크에 연결하고 위 입력란에 8자리 코드를 입력하면 됩니다.',
+      landingSafety: '모든 설정은 안전하게 주차한 상태에서 완료하세요. 운전 중에는 휴대전화나 차량 화면을 조작하지 마세요.',
+      landingTrademark: 'Android Auto는 Google LLC의 상표입니다. NavOnWeb은 독립 제품이며 Google 또는 차량 제조사와 제휴하거나 보증·후원을 받은 제품이 아닙니다.'
     })
   });
-  const ACTIVE_LOCALE = resolveSystemLocale();
-  const NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates();
+  let ACTIVE_LOCALE = resolveSystemLocale();
+  let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates();
+  let NOTICE_DATE_TIME_LOCALE = resolveDateTimeLocale(
+    NOTICE_LOCALE_CANDIDATES,
+    ACTIVE_LOCALE
+  );
   const WINDOWS_PLATFORM = browserRunsOnWindows();
   const VIEWPORT_CLIENT_ID = generateViewportClientId();
   const LEGACY_PROJECTION_PROFILE = Object.freeze({
@@ -383,10 +465,14 @@
   let pendingViewportReport = null;
   let lastViewportReportKey = '';
 
-  function resolveSystemLocale() {
+  function resolveBrowserLanguageCandidates() {
     const candidates = [];
     if (Array.isArray(navigator.languages)) candidates.push(...navigator.languages);
     if (typeof navigator.language === 'string') candidates.push(navigator.language);
+    return candidates;
+  }
+
+  function resolveSystemLocale(candidates = resolveBrowserLanguageCandidates()) {
     for (const candidate of candidates) {
       const base = String(candidate || '').trim().toLowerCase().split(/[-_]/, 1)[0];
       if (base === 'ko' || base === 'en') return base;
@@ -394,7 +480,10 @@
     return 'en';
   }
 
-  function resolveNoticeLocaleCandidates() {
+  function resolveNoticeLocaleCandidates(
+    systemCandidates = resolveBrowserLanguageCandidates(),
+    activeLocale = resolveSystemLocale(systemCandidates)
+  ) {
     const result = [];
     const add = value => {
       const normalized = String(value || '').trim().replace(/_/g, '-').toLowerCase();
@@ -403,12 +492,28 @@
       const primary = normalized.split('-', 1)[0];
       if (!result.includes(primary)) result.push(primary);
     };
-    if (Array.isArray(navigator.languages)) navigator.languages.forEach(add);
-    add(navigator.language);
-    add(ACTIVE_LOCALE);
+    systemCandidates.forEach(add);
+    add(activeLocale);
     add('en');
     add('ko');
     return Object.freeze(result);
+  }
+
+  function resolveDateTimeLocale(candidates, activeLocale) {
+    const fallback = activeLocale === 'ko' ? 'ko-KR' : 'en-US';
+    if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function' ||
+        typeof Intl.DateTimeFormat.supportedLocalesOf !== 'function') {
+      return fallback;
+    }
+    for (const candidate of candidates || []) {
+      try {
+        const supported = Intl.DateTimeFormat.supportedLocalesOf([candidate]);
+        if (supported.length > 0) return supported[0];
+      } catch (_) {
+        // Ignore malformed browser language tags and continue to the safe fallback.
+      }
+    }
+    return fallback;
   }
 
   function browserRunsOnWindows() {
@@ -426,17 +531,37 @@
     return selected[key] || I18N.en[key] || key;
   }
 
-  function applyDocumentLocale() {
-    document.documentElement.lang = ACTIVE_LOCALE;
-    document.querySelectorAll('[data-i18n]').forEach(element => {
-      element.textContent = t(element.getAttribute('data-i18n'));
-    });
-    document.querySelectorAll('[data-i18n-aria-label]').forEach(element => {
-      element.setAttribute('aria-label', t(element.getAttribute('data-i18n-aria-label')));
-    });
-    document.querySelectorAll('[data-i18n-alt]').forEach(element => {
-      element.setAttribute('alt', t(element.getAttribute('data-i18n-alt')));
-    });
+  function localizedKeyForRenderedText(locale, renderedText) {
+    const dictionary = I18N[locale] || I18N.en;
+    return Object.keys(dictionary).find(key => dictionary[key] === renderedText) || '';
+  }
+
+  function applyDocumentLocale(previousLocale = '') {
+    try {
+      document.documentElement.lang = ACTIVE_LOCALE;
+      document.querySelectorAll('[data-i18n]').forEach(element => {
+        const markupKey = element.getAttribute('data-i18n');
+        const activeKey = previousLocale
+          ? localizedKeyForRenderedText(previousLocale, element.textContent)
+          : markupKey;
+        // Runtime status text may intentionally differ from the markup default. Translate it
+        // only when it is a known prior-locale string; otherwise preserve the live status.
+        if (activeKey) element.textContent = t(activeKey);
+      });
+      document.querySelectorAll('[data-i18n-aria-label]').forEach(element => {
+        element.setAttribute('aria-label', t(element.getAttribute('data-i18n-aria-label')));
+      });
+      document.querySelectorAll('[data-i18n-alt]').forEach(element => {
+        element.setAttribute('alt', t(element.getAttribute('data-i18n-alt')));
+      });
+      document.querySelectorAll('[data-locale-src-en][data-locale-src-ko]').forEach(element => {
+        const localizedSource = element.getAttribute(`data-locale-src-${ACTIVE_LOCALE}`) ||
+          element.getAttribute('data-locale-src-en');
+        if (localizedSource) element.setAttribute('src', localizedSource);
+      });
+    } finally {
+      document.documentElement.removeAttribute('data-i18n-pending');
+    }
   }
 
   const browserCodecCapabilities = (() => {
@@ -449,6 +574,37 @@
     }
     return supported;
   })();
+
+  function normalizeDebugLocale(value) {
+    const requested = String(value || '').trim().toLowerCase();
+    if (requested === 'ko' || requested === 'en') return requested;
+    throw new RangeError('dbg.changeLang(locale) accepts only "ko" or "en"');
+  }
+
+  function changeDebugLanguage(value) {
+    const nextLocale = normalizeDebugLocale(value);
+    const previousLocale = ACTIVE_LOCALE;
+    ACTIVE_LOCALE = nextLocale;
+    NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates(
+      [ACTIVE_LOCALE],
+      ACTIVE_LOCALE
+    );
+    NOTICE_DATE_TIME_LOCALE = resolveDateTimeLocale(
+      NOTICE_LOCALE_CANDIDATES,
+      ACTIVE_LOCALE
+    );
+    applyDocumentLocale(previousLocale);
+    cancelNoticeRequestForRetry();
+    void ensureNoticesLoaded();
+    return ACTIVE_LOCALE;
+  }
+
+  Object.defineProperty(window, 'dbg', {
+    value: Object.freeze({changeLang: changeDebugLanguage}),
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
 
   function loadRememberedCredential() {
     try {
@@ -534,10 +690,13 @@
   }
 
   function cancelNoticeRequestForRetry() {
-    if (!noticeRequestTask) return;
-    noticeRequestTask.controller.abort();
-    noticeRequestTask = null;
-    if (noticesLoadedCredential === browserCredential) noticesLoadedCredential = '';
+    if (noticeRequestTask) {
+      noticeRequestTask.controller.abort();
+      noticeRequestTask = null;
+    }
+    if (noticeExpiryTimer) window.clearTimeout(noticeExpiryTimer);
+    noticeExpiryTimer = 0;
+    noticesLoadedCredential = '';
     noticeNextRequestEpochMillis = 0;
   }
 
@@ -618,7 +777,7 @@
     const timestamp = Date.parse(value);
     if (!Number.isFinite(timestamp)) return '';
     try {
-      return new Intl.DateTimeFormat(ACTIVE_LOCALE === 'ko' ? 'ko-KR' : 'en-US', {
+      return new Intl.DateTimeFormat(NOTICE_DATE_TIME_LOCALE, {
         dateStyle: 'medium',
         timeStyle: 'short'
       }).format(new Date(timestamp));

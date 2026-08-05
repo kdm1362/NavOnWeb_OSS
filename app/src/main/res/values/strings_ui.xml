@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_nav_home">Home</string>
+    <string name="ui_nav_settings">Settings</string>
+    <string name="ui_nav_open_drawer">Open navigation menu</string>
+    <string name="ui_home_intro">Connect Android Auto on this phone to a browser on the same network.</string>
+    <string name="ui_service_start">Start service</string>
+    <string name="ui_service_stop">Stop service</string>
+    <string name="ui_settings_title">Settings</string>
+    <string name="ui_close">Close</string>
+    <string name="ui_back">Back</string>
+    <string name="ui_send">Send</string>
+    <string name="ui_confirm">Confirm</string>
+    <string name="ui_delete">Delete</string>
+
+    <string name="ui_diagnostic_title">Diagnostic logs</string>
+    <string name="ui_diagnostic_empty">No diagnostic logs have been saved yet.</string>
+    <string name="ui_diagnostic_summary">%1$s · %2$s · %3$s</string>
+    <plurals name="ui_diagnostic_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <string name="ui_diagnostic_storage_policy">Only state changes and one-minute summaries are kept in app-private storage. Registration codes, credentials, location, network addresses, and original media are not recorded. Logs are limited to 1 MiB per file, four files, and seven days.</string>
+    <string name="ui_diagnostic_pending_none">No error logs are waiting to be sent</string>
+    <plurals name="ui_diagnostic_pending_count">
+        <item quantity="one">%1$d error log is waiting to be sent</item>
+        <item quantity="other">%1$d error logs are waiting to be sent</item>
+    </plurals>
+    <string name="ui_diagnostic_upload">Send error log</string>
+    <string name="ui_diagnostic_save">Save log file</string>
+    <string name="ui_diagnostic_delete">Delete logs</string>
+    <string name="ui_diagnostic_cancel_pending">Cancel and delete all pending uploads</string>
+    <string name="ui_diagnostic_upload_unavailable">Remote error-log upload has not been configured yet.</string>
+    <string name="ui_diagnostic_cancel_pending_title">Cancel all pending uploads?</string>
+    <plurals name="ui_diagnostic_cancel_pending_body">
+        <item quantity="one">Cancel %1$d error log that has not been sent and delete its pending file from the app.</item>
+        <item quantity="other">Cancel %1$d error logs that have not been sent and delete their pending files from the app.</item>
+    </plurals>
+    <string name="ui_diagnostic_cancel_pending_confirm">Cancel and delete all</string>
+    <string name="ui_diagnostic_description_title">Describe what happened</string>
+    <string name="ui_diagnostic_description_instructions">Describe what you did and what was on the screen immediately before the problem. Do not enter personal information, passwords, or registration codes.</string>
+    <string name="ui_diagnostic_description_label">Situation description</string>
+    <string name="ui_diagnostic_description_counter">%1$s/%2$s characters · latest log up to 256 KiB · retained on server for 30 days</string>
+    <string name="ui_diagnostic_upload_rate_policy">The first upload starts immediately after confirmation. You can approve one new upload every 30 minutes. Only temporary failures of an approved upload are retried, at least 30 minutes later.</string>
+    <string name="ui_diagnostic_consent_title">Confirm diagnostic-data upload</string>
+    <string name="ui_diagnostic_consent_message">Diagnostic data will be sent to the developer. Continue only if you agree that the data may be reviewed and analyzed.</string>
+    <string name="ui_diagnostic_delete_title">Delete diagnostic logs?</string>
+    <string name="ui_diagnostic_delete_body">Delete the current log and all rotated log files stored inside the app.</string>
+    <string name="ui_diagnostic_last_record">Last recorded %1$s</string>
+    <string name="ui_diagnostic_no_record_time">No recording time</string>
+    <string name="ui_diagnostic_last_upload_success">Last error-log upload succeeded · %1$s</string>
+    <string name="ui_diagnostic_last_upload_failure">Last error-log upload failed · %1$s · %2$s</string>
+    <string name="ui_diagnostic_failure_invalid_input">Invalid job information</string>
+    <string name="ui_diagnostic_failure_configuration">Server configuration error</string>
+    <string name="ui_diagnostic_failure_server_rejected">Rejected by server</string>
+    <string name="ui_diagnostic_failure_retry_exhausted">Retry deadline or attempt limit exceeded</string>
+    <string name="ui_diagnostic_failure_unknown">Unknown error</string>
+
+    <string name="ui_open_source_title">Open-source licenses</string>
+    <string name="ui_open_source_summary">NavOnWeb %1$s (%2$d) is provided under GPL-3.0-or-later and includes modified work based on OpenAuto and AASDK.</string>
+    <string name="ui_open_source_view_third_party">View third-party notices</string>
+    <string name="ui_open_source_view_gpl">View the full GNU GPL v3 license</string>
+    <string name="ui_open_source_url_required">Corresponding source URL · required before release</string>
+    <string name="ui_open_source_open_code">Open corresponding source code</string>
+    <string name="ui_trademark_disclaimer">Android and Android Auto are trademarks of Google LLC, and Tesla is a trademark of Tesla, Inc. This product is not certified, sponsored, or endorsed by those companies.</string>
+    <string name="ui_legal_document_load_failed">The license document could not be loaded.</string>
+    <string name="ui_legal_third_party_title">Third-party open-source notices</string>
+    <string name="ui_legal_gpl_title">GNU General Public License v3</string>
+
+    <string name="ui_projection_profile_title">Video profile</string>
+    <string name="ui_projection_profile_loading">Checking the profiles available from the service.</string>
+    <string name="ui_webrtc_codec_title">WebRTC codec</string>
+    <string name="ui_active">Active</string>
+
+    <string name="ui_session_idle">Stopped</string>
+    <string name="ui_session_starting">Starting</string>
+    <string name="ui_session_ready">Available</string>
+    <string name="ui_session_attention_required">Check required</string>
+    <string name="ui_android_auto_connected">Android Auto · Connected</string>
+    <string name="ui_android_auto_reconnecting">Android Auto · Reconnecting</string>
+    <string name="ui_android_auto_disconnected">Android Auto · Disconnected</string>
+</resources>

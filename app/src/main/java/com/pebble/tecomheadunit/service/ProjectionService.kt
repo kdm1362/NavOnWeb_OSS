@@ -221,7 +221,7 @@ class ProjectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopSession("사용자가 서비스를 중지했습니다.")
+            ACTION_STOP -> stopSession(getString(R.string.session_stopped_by_user))
             ACTION_START -> {
                 val begin = {
                     beginStartSession(
@@ -260,7 +260,10 @@ class ProjectionService : Service() {
                 level = DiagnosticLevel.WARN,
                 fields = mapOf("reason" to "safety_confirmation_missing"),
             )
-            SessionController.error("주차 상태 확인이 없어 시작을 거부했습니다.", "SAFETY_GATE_DENIED")
+            SessionController.error(
+                getString(R.string.projection_start_rejected_safety),
+                "SAFETY_GATE_DENIED",
+            )
             stopSelf()
             return
         }
@@ -269,7 +272,7 @@ class ProjectionService : Service() {
         SessionController.starting("LOCAL_PREFLIGHT")
         startForeground(
             NOTIFICATION_ID,
-            buildNotification("Android Auto 다시 연결 중 • 로컬 사전검사"),
+            buildNotification(getString(R.string.projection_preflight_reconnecting)),
         )
         startJob = serviceScope.launch {
             try {
@@ -298,7 +301,10 @@ class ProjectionService : Service() {
                         error,
                         fields = mapOf("stage" to "preflight"),
                     )
-                    SessionController.error("로컬 사전검사에 실패했습니다.", "PREFLIGHT_FAILED")
+                    SessionController.error(
+                        getString(R.string.projection_preflight_failed),
+                        "PREFLIGHT_FAILED",
+                    )
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
@@ -358,7 +364,10 @@ class ProjectionService : Service() {
                 startResult.exceptionOrNull() ?: IllegalStateException("coordinator start failed"),
                 fields = mapOf("stage" to "coordinator_start"),
             )
-            SessionController.error("Android Auto 서비스를 시작하지 못했습니다.", preflight.summary)
+            SessionController.error(
+                getString(R.string.projection_service_start_failed),
+                preflight.summary,
+            )
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
@@ -493,7 +502,9 @@ class ProjectionService : Service() {
                             if (epoch == sessionEpoch && cloudRelayClient === relay) {
                                 val displayedUrl = if (connected) relay.browserUrl else localUrl
                                 SessionController.updateBrowserUrl(displayedUrl)
-                                updateNotification("브라우저 준비됨 • $displayedUrl")
+                                updateNotification(
+                                    getString(R.string.browser_ready_notification, displayedUrl),
+                                )
                             }
                         }
                     },
@@ -529,7 +540,7 @@ class ProjectionService : Service() {
             activeProjectionConfig = projectionConfig
             attachWebRtcPreviewToCurrentSurface()
             SessionController.ready(localUrl, newServer.publishedPairingCode(), preflight.summary)
-            updateNotification("브라우저 준비됨 • $localUrl")
+            updateNotification(getString(R.string.browser_ready_notification, localUrl))
             newCloudRelayClient?.start()
             AppDiagnostics.record(
                 DiagnosticEventCode.SESSION_READY,
@@ -573,7 +584,10 @@ class ProjectionService : Service() {
                 error,
                 fields = mapOf("stage" to "browser_server_start"),
             )
-            SessionController.error("브라우저 서버를 시작하지 못했습니다.", preflight.summary)
+            SessionController.error(
+                getString(R.string.browser_server_start_failed),
+                preflight.summary,
+            )
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -656,7 +670,7 @@ class ProjectionService : Service() {
         publishNativeStatus(
             nativeStatus = "${preflight.summary} • AASDK RECONNECTING reason=PROFILE_CHANGE " +
                 "target=${profile.profileId}",
-            message = "화면 프로필을 바로 적용하는 중입니다.",
+            message = getString(R.string.projection_profile_applying),
         )
 
         var candidateForCancellation: WebRtcProjectionController? = null
@@ -704,7 +718,7 @@ class ProjectionService : Service() {
             replacementController?.close()
             publishNativeStatus(
                 nativeStatus = "${preflight.summary} • AASDK PROFILE_APPLY_FAILED reason=SAFETY_GATE",
-                message = "안전 상태를 확인하지 못해 화면 프로필 변경을 취소했습니다.",
+                message = getString(R.string.projection_profile_safety_cancelled),
             )
             return false
         }
@@ -743,9 +757,17 @@ class ProjectionService : Service() {
             nativeStatus = "${preflight.summary} • AASDK PROFILE_APPLIED ${profile.profileId} " +
                 "RECONNECTING WEBRTC=${if (replacementController == null) "UNAVAILABLE" else "READY"}",
             message = if (replacementController == null) {
-                "${profile.width}×${profile.height} 프로필을 적용했습니다. WebRTC는 지원 코덱이 없어 JPEG 대체 화면을 사용합니다."
+                getString(
+                    R.string.projection_profile_applied_jpeg_fallback,
+                    profile.width,
+                    profile.height,
+                )
             } else {
-                "${profile.width}×${profile.height} 프로필을 적용해 Android Auto를 다시 연결하고 있습니다."
+                getString(
+                    R.string.projection_profile_applied_reconnecting,
+                    profile.width,
+                    profile.height,
+                )
             },
         )
         return true
@@ -826,7 +848,7 @@ class ProjectionService : Service() {
         if (replacementCoordinator.start(VehicleState.BENCH_STATIONARY).isFailure) {
             publishNativeStatus(
                 nativeStatus = "${preflight.summary} — AASDK VIEWPORT_APPLY_FAILED reason=SAFETY_GATE",
-                message = "안전 상태를 확인하지 못해 동적 화면 비율 적용을 취소했습니다.",
+                message = getString(R.string.projection_viewport_safety_cancelled),
             )
             return@withLock false
         }
@@ -835,7 +857,7 @@ class ProjectionService : Service() {
             nativeStatus = "${preflight.summary} — AASDK RECONNECTING reason=VIEWPORT_CHANGE " +
                 "marginWidth=${layout.totalMarginWidth} marginHeight=${layout.totalMarginHeight} " +
                 "densityDpi=${layout.densityDpi}",
-            message = "웹 화면 크기에 Android Auto 화면을 맞추는 중입니다.",
+            message = getString(R.string.projection_viewport_applying),
         )
 
         val previousRuntime = projectionRuntime
@@ -871,7 +893,7 @@ class ProjectionService : Service() {
                 "marginWidth=${layout.totalMarginWidth} marginHeight=${layout.totalMarginHeight} " +
                 "densityDpi=${layout.densityDpi} " +
                 "RECONNECTING WEBRTC_SESSION=PRESERVED",
-            message = "웹 화면 비율을 적용했습니다. Android Auto를 다시 연결하고 있습니다.",
+            message = getString(R.string.projection_viewport_applied),
         )
         true
     }
@@ -1131,7 +1153,7 @@ class ProjectionService : Service() {
         activeJob?.cancel()
         publishNativeStatus(
             nativeStatus = "AASDK SURFACE_LOST",
-            message = "프로젝션 화면이 사라져 연결을 안전하게 종료했습니다.",
+            message = getString(R.string.projection_surface_lost),
         )
     }
 
@@ -1228,7 +1250,7 @@ class ProjectionService : Service() {
             projectionSurfaceGeneration = NO_SURFACE_GENERATION
         }
         if (phase == SessionPhase.STARTING || phase == SessionPhase.READY) {
-            SessionController.idle("서비스가 종료되어 연결을 닫았습니다.")
+            SessionController.idle(getString(R.string.session_closed_after_service_stop))
         }
         noticeRefreshJob?.cancel()
         noticeRefreshJob = null
@@ -1316,7 +1338,7 @@ class ProjectionService : Service() {
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(0, "중지", stopIntent)
+            .addAction(0, getString(R.string.notification_stop_action), stopIntent)
             .build()
     }
 
@@ -1354,11 +1376,13 @@ class ProjectionService : Service() {
 
     private fun updateConnectionNotifications(connection: AndroidAutoConnectionStatus) {
         val stateLabel = when (connection.state) {
-            AndroidAutoConnectionState.CONNECTED -> "Android Auto 연결됨"
-            AndroidAutoConnectionState.RECONNECTING -> "Android Auto 다시 연결 중"
-            AndroidAutoConnectionState.DISCONNECTED -> "Android Auto 연결 끊김"
+            AndroidAutoConnectionState.CONNECTED -> getString(R.string.android_auto_state_connected)
+            AndroidAutoConnectionState.RECONNECTING ->
+                getString(R.string.android_auto_state_reconnecting)
+            AndroidAutoConnectionState.DISCONNECTED ->
+                getString(R.string.android_auto_state_disconnected)
         }
-        val foregroundText = "$stateLabel • ${connection.reason.userMessage}"
+        val foregroundText = "$stateLabel • ${getString(connection.reason.messageRes)}"
         if (foregroundText != lastForegroundConnectionText) {
             lastForegroundConnectionText = foregroundText
             updateNotification(foregroundText)
@@ -1399,14 +1423,16 @@ class ProjectionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val title = when (connection.state) {
-            AndroidAutoConnectionState.RECONNECTING -> "Android Auto 다시 연결 중"
-            AndroidAutoConnectionState.DISCONNECTED -> "Android Auto 연결 끊김"
-            AndroidAutoConnectionState.CONNECTED -> "Android Auto 연결됨"
+            AndroidAutoConnectionState.RECONNECTING ->
+                getString(R.string.android_auto_state_reconnecting)
+            AndroidAutoConnectionState.DISCONNECTED ->
+                getString(R.string.android_auto_state_disconnected)
+            AndroidAutoConnectionState.CONNECTED -> getString(R.string.android_auto_state_connected)
         }
         return NotificationCompat.Builder(this, CONNECTION_ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle(title)
-            .setContentText(connection.reason.userMessage)
+            .setContentText(getString(connection.reason.messageRes))
             .setContentIntent(openIntent)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -1431,17 +1457,17 @@ class ProjectionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Android Auto 웹 서비스",
+                getString(R.string.projection_notification_channel),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
         manager.createNotificationChannel(
             NotificationChannel(
                 CONNECTION_ALERT_CHANNEL_ID,
-                "Android Auto 연결 알림",
+                getString(R.string.connection_notification_channel),
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "연결된 Android Auto 세션이 끊어졌을 때 한 번 알립니다."
+                description = getString(R.string.connection_notification_channel_description)
             },
         )
     }

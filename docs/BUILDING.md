@@ -24,12 +24,16 @@ On macOS or Linux:
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-To compile an unsigned release bundle without embedding deployment secrets:
+To compile an unsigned release bundle without embedding deployment secrets, first commit the
+exact source and use its immutable public tag or commit URL:
 
 ```powershell
 .\gradlew.bat bundleRelease `
-  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS
+  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.0-p0-source
 ```
+
+Release tasks fail when `sourceCodeUrl` is omitted or points only to the mutable repository root.
+The referenced public revision must exactly match the binary.
 
 Signing material must be supplied outside the repository. If the optional release identity pin properties are used, pass only certificate fingerprints as Gradle properties; never add certificates or private keys to the source tree:
 

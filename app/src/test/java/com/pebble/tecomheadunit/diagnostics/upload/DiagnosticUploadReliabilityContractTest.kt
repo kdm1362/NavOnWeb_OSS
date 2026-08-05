@@ -117,8 +117,8 @@ class DiagnosticUploadReliabilityContractTest {
         assertTrue(activity.contains("restorePendingDiagnosticUploads()"))
         assertTrue(activity.contains("diagnosticUploadManager.restorePendingUploads()"))
         assertTrue(activity.contains("diagnosticUploadManager.cancelAllPending()"))
-        assertTrue(ui.contains("대기 전송 모두 취소·삭제"))
-        assertTrue(ui.contains("formatLastDiagnosticUpload(uploadStatus)"))
+        assertTrue(ui.contains("R.string.ui_diagnostic_cancel_pending"))
+        assertTrue(ui.contains("formatLastDiagnosticUpload(uploadStatus, locale)"))
     }
 
     private fun readSource(relativePath: String): String {

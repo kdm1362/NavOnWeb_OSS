@@ -347,7 +347,7 @@ class BrowserProbeServer(
             append(",\"reason\":")
             appendJsonString(connection.reason.wireName)
             append(",\"message\":")
-            appendJsonString(connection.reason.userMessage)
+            appendJsonString(context.getString(connection.reason.messageRes))
             append(",\"lastFrameAgeMillis\":")
             append(nativeFrameAgeMillis ?: "null")
             append(",\"lastFrameAtEpochMillis\":")

@@ -563,11 +563,12 @@ class BrowserProbeServerPolicyTest {
         }
 
         val englishKeys = localeKeys("en", "    ko: Object.freeze({")
-        val koreanKeys = localeKeys("ko", "  });\n  const ACTIVE_LOCALE")
+        val koreanKeys = localeKeys("ko", "  });\n  let ACTIVE_LOCALE")
         assertEquals(englishKeys, koreanKeys)
         assertTrue(englishKeys.size >= 25)
 
-        assertTrue(index.contains("<html lang=\"en\">"))
+        assertTrue(index.contains("<html lang=\"en\""))
+        assertTrue(index.contains("data-i18n-pending"))
         assertTrue(index.contains("data-i18n=\"pairingCodeLabel\""))
         assertTrue(index.contains("inputmode=\"numeric\" maxlength=\"8\""))
         assertTrue(index.contains("data-i18n=\"connect\""))
@@ -586,6 +587,12 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("document.querySelectorAll('[data-i18n-aria-label]')"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n-alt]')"))
         assertTrue(script.contains("applyDocumentLocale();"))
+        assertTrue(script.contains("Object.defineProperty(window, 'dbg'"))
+        assertTrue(script.contains("changeLang: changeDebugLanguage"))
+        assertTrue(script.contains("requested === 'ko' || requested === 'en'"))
+        assertFalse(script.contains("requested === 'kr'"))
+        assertTrue(script.contains("accepts only \"ko\" or \"en\""))
+        assertTrue(script.contains("applyDocumentLocale(previousLocale)"))
 
         assertTrue(script.contains("streamState.textContent = t('androidAutoWaiting')"))
         assertTrue(script.contains("streamState.textContent = t('videoWaiting')"))
@@ -618,7 +625,7 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("totalBytes > MAX_NOTICE_RESPONSE_BYTES"))
         assertTrue(script.contains("await reader.cancel().catch(() => null)"))
         assertTrue(script.contains("payload.notices.slice(0, MAX_NOTICE_COUNT)"))
-        assertTrue(script.contains("const NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates()"))
+        assertTrue(script.contains("let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates()"))
         assertTrue(script.contains(".map(language => normalizedNested.get(language))"))
         assertTrue(script.contains("const selectedSuffix = ACTIVE_LOCALE === 'ko' ? 'Ko' : 'En'"))
         assertTrue(script.contains("const fallbackSuffix = ACTIVE_LOCALE === 'ko' ? 'En' : 'Ko'"))

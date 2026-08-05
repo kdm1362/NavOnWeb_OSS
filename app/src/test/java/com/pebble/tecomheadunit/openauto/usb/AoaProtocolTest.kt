@@ -197,8 +197,8 @@ class AoaProtocolTest {
     )
 
     private fun validIdentity(): AoaAccessoryIdentity = AoaAccessoryIdentity(
-        manufacturer = "Pebble",
-        model = "TecomHeadUnit",
+        manufacturer = "Example Manufacturer",
+        model = "Example Head Unit",
         version = "0.1",
     )
 

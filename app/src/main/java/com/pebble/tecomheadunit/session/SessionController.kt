@@ -4,6 +4,8 @@
 package com.pebble.tecomheadunit.session
 
 import android.os.SystemClock
+import androidx.annotation.StringRes
+import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,23 +21,26 @@ enum class SessionPhase {
 
 data class SessionUiState(
     val phase: SessionPhase = SessionPhase.IDLE,
-    val message: String = "서비스가 중지되어 있습니다.",
+    val message: String = "",
+    @param:StringRes @get:StringRes val messageRes: Int? = null,
     val browserUrl: String? = null,
     val pairingCode: String? = null,
-    val nativeStatus: String = "확인 중",
+    val nativeStatus: String = "CHECKING",
     val androidAutoConnection: AndroidAutoConnectionStatus = AndroidAutoConnectionStatus(),
     val lastTouch: OpenAutoTouchEvent? = null,
 )
 
 object SessionController {
-    private val mutableState = MutableStateFlow(SessionUiState())
+    private val mutableState = MutableStateFlow(
+        SessionUiState(messageRes = R.string.session_service_stopped),
+    )
     val state: StateFlow<SessionUiState> = mutableState.asStateFlow()
 
     fun starting(nativeStatus: String) {
         val nowEpochMillis = System.currentTimeMillis()
         mutableState.value = SessionUiState(
             phase = SessionPhase.STARTING,
-            message = "로컬 브라우저 게이트를 시작하는 중입니다.",
+            messageRes = R.string.session_local_browser_starting,
             nativeStatus = nativeStatus,
             androidAutoConnection = AndroidAutoConnectionStatus(
                 state = AndroidAutoConnectionState.RECONNECTING,
@@ -49,7 +54,7 @@ object SessionController {
         val previousConnection = mutableState.value.androidAutoConnection
         mutableState.value = SessionUiState(
             phase = SessionPhase.READY,
-            message = "브라우저 연결 준비가 완료되었습니다.",
+            messageRes = R.string.session_browser_ready,
             browserUrl = url,
             pairingCode = pairingCode,
             nativeStatus = nativeStatus,
@@ -83,6 +88,7 @@ object SessionController {
             current.copy(
                 nativeStatus = nativeStatus,
                 message = message ?: current.message,
+                messageRes = if (message == null) current.messageRes else null,
                 androidAutoConnection = AndroidAutoConnectionStatusReducer.reduce(
                     previous = current.androidAutoConnection,
                     nativeStatus = nativeStatus,
@@ -102,6 +108,7 @@ object SessionController {
         mutableState.value = SessionUiState(
             phase = SessionPhase.ERROR,
             message = message,
+            messageRes = null,
             nativeStatus = nativeStatus,
             androidAutoConnection = AndroidAutoConnectionStatus(
                 state = AndroidAutoConnectionState.DISCONNECTED,
@@ -114,11 +121,12 @@ object SessionController {
         )
     }
 
-    fun idle(message: String = "서비스가 중지되어 있습니다.") {
+    fun idle(message: String? = null) {
         val previous = mutableState.value
         mutableState.value = SessionUiState(
             phase = SessionPhase.IDLE,
-            message = message,
+            message = message.orEmpty(),
+            messageRes = if (message == null) R.string.session_service_stopped else null,
             nativeStatus = previous.nativeStatus,
             androidAutoConnection = AndroidAutoConnectionStatus(
                 state = AndroidAutoConnectionState.DISCONNECTED,

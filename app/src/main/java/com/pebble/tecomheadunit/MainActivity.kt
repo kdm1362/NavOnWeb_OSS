@@ -75,6 +75,7 @@ import com.pebble.tecomheadunit.service.shouldRequestProjectionStartOnCreate
 import com.pebble.tecomheadunit.session.SessionController
 import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.ui.ProjectionControlUiState
+import com.pebble.tecomheadunit.ui.AndroidProjectionControlTextResolver
 import com.pebble.tecomheadunit.ui.PremiumPurchaseUiState
 import com.pebble.tecomheadunit.ui.BluetoothDeviceOptionUi
 import com.pebble.tecomheadunit.ui.FirstRunOnboardingStore
@@ -158,7 +159,7 @@ class MainActivity : ComponentActivity() {
         if (granted && pendingStartIsCurrent()) {
             continueBenchStartWithLocation()
         } else if (!granted) {
-            SessionController.error("알림 권한이 없어 백그라운드 서비스를 시작하지 않았습니다.")
+            SessionController.error(getString(R.string.notification_permission_start_denied))
             headUnitServerGuidanceGate.disarm()
             clearPendingStart()
         } else {
@@ -231,7 +232,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("application/x-ndjson"),
     ) { destination ->
         if (destination == null) {
-            diagnosticLogFeedback.value = "로그 파일 저장을 취소했습니다."
+            diagnosticLogFeedback.value = getString(R.string.diagnostic_export_cancelled)
             return@registerForActivityResult
         }
         lifecycleScope.launch(Dispatchers.IO) {
@@ -243,11 +244,13 @@ class MainActivity : ComponentActivity() {
                 } ?: error("output unavailable")
             }
             withContext(Dispatchers.Main) {
-                diagnosticLogFeedback.value = if (result.isSuccess) {
-                    "진단 로그 파일을 저장했습니다."
-                } else {
-                    "진단 로그 파일을 저장하지 못했습니다."
-                }
+                diagnosticLogFeedback.value = getString(
+                    if (result.isSuccess) {
+                        R.string.diagnostic_export_succeeded
+                    } else {
+                        R.string.diagnostic_export_failed
+                    },
+                )
                 refreshDiagnosticLogSummary(force = true)
             }
         }
@@ -310,6 +313,7 @@ class MainActivity : ComponentActivity() {
                     profileFeedback = currentProfileFeedback,
                     codecPreference = currentCodecPreference,
                     codecFeedback = currentCodecFeedback,
+                    textResolver = AndroidProjectionControlTextResolver(this@MainActivity),
                     premiumEntitled = premiumEntitled,
                 ),
                 diagnosticLogs = currentDiagnosticLogSummary,
@@ -321,6 +325,7 @@ class MainActivity : ComponentActivity() {
                 premiumPurchase = premiumPurchaseUi,
                 firstRunOnboardingRequired = showFirstRunOnboarding,
                 onFirstRunOnboardingCompleted = ::completeFirstRunOnboarding,
+                onOpenAndroidAutoSettings = ::showHeadUnitServerGuidance,
                 onStart = ::requestProjectionStart,
                 onStop = ::cancelPendingStartAndStop,
                 onRequestNewBrowserPairing = ::requestNewBrowserPairing,
@@ -479,9 +484,13 @@ class MainActivity : ComponentActivity() {
                     !snapshot.isAutomaticReconnectPending
                 ) {
                     profileFeedback.value = if (previous.activeProfile != snapshot.activeProfile) {
-                        "${snapshot.activeProfile.width}×${snapshot.activeProfile.height} 프로필을 즉시 적용했습니다."
+                        getString(
+                            R.string.projection_profile_applied_immediately,
+                            snapshot.activeProfile.width,
+                            snapshot.activeProfile.height,
+                        )
                     } else {
-                        "프로필 자동 적용에 실패해 기존 설정을 유지합니다."
+                        getString(R.string.projection_profile_auto_apply_failed)
                     }
                 }
             }
@@ -491,21 +500,29 @@ class MainActivity : ComponentActivity() {
     private fun requestProjectionProfile(profileId: String) {
         val binder = projectionBinder
         if (binder == null) {
-            profileFeedback.value = "프로젝션 서비스에 연결한 뒤 다시 시도하세요."
+            profileFeedback.value = getString(R.string.projection_service_connect_first)
             return
         }
         val result = runCatching { binder.requestProjectionProfile(profileId) }
             .getOrElse {
-                profileFeedback.value = "프로필 적용 요청을 처리하지 못했습니다."
+                profileFeedback.value = getString(R.string.projection_profile_request_failed)
                 return
             }
         when (result) {
             is ProjectionProfileRequestResult.Accepted -> {
                 projectionProfileSnapshot.value = result.snapshot
                 profileFeedback.value = if (result.snapshot.activeProfile == result.snapshot.requestedProfile) {
-                    "${result.snapshot.activeProfile.width}×${result.snapshot.activeProfile.height} 프로필이 적용되었습니다."
+                    getString(
+                        R.string.projection_profile_applied,
+                        result.snapshot.activeProfile.width,
+                        result.snapshot.activeProfile.height,
+                    )
                 } else {
-                    "${result.snapshot.requestedProfile.width}×${result.snapshot.requestedProfile.height} 프로필로 자동 재연결하여 적용하는 중입니다."
+                    getString(
+                        R.string.projection_profile_reconnecting,
+                        result.snapshot.requestedProfile.width,
+                        result.snapshot.requestedProfile.height,
+                    )
                 }
                 AppDiagnostics.record(
                     DiagnosticEventCode.PROJECTION_PROFILE_CHANGED,
@@ -517,7 +534,7 @@ class MainActivity : ComponentActivity() {
             }
             is ProjectionProfileRequestResult.NotEntitled -> {
                 projectionProfileSnapshot.value = result.snapshot
-                profileFeedback.value = "현재 이용 권한에서는 해당 프로필을 사용할 수 없습니다."
+                profileFeedback.value = getString(R.string.projection_profile_not_entitled)
                 AppDiagnostics.record(
                     DiagnosticEventCode.PROJECTION_PROFILE_CHANGED,
                     fields = mapOf("result" to "not_entitled"),
@@ -525,14 +542,14 @@ class MainActivity : ComponentActivity() {
             }
             is ProjectionProfileRequestResult.PersistenceFailed -> {
                 projectionProfileSnapshot.value = result.snapshot
-                profileFeedback.value = "프로필 설정을 안전하게 저장하지 못해 변경을 취소했습니다."
+                profileFeedback.value = getString(R.string.projection_profile_persistence_failed)
                 AppDiagnostics.record(
                     DiagnosticEventCode.PROJECTION_PROFILE_CHANGED,
                     fields = mapOf("result" to "persistence_failed"),
                 )
             }
             ProjectionProfileRequestResult.UnknownProfile -> {
-                profileFeedback.value = "서비스가 제공하지 않는 프로필입니다."
+                profileFeedback.value = getString(R.string.projection_profile_unknown)
             }
         }
     }
@@ -542,13 +559,16 @@ class MainActivity : ComponentActivity() {
         if (codecPreferenceStore.save(normalized)) {
             codecPreference.value = normalized
             projectionBinder?.notifyWebRtcCodecPreferenceChanged()
-            codecFeedback.value = "${normalized.displayName} 선택을 저장하고 WebRTC 재협상을 요청했습니다."
+            codecFeedback.value = getString(
+                R.string.codec_saved,
+                getString(normalized.displayNameRes),
+            )
             AppDiagnostics.record(
                 DiagnosticEventCode.WEBRTC_CODEC_CHANGED,
                 fields = mapOf("codec" to normalized.name, "result" to "saved"),
             )
         } else {
-            codecFeedback.value = "코덱 선택을 저장하지 못했습니다. 이전 설정을 유지합니다."
+            codecFeedback.value = getString(R.string.codec_save_failed)
             AppDiagnostics.record(
                 DiagnosticEventCode.WEBRTC_CODEC_CHANGED,
                 fields = mapOf("codec" to normalized.name, "result" to "persistence_failed"),
@@ -559,7 +579,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestDiagnosticLogExport() {
         if (AppDiagnostics.summary().fileCount == 0) {
-            diagnosticLogFeedback.value = "저장할 진단 로그가 없습니다."
+            diagnosticLogFeedback.value = getString(R.string.diagnostic_no_logs_to_save)
             return
         }
         diagnosticLogExport.launch("tecom-diagnostics-${System.currentTimeMillis()}.jsonl")
@@ -575,33 +595,31 @@ class MainActivity : ComponentActivity() {
                 diagnosticUploadStatus.value = uploadStatus
                 diagnosticLogFeedback.value = when (result) {
                     is DiagnosticUploadSubmissionResult.Queued ->
-                        "승인된 진단 데이터 전송을 시작했습니다. 새 전송 승인은 30분당 1회로 제한되며 " +
-                            "이 항목이 일시 실패하면 최소 30분 뒤 재시도합니다."
+                        getString(R.string.diagnostic_upload_queued)
                     is DiagnosticUploadSubmissionResult.InvalidDescription -> when (result.reason) {
                         DescriptionFailure.EMPTY ->
-                            "오류 당시 상황을 입력해 주세요."
+                            getString(R.string.diagnostic_description_required)
                         DescriptionFailure.TOO_MANY_CODE_POINTS,
                         DescriptionFailure.TOO_MANY_UTF8_BYTES ->
-                            "상황 설명은 500자와 2 KiB 이내로 입력해 주세요."
+                            getString(R.string.diagnostic_description_too_long)
                         DescriptionFailure.DISALLOWED_CONTROL_CHARACTER ->
-                            "상황 설명에 사용할 수 없는 제어 문자가 포함되어 있습니다."
+                            getString(R.string.diagnostic_description_invalid_character)
                     }
                     DiagnosticUploadSubmissionResult.NoDiagnosticLogs ->
-                        "전송할 진단 로그가 없습니다."
+                        getString(R.string.diagnostic_no_logs_to_upload)
                     DiagnosticUploadSubmissionResult.OutboxFull ->
-                        "대기 중인 오류 로그가 3건입니다. 전송이 끝난 뒤 다시 시도해 주세요."
+                        getString(R.string.diagnostic_outbox_full)
                     is DiagnosticUploadSubmissionResult.RateLimited -> {
                         val remainingMinutes = maxOf(
                             1L,
                             (result.retryAfter.toMillis() + 59_999L) / 60_000L,
                         )
-                        "새 진단 데이터 전송은 사용자 승인 기준 30분당 1회입니다. " +
-                            "약 ${remainingMinutes}분 후 다시 시도해 주세요."
+                        getString(R.string.diagnostic_rate_limited, remainingMinutes)
                     }
                     DiagnosticUploadSubmissionResult.PersistenceFailed ->
-                        "오류 로그 전송 파일을 안전하게 준비하지 못했습니다."
+                        getString(R.string.diagnostic_persistence_failed)
                     DiagnosticUploadSubmissionResult.SchedulingFailed ->
-                        "오류 로그 전송 작업을 예약하지 못했습니다."
+                        getString(R.string.diagnostic_scheduling_failed)
                 }
                 refreshDiagnosticLogSummary(force = true)
             }
@@ -615,8 +633,10 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 diagnosticUploadStatus.value = uploadStatus
                 if (recovery.failedCount > 0) {
-                    diagnosticLogFeedback.value =
-                        "대기 중인 오류 로그 ${recovery.failedCount}건의 전송 작업을 복구하지 못했습니다."
+                    diagnosticLogFeedback.value = getString(
+                        R.string.diagnostic_recovery_failed,
+                        recovery.failedCount,
+                    )
                 }
             }
         }
@@ -629,11 +649,19 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 diagnosticUploadStatus.value = uploadStatus
                 diagnosticLogFeedback.value = when {
-                    cancellation.requestedCount == 0 -> "취소할 대기 중 오류 로그가 없습니다."
+                    cancellation.requestedCount == 0 ->
+                        getString(R.string.diagnostic_cancel_none)
                     cancellation.failedCount == 0 ->
-                        "대기 중인 오류 로그 ${cancellation.removedCount}건을 취소하고 삭제했습니다."
+                        getString(
+                            R.string.diagnostic_cancel_succeeded,
+                            cancellation.removedCount,
+                        )
                     else ->
-                        "${cancellation.removedCount}건을 취소했고 ${cancellation.failedCount}건은 취소하지 못했습니다."
+                        getString(
+                            R.string.diagnostic_cancel_partial,
+                            cancellation.removedCount,
+                            cancellation.failedCount,
+                        )
                 }
             }
         }
@@ -664,11 +692,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val result = runCatching { AppDiagnostics.clear() }
             withContext(Dispatchers.Main) {
-                diagnosticLogFeedback.value = if (result.isSuccess) {
-                    "진단 로그를 삭제했습니다."
-                } else {
-                    "진단 로그를 삭제하지 못했습니다."
-                }
+                diagnosticLogFeedback.value = getString(
+                    if (result.isSuccess) {
+                        R.string.diagnostic_clear_succeeded
+                    } else {
+                        R.string.diagnostic_clear_failed
+                    },
+                )
                 refreshDiagnosticLogSummary(force = true)
             }
         }

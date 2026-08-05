@@ -3,6 +3,9 @@
  */
 package com.pebble.tecomheadunit.session
 
+import androidx.annotation.StringRes
+import com.pebble.tecomheadunit.R
+
 /** Coarse, user-safe Android Auto connection state shared by every UI surface. */
 enum class AndroidAutoConnectionState {
     CONNECTED,
@@ -16,27 +19,27 @@ enum class AndroidAutoConnectionState {
  */
 enum class AndroidAutoConnectionReason(
     val wireName: String,
-    val userMessage: String,
+    @param:StringRes @get:StringRes val messageRes: Int,
 ) {
-    STREAMING("streaming", "Android Auto 영상 수신 중"),
-    LINK_READY("link_ready", "Android Auto 연결 협상 완료 · 영상 대기 중"),
-    WAITING_FOR_PHONE("waiting_for_phone", "휴대전화 연결 대기 중"),
-    RETRYING("retrying", "Android Auto 연결을 다시 시도하는 중"),
-    DECODER_RECOVERY("decoder_recovery", "Android Auto 영상 디코더 복구 중"),
-    PHONE_ENDED_SESSION("phone_ended_session", "휴대전화에서 Android Auto 연결을 종료했습니다"),
+    STREAMING("streaming", R.string.android_auto_reason_streaming),
+    LINK_READY("link_ready", R.string.android_auto_reason_link_ready),
+    WAITING_FOR_PHONE("waiting_for_phone", R.string.android_auto_reason_waiting_for_phone),
+    RETRYING("retrying", R.string.android_auto_reason_retrying),
+    DECODER_RECOVERY("decoder_recovery", R.string.android_auto_reason_decoder_recovery),
+    PHONE_ENDED_SESSION("phone_ended_session", R.string.android_auto_reason_phone_ended_session),
     HEAD_UNIT_SERVER_STOPPED(
         "head_unit_server_stopped",
-        "이 휴대전화의 Android Auto Head Unit Server가 꺼져 있습니다",
+        R.string.android_auto_reason_head_unit_server_stopped,
     ),
-    NETWORK_INTERRUPTED("network_interrupted", "휴대전화와의 연결이 중단되었습니다"),
-    AUTHENTICATION_FAILED("authentication_failed", "Android Auto 인증에 실패했습니다"),
-    INCOMPATIBLE_VERSION("incompatible_version", "Android Auto 버전이 호환되지 않습니다"),
-    PROTOCOL_ERROR("protocol_error", "Android Auto 통신 오류가 발생했습니다"),
-    DECODER_UNAVAILABLE("decoder_unavailable", "이 기기에서 Android Auto 영상 디코더를 사용할 수 없습니다"),
-    DISPLAY_UNAVAILABLE("display_unavailable", "프로젝션 화면을 사용할 수 없습니다"),
-    NOT_CONFIGURED("not_configured", "Android Auto 연결이 설정되지 않았습니다"),
-    SESSION_STOPPED("session_stopped", "Android Auto 연결이 중지되었습니다"),
-    UNKNOWN("unknown", "Android Auto 연결이 끊어졌습니다"),
+    NETWORK_INTERRUPTED("network_interrupted", R.string.android_auto_reason_network_interrupted),
+    AUTHENTICATION_FAILED("authentication_failed", R.string.android_auto_reason_authentication_failed),
+    INCOMPATIBLE_VERSION("incompatible_version", R.string.android_auto_reason_incompatible_version),
+    PROTOCOL_ERROR("protocol_error", R.string.android_auto_reason_protocol_error),
+    DECODER_UNAVAILABLE("decoder_unavailable", R.string.android_auto_reason_decoder_unavailable),
+    DISPLAY_UNAVAILABLE("display_unavailable", R.string.android_auto_reason_display_unavailable),
+    NOT_CONFIGURED("not_configured", R.string.android_auto_reason_not_configured),
+    SESSION_STOPPED("session_stopped", R.string.android_auto_reason_session_stopped),
+    UNKNOWN("unknown", R.string.android_auto_reason_unknown),
 }
 
 data class AndroidAutoConnectionStatus(

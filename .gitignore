@@ -3,6 +3,7 @@
 .idea/
 .kotlin/
 .local-tools/
+.oss-staging/
 local.properties
 *.iml
 build/
@@ -33,7 +34,10 @@ node_modules/
 .dev.vars
 .dev.vars.*
 credentials/
-/cloudflare/
+/cloudflare/*
+!/cloudflare/pages/
+/cloudflare/pages/*
+!/cloudflare/pages/_headers.template
 /supabase/
 keystore.properties
 signing-config.json
@@ -45,6 +49,9 @@ signing-config.json
 *.pem
 *.key
 *.pk8
+*.der
+*.crt
+*.cer
 
 # Logs, local databases, and editor files
 *.log

@@ -12,8 +12,8 @@ class WebRtcCodecSelectionPolicyTest {
     private val policy = WebRtcCodecSelectionPolicy()
 
     @Test
-    fun `TB520FU measured hardware H264 path is selected by auto`() {
-        val tb520fu = snapshot(
+    fun `hardware H264 path is selected by auto`() {
+        val deviceCapabilities = snapshot(
             capability(
                 WebRtcVideoCodec.H264,
                 EncoderAcceleration.HARDWARE,
@@ -33,7 +33,7 @@ class WebRtcCodecSelectionPolicyTest {
 
         val outcome = policy.select(
             preference = WebRtcCodecPreference.AUTO,
-            local = tb520fu,
+            local = deviceCapabilities,
             remote = RemoteVideoCodecCapabilities(WebRtcVideoCodec.entries.toSet()),
         )
 

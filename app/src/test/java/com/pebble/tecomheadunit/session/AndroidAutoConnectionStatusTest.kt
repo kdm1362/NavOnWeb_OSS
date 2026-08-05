@@ -1,7 +1,7 @@
 package com.pebble.tecomheadunit.session
 
+import com.pebble.tecomheadunit.R
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -170,7 +170,7 @@ class AndroidAutoConnectionStatusTest {
         assertEquals(AndroidAutoConnectionState.RECONNECTING, recovering.state)
         assertEquals(AndroidAutoConnectionReason.DECODER_RECOVERY, recovering.reason)
         assertEquals("decoder_recovery", recovering.reason.wireName)
-        assertEquals("Android Auto 영상 디코더 복구 중", recovering.reason.userMessage)
+        assertEquals(R.string.android_auto_reason_decoder_recovery, recovering.reason.messageRes)
         assertEquals(1_000L, recovering.lastFrameAtEpochMillis)
     }
 
@@ -187,11 +187,9 @@ class AndroidAutoConnectionStatusTest {
         assertEquals(AndroidAutoConnectionReason.DECODER_UNAVAILABLE, unavailable.reason)
         assertEquals("decoder_unavailable", unavailable.reason.wireName)
         assertEquals(
-            "이 기기에서 Android Auto 영상 디코더를 사용할 수 없습니다",
-            unavailable.reason.userMessage,
+            R.string.android_auto_reason_decoder_unavailable,
+            unavailable.reason.messageRes,
         )
-        assertFalse(unavailable.reason.userMessage.contains("c2.vendor.secret"))
-        assertFalse(unavailable.reason.userMessage.contains("/private/internal"))
     }
 
     private fun reduce(

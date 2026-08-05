@@ -2,6 +2,8 @@
 
 This document distinguishes retained upstream source, adapted behavior, and reference-only material. Exact revisions and hashes are recorded in `third_party/UPSTREAM.lock`.
 
+Last updated: 2026-08-05.
+
 ## OpenAuto
 
 Upstream: `f1xpl/openauto` at `aa90412bf93b5a5078495ea85ac9270c6297d369`.

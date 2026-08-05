@@ -1,0 +1,36 @@
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' __SIGNALING_HTTP_ORIGIN__ __SIGNALING_WEBSOCKET_ORIGIN__; media-src 'self' blob:; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  Permissions-Policy: microphone=(self), camera=(), geolocation=(), local-network=(self), loopback-network=()
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/cloud-config.js
+  Cache-Control: no-store
+
+/app.js
+  Cache-Control: no-cache
+
+/landing.css
+  Cache-Control: no-cache
+
+/icons/*
+  Cache-Control: public, max-age=86400
+
+/media/*
+  Cache-Control: public, max-age=86400
+
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
+
+/robots.txt
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  Cache-Control: public, max-age=3600

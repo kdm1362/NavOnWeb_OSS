@@ -3,6 +3,9 @@
  */
 package com.pebble.tecomheadunit.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
+import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.audio.AudioStreamAccessTier
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioTrack
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioTrackSnapshot
@@ -16,18 +19,19 @@ import com.pebble.tecomheadunit.openauto.sensor.NightModeDecisionSource
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.session.SessionUiState
+import java.text.NumberFormat
 import java.util.Locale
 
 enum class WebRtcCodecPreferenceOption(
     val storageValue: String,
-    val displayName: String,
-    val description: String,
+    @param:StringRes @get:StringRes val displayNameRes: Int,
+    @param:StringRes @get:StringRes val descriptionRes: Int,
 ) {
-    AUTO("auto", "자동", "기기와 상대 브라우저가 함께 지원하는 코덱을 자동 선택"),
-    H264("h264", "H.264", "호환성을 우선하는 하드웨어 코덱"),
-    VP8("vp8", "VP8", "WebRTC 기본 호환 코덱"),
-    VP9("vp9", "VP9", "더 높은 압축 효율을 지원하는 기기에서 사용"),
-    AV1("av1", "AV1", "지원되는 최신 기기에서 가장 높은 압축 효율 제공"),
+    AUTO("auto", R.string.codec_auto_name, R.string.codec_auto_description),
+    H264("h264", R.string.codec_h264_name, R.string.codec_h264_description),
+    VP8("vp8", R.string.codec_vp8_name, R.string.codec_vp8_description),
+    VP9("vp9", R.string.codec_vp9_name, R.string.codec_vp9_description),
+    AV1("av1", R.string.codec_av1_name, R.string.codec_av1_description),
     ;
 
     /** Mirrors the compile-time outbound encoder policy used by the WebRTC sender. */
@@ -59,21 +63,19 @@ data class ProjectionProfileOptionUi(
 data class ProjectionControlUiState(
     val activeProfile: ProjectionVideoProfile = ProjectionVideoProfile.FREE_800X480,
     val profileOptions: List<ProjectionProfileOptionUi> = emptyList(),
-    val profileStatus: String = "프로젝션 서비스 연결을 기다리는 중입니다.",
+    val profileStatus: String = "",
     val profileChangeInProgress: Boolean = false,
     val codecPreference: WebRtcCodecPreferenceOption = WebRtcCodecPreferenceOption.AUTO,
-    val codecStatus: String = CODEC_POLICY_PENDING_MESSAGE,
+    val codecStatus: String = "",
 ) {
     companion object {
-        const val CODEC_POLICY_PENDING_MESSAGE =
-            "선택한 코덱은 WebRTC 협상에 적용되며 연결 중이면 자동으로 다시 협상합니다."
-
         fun from(
             snapshot: ProjectionProfileSnapshot?,
             serviceBound: Boolean,
             profileFeedback: String,
             codecPreference: WebRtcCodecPreferenceOption,
             codecFeedback: String,
+            textResolver: ProjectionControlTextResolver,
             premiumEntitled: Boolean =
                 snapshot?.entitlementTier == ProjectionAccessTier.PREMIUM,
         ): ProjectionControlUiState {
@@ -86,8 +88,8 @@ data class ProjectionControlUiState(
                         !premiumEntitled
                 ProjectionProfileOptionUi(
                     profileId = profile.profileId,
-                    title = profile.displayTitle(),
-                    detail = profile.displayDetail(),
+                    title = textResolver.profileTitle(profile),
+                    detail = textResolver.profileDetail(profile),
                     selected = profile == requested,
                     active = profile == active,
                     premiumLocked = premiumLocked,
@@ -96,11 +98,11 @@ data class ProjectionControlUiState(
             }
             val status = profileFeedback.ifBlank {
                 when {
-                    !serviceBound -> "프로젝션 서비스에 연결되지 않았습니다."
-                    snapshot == null -> "프로필 상태를 확인하는 중입니다."
+                    !serviceBound -> textResolver.serviceNotConnected
+                    snapshot == null -> textResolver.profileChecking
                     changing ->
-                        "${requested.displayTitle()} 프로필로 자동 재연결하여 적용하는 중입니다."
-                    else -> "현재 ${active.displayTitle()} 프로필이 적용되어 있습니다."
+                        textResolver.profileReconnecting(textResolver.profileTitle(requested))
+                    else -> textResolver.profileActive(textResolver.profileTitle(active))
                 }
             }
             return ProjectionControlUiState(
@@ -110,9 +112,69 @@ data class ProjectionControlUiState(
                 profileChangeInProgress = changing,
                 codecPreference = codecPreference.takeIf { it.isSelectable }
                     ?: WebRtcCodecPreferenceOption.AUTO,
-                codecStatus = codecFeedback.ifBlank { CODEC_POLICY_PENDING_MESSAGE },
+                codecStatus = codecFeedback.ifBlank { textResolver.codecPolicyPending },
             )
         }
+    }
+}
+
+interface ProjectionControlTextResolver {
+    val serviceNotConnected: String
+    val profileChecking: String
+    val codecPolicyPending: String
+
+    fun profileTitle(profile: ProjectionVideoProfile): String
+
+    fun profileDetail(profile: ProjectionVideoProfile): String
+
+    fun profileReconnecting(profileTitle: String): String
+
+    fun profileActive(profileTitle: String): String
+}
+
+class AndroidProjectionControlTextResolver(context: Context) : ProjectionControlTextResolver {
+    private val applicationContext = context.applicationContext
+
+    override val serviceNotConnected: String
+        get() = applicationContext.getString(R.string.projection_profile_service_not_connected)
+    override val profileChecking: String
+        get() = applicationContext.getString(R.string.projection_profile_checking)
+    override val codecPolicyPending: String
+        get() = applicationContext.getString(R.string.codec_policy_pending)
+
+    override fun profileTitle(profile: ProjectionVideoProfile): String = applicationContext.getString(
+        when (profile) {
+            ProjectionVideoProfile.FREE_800X480 -> R.string.projection_profile_free_title
+            ProjectionVideoProfile.PREMIUM_720P -> R.string.projection_profile_720p_title
+            ProjectionVideoProfile.PREMIUM_1080P -> R.string.projection_profile_1080p_title
+        },
+    )
+
+    override fun profileDetail(profile: ProjectionVideoProfile): String = applicationContext.getString(
+        R.string.projection_profile_detail,
+        profile.androidAutoFramesPerSecond,
+        profile.webRtcFramesPerSecond,
+        formatBitrate(profile.webRtcStartBitrateBps),
+        formatBitrate(profile.webRtcMaxBitrateBps),
+    )
+
+    override fun profileReconnecting(profileTitle: String): String = applicationContext.getString(
+        R.string.projection_profile_reconnecting_status,
+        profileTitle,
+    )
+
+    override fun profileActive(profileTitle: String): String = applicationContext.getString(
+        R.string.projection_profile_active_status,
+        profileTitle,
+    )
+
+    private fun formatBitrate(bitsPerSecond: Int): String {
+        val locale = applicationContext.resources.configuration.locales[0]
+        val number = NumberFormat.getNumberInstance(locale).apply {
+            minimumFractionDigits = 1
+            maximumFractionDigits = 1
+        }.format(bitsPerSecond / 1_000_000.0)
+        return applicationContext.getString(R.string.projection_bitrate_mbps, number)
     }
 }
 
@@ -156,20 +218,20 @@ data class ProjectionEnvironmentDiagnosticsUiSnapshot(
             ProjectionEnvironmentDiagnosticsUiSnapshot(
                 isNight = nightModeDecision?.isNight,
                 nightModeSource = when (nightModeDecision?.source) {
-                    NightModeDecisionSource.SOLAR_LOCATION -> "현재 위치의 일출·일몰"
-                    NightModeDecisionSource.DEVICE_HINT_NO_LOCATION -> "기기 화면 모드(위치 없음)"
+                    NightModeDecisionSource.SOLAR_LOCATION -> "local sunrise and sunset"
+                    NightModeDecisionSource.DEVICE_HINT_NO_LOCATION -> "device theme (no location)"
                     NightModeDecisionSource.DEVICE_HINT_UNUSABLE_LOCATION ->
-                        "기기 화면 모드(위치 사용 불가)"
-                    NightModeDecisionSource.FAIL_DARK_NO_LOCATION -> "안전 야간 기본값(위치 없음)"
+                        "device theme (location unavailable)"
+                    NightModeDecisionSource.FAIL_DARK_NO_LOCATION -> "safe night default (no location)"
                     NightModeDecisionSource.FAIL_DARK_UNUSABLE_LOCATION ->
-                        "안전 야간 기본값(위치 사용 불가)"
-                    null -> "판정 대기"
+                        "safe night default (location unavailable)"
+                    null -> "pending"
                 },
                 audioTier = audioTier,
                 audioFormats = audioTracks.entries
                     .sortedBy { it.key.ordinal }
                     .joinToString(" / ") { (track, snapshot) ->
-                        val channels = if (snapshot.format.channelCount == 1) "모노" else "스테레오"
+                        val channels = if (snapshot.format.channelCount == 1) "mono" else "stereo"
                         "${track.wireName} ${snapshot.format.sampleRateHz / 1_000} kHz $channels"
                     },
                 audioPacketsPublished = audioTracks.values.sumOf { it.packetsPublished },
@@ -198,79 +260,79 @@ data class ProjectionDiagnosticsUiState(
             val serverText = when (session.phase) {
                 SessionPhase.READY -> session.browserUrl
                     ?.takeIf(String::isNotBlank)
-                    ?.let { "실행 중 · ${safeDiagnosticText(it)}" }
-                    ?: "실행 중 · 주소 확인 중"
-                SessionPhase.STARTING -> "시작 중"
-                SessionPhase.ERROR -> "오류 · ${safeDiagnosticText(session.message)}"
-                SessionPhase.IDLE -> "중지됨"
+                    ?.let { "running · ${safeDiagnosticText(it)}" }
+                    ?: "running · checking address"
+                SessionPhase.STARTING -> "starting"
+                SessionPhase.ERROR -> "error · ${safeDiagnosticText(session.message)}"
+                SessionPhase.IDLE -> "stopped"
             }
             val androidAutoText = when (connection.state) {
-                AndroidAutoConnectionState.CONNECTED -> "연결됨"
-                AndroidAutoConnectionState.RECONNECTING -> "다시 연결 중"
-                AndroidAutoConnectionState.DISCONNECTED -> "연결 끊김"
-            } + " · ${connection.reason.userMessage}"
+                AndroidAutoConnectionState.CONNECTED -> "connected"
+                AndroidAutoConnectionState.RECONNECTING -> "reconnecting"
+                AndroidAutoConnectionState.DISCONNECTED -> "disconnected"
+            } + " · ${connection.reason.wireName}"
             val lastFrameText = connection.lastFrameAgeMillis(nowElapsedRealtimeMillis)?.let { age ->
                 when {
-                    age < 1_000L -> "방금 수신"
-                    age < 60_000L -> "${age / 1_000L}초 전 수신"
-                    else -> "${age / 60_000L}분 전 수신"
+                    age < 1_000L -> "received now"
+                    age < 60_000L -> "received ${age / 1_000L} seconds ago"
+                    else -> "received ${age / 60_000L} minutes ago"
                 }
-            } ?: "아직 수신된 영상 없음"
+            } ?: "no video received"
             val webRtcText = when {
-                webRtcCapabilities == null -> "상태 수집 대기"
+                webRtcCapabilities == null -> "status pending"
                 !webRtcCapabilities.available ->
-                    "사용 불가 · ${safeDiagnosticText(webRtcCapabilities.detail)}"
+                    "unavailable · ${safeDiagnosticText(webRtcCapabilities.detail)}"
                 else -> {
                     val codecs = webRtcCapabilities.codecs
                         .joinToString(" / ") { it.uppercase(Locale.ROOT) }
-                        .ifBlank { "코덱 확인 중" }
-                    "사용 가능 · $codecs · ${safeDiagnosticText(webRtcCapabilities.detail)}"
+                        .ifBlank { "checking codecs" }
+                    "available · $codecs · ${safeDiagnosticText(webRtcCapabilities.detail)}"
                 }
             }
             val activeProfile = profileSnapshot?.activeProfile
                 ?: ProjectionVideoProfile.FREE_800X480
             val touchText = session.lastTouch?.let { touch ->
                 "${touch.phase} · x=${touch.x} · y=${touch.y} · pointer=${touch.pointerId}"
-            } ?: "수집된 브라우저 입력 없음"
+            } ?: "no browser input collected"
             val nightModeText = environment?.let {
                 val mode = when (it.isNight) {
-                    true -> "야간"
-                    false -> "주간"
-                    null -> "판정 대기"
+                    true -> "night"
+                    false -> "day"
+                    null -> "pending"
                 }
                 "$mode · ${it.nightModeSource}"
-            } ?: "판정 대기"
+            } ?: "pending"
             val audioText = environment?.let {
                 val tier = when (it.audioTier) {
-                    AudioStreamAccessTier.FREE -> "무료 · 서버 강제 모노 16 kHz"
-                    AudioStreamAccessTier.PREMIUM -> "유료 · 원본 채널/샘플레이트"
-                    null -> "준비 대기"
+                    AudioStreamAccessTier.FREE -> "free · server-forced mono 16 kHz"
+                    AudioStreamAccessTier.PREMIUM -> "premium · source channels/sample rate"
+                    null -> "pending"
                 }
-                val formats = it.audioFormats.ifBlank { "PCM 대기" }
-                "$tier · $formats · 패킷 ${it.audioPacketsPublished} · " +
-                    "브라우저 ${it.audioSubscribers} · 드롭 ${it.audioPacketsDropped}"
-            } ?: "준비 대기"
+                val formats = it.audioFormats.ifBlank { "PCM pending" }
+                "$tier · $formats · packets ${it.audioPacketsPublished} · " +
+                    "browsers ${it.audioSubscribers} · dropped ${it.audioPacketsDropped}"
+            } ?: "pending"
             return ProjectionDiagnosticsUiState(
                 rows = listOf(
-                    DiagnosticRowUi("앱 서버", serverText),
+                    DiagnosticRowUi("App server", serverText),
                     DiagnosticRowUi("Android Auto", androidAutoText),
-                    DiagnosticRowUi("마지막 영상", lastFrameText),
+                    DiagnosticRowUi("Last video", lastFrameText),
                     DiagnosticRowUi("WebRTC", webRtcText),
-                    DiagnosticRowUi("주·야간 모드", nightModeText),
-                    DiagnosticRowUi("브라우저 음성", audioText),
-                    DiagnosticRowUi("활성 프로필", activeProfile.displayDiagnostic()),
-                    DiagnosticRowUi("마지막 입력 수집", touchText),
-                    DiagnosticRowUi("네이티브 상태", safeDiagnosticText(session.nativeStatus)),
+                    DiagnosticRowUi("Day/night mode", nightModeText),
+                    DiagnosticRowUi("Browser audio", audioText),
+                    DiagnosticRowUi("Active profile", activeProfile.displayDiagnostic()),
+                    DiagnosticRowUi("Last input", touchText),
+                    DiagnosticRowUi("Native status", safeDiagnosticText(session.nativeStatus)),
                 ),
             )
         }
 
         internal fun safeDiagnosticText(value: String): String {
             val trimmed = value.trim().take(MAX_DIAGNOSTIC_CHARACTERS)
-            if (trimmed.isEmpty()) return "세부 정보 없음"
+            if (trimmed.isEmpty()) return "no detail"
             val normalized = trimmed.lowercase(Locale.ROOT)
             return if (SENSITIVE_MARKERS.any(normalized::contains)) {
-                "민감 정보 숨김"
+                "sensitive detail hidden"
             } else {
                 trimmed
             }
@@ -290,19 +352,11 @@ data class ProjectionDiagnosticsUiState(
 }
 
 private fun ProjectionVideoProfile.displayTitle(): String = when (this) {
-    ProjectionVideoProfile.FREE_800X480 -> "기본 800×480"
+    ProjectionVideoProfile.FREE_800X480 -> "Basic 800×480"
     ProjectionVideoProfile.PREMIUM_720P -> "HD 1280×720"
     ProjectionVideoProfile.PREMIUM_1080P -> "Full HD 1920×1080"
 }
 
-private fun ProjectionVideoProfile.displayDetail(): String =
-    "Android Auto ${androidAutoFramesPerSecond} FPS · " +
-        "WebRTC ${webRtcFramesPerSecond} FPS · " +
-        "${formatBitrate(webRtcStartBitrateBps)} 시작 / ${formatBitrate(webRtcMaxBitrateBps)} 최대"
-
 private fun ProjectionVideoProfile.displayDiagnostic(): String =
     "${displayTitle()} · AA ${androidAutoFramesPerSecond} FPS · " +
         "WebRTC ${webRtcFramesPerSecond} FPS"
-
-private fun formatBitrate(bitsPerSecond: Int): String =
-    String.format(Locale.ROOT, "%.1f Mbps", bitsPerSecond / 1_000_000.0)

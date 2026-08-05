@@ -4,15 +4,23 @@ This public repository is maintained as the preferred form for modifying NavOnWe
 
 ## Release correspondence checklist
 
-1. Freeze the exact source revision used for the binary.
+1. Freeze the exact source revision used for the binary and push it to the public repository.
 2. Run the Android tests described in `BUILDING.md`.
 3. Confirm that all modified Android, bundled-browser, build, and test sources are present.
 4. Confirm that Gradle wrapper files, the version catalog, licenses, notices, and upstream revision lock are present.
 5. Confirm that credentials, signing keys, service secrets, diagnostic data, device identifiers, private-network records, build outputs, and internal planning records are absent from the full Git history.
-6. Build the distributed binary with `-PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS` or an immutable tag URL.
-7. Tag the matching public commit and retain it for as long as required by the GPL and the distribution channel.
+6. Tag the matching public commit and retain it for as long as required by the GPL and the distribution channel.
+7. Build the distributed binary with that immutable tag URL, such as `-PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/<tag>`. Release tasks reject the repository root URL.
+8. Record the source tag and commit, version code/name, AAB SHA-256, and release date with the distribution evidence.
 
-`SOURCE_MANIFEST.sha256` can be used to verify a checked-out source tree before the Git commit is created. Regenerate it whenever any tracked source candidate changes.
+`SOURCE_MANIFEST.sha256` records the exact staged Git index, so stage every intended source change
+before regenerating it and then stage the updated manifest:
+
+```powershell
+git add --all
+.\tools\update-source-manifest.ps1
+git add SOURCE_MANIFEST.sha256
+```
 
 ## Deliberately external inputs
 

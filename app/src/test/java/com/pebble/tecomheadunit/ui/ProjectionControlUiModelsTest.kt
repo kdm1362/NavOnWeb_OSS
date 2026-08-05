@@ -68,6 +68,7 @@ class ProjectionControlUiModelsTest {
             profileFeedback = "",
             codecPreference = WebRtcCodecPreferenceOption.AUTO,
             codecFeedback = "",
+            textResolver = TEST_TEXT_RESOLVER,
         )
 
         assertEquals(
@@ -93,6 +94,7 @@ class ProjectionControlUiModelsTest {
             profileFeedback = "",
             codecPreference = WebRtcCodecPreferenceOption.AUTO,
             codecFeedback = "",
+            textResolver = TEST_TEXT_RESOLVER,
         )
 
         assertFalse(state.profileOptions.single { !it.premiumLocked }.enabled)
@@ -107,6 +109,7 @@ class ProjectionControlUiModelsTest {
             profileFeedback = "",
             codecPreference = WebRtcCodecPreferenceOption.AUTO,
             codecFeedback = "",
+            textResolver = TEST_TEXT_RESOLVER,
             premiumEntitled = true,
         )
 
@@ -129,13 +132,14 @@ class ProjectionControlUiModelsTest {
             profileFeedback = "",
             codecPreference = WebRtcCodecPreferenceOption.AV1,
             codecFeedback = "",
+            textResolver = TEST_TEXT_RESOLVER,
         )
 
         assertEquals(ProjectionVideoProfile.FREE_800X480, state.activeProfile)
         assertTrue(state.profileChangeInProgress)
         assertTrue(state.profileOptions.none { it.enabled })
         assertTrue(state.profileOptions.single { it.selected }.profileId == "premium-720p")
-        assertTrue(state.profileStatus.contains("자동 재연결"))
+        assertTrue(state.profileStatus.contains("reconnecting"))
     }
 
     @Test
@@ -182,7 +186,7 @@ class ProjectionControlUiModelsTest {
 
         assertTrue(rendered.contains("VP8 / VP9"))
         assertTrue(rendered.contains("GPU texture sender ready"))
-        assertTrue(rendered.contains("민감 정보 숨김"))
+        assertTrue(rendered.contains("sensitive detail hidden"))
         assertFalse(rendered.contains(PAIRING_SECRET))
         assertFalse(rendered.contains(ICE_SECRET))
         assertFalse(rendered.contains(PRIVATE_KEY_SECRET))
@@ -192,7 +196,7 @@ class ProjectionControlUiModelsTest {
     @Test
     fun explicitBrowserCredentialMarkersAreRedacted() {
         assertEquals(
-            "민감 정보 숨김",
+            "sensitive detail hidden",
             ProjectionDiagnosticsUiState.safeDiagnosticText(
                 "X-Browser-Credential: browser-secret-value",
             ),
@@ -225,12 +229,28 @@ class ProjectionControlUiModelsTest {
         assertEquals(7L, snapshot.audioPacketsPublished)
         assertEquals(2L, snapshot.audioPacketsDropped)
         assertEquals(1, snapshot.audioSubscribers)
-        assertTrue(snapshot.audioFormats.contains("16 kHz 모노"))
+        assertTrue(snapshot.audioFormats.contains("16 kHz mono"))
         assertFalse(snapshot.toString().contains("latitude", ignoreCase = true))
         assertFalse(snapshot.toString().contains("longitude", ignoreCase = true))
     }
 
     private companion object {
+        val TEST_TEXT_RESOLVER = object : ProjectionControlTextResolver {
+            override val serviceNotConnected = "service-not-connected"
+            override val profileChecking = "profile-checking"
+            override val codecPolicyPending = "codec-policy-pending"
+
+            override fun profileTitle(profile: ProjectionVideoProfile): String = profile.name
+
+            override fun profileDetail(profile: ProjectionVideoProfile): String =
+                "${profile.width}x${profile.height}"
+
+            override fun profileReconnecting(profileTitle: String): String =
+                "reconnecting:$profileTitle"
+
+            override fun profileActive(profileTitle: String): String = "active:$profileTitle"
+        }
+
         const val PAIRING_SECRET = "92845173"
         const val ICE_SECRET = "ice-password-do-not-display"
         const val PRIVATE_KEY_SECRET = "private-key-material"

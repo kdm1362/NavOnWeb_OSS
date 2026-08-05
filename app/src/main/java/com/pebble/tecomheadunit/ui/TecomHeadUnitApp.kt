@@ -8,6 +8,8 @@ import android.view.Surface as AndroidSurface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,14 +56,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,7 +81,6 @@ import com.pebble.tecomheadunit.BuildConfig
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.automation.AutomationTriggerMode
 import com.pebble.tecomheadunit.diagnostics.DiagnosticLogSummary
-import com.pebble.tecomheadunit.diagnostics.upload.DIAGNOSTIC_UPLOAD_CONSENT_MESSAGE
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadConsentGate
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadStatusSnapshot
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadTerminalOutcome
@@ -83,9 +90,12 @@ import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
 import java.nio.charset.StandardCharsets
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.text.DateFormat
+import java.text.NumberFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private val AppColors = darkColorScheme(
@@ -100,6 +110,10 @@ private val AppColors = darkColorScheme(
 
 private const val MAX_DIAGNOSTIC_DESCRIPTION_CODE_POINTS = 500
 private const val MAX_DIAGNOSTIC_DESCRIPTION_BYTES = 2 * 1_024
+internal const val SETTINGS_CLOSE_HIGHLIGHT_INTERVAL_MILLIS = 1_000L
+
+internal fun shouldHighlightSettingsCloseAfterOnboarding(settingsVisible: Boolean): Boolean =
+    settingsVisible
 
 @Composable
 fun TecomHeadUnitApp(
@@ -126,6 +140,7 @@ fun TecomHeadUnitApp(
     onProjectionSurfaceDestroyed: (AndroidSurface) -> Unit,
     firstRunOnboardingRequired: Boolean = false,
     onFirstRunOnboardingCompleted: () -> Unit = {},
+    onOpenAndroidAutoSettings: () -> Unit = {},
     premiumPurchase: PremiumPurchaseUiState = PremiumPurchaseUiState(),
     onUnlockPremium: () -> Unit = {},
     onRefreshPurchases: () -> Unit = {},
@@ -135,6 +150,7 @@ fun TecomHeadUnitApp(
     var showFirstRunOnboarding by rememberSaveable {
         mutableStateOf(firstRunOnboardingRequired)
     }
+    var highlightSettingsClose by rememberSaveable { mutableStateOf(false) }
     val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val running = session.phase == SessionPhase.STARTING || session.phase == SessionPhase.READY
@@ -148,7 +164,7 @@ fun TecomHeadUnitApp(
             drawerContent = {
                 ModalDrawerSheet {
                     Text(
-                        text = "NavOnWeb",
+                        text = stringResource(R.string.app_name),
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleLarge,
@@ -156,20 +172,22 @@ fun TecomHeadUnitApp(
                     )
                     HorizontalDivider()
                     NavigationDrawerItem(
-                        label = { Text("홈") },
+                        label = { Text(stringResource(R.string.ui_nav_home)) },
                         selected = !showSettings,
                         onClick = {
+                            highlightSettingsClose = false
                             showSettings = false
                             coroutineScope.launch { drawerState.close() }
                         },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                     NavigationDrawerItem(
-                        label = { Text("설정") },
+                        label = { Text(stringResource(R.string.ui_nav_settings)) },
                         selected = showSettings,
                         onClick = {
                             coroutineScope.launch {
                                 drawerState.close()
+                                highlightSettingsClose = false
                                 showSettings = true
                             }
                         },
@@ -213,7 +231,12 @@ fun TecomHeadUnitApp(
                 diagnosticUploadStatus = diagnosticUploadStatus,
                 serviceAutomation = serviceAutomation,
                 premiumPurchase = premiumPurchase,
-                onDismiss = { showSettings = false },
+                highlightCloseButton = highlightSettingsClose,
+                onSettingsScrolled = { highlightSettingsClose = false },
+                onDismiss = {
+                    highlightSettingsClose = false
+                    showSettings = false
+                },
                 onProjectionProfileSelected = onProjectionProfileSelected,
                 onWebRtcCodecSelected = onWebRtcCodecSelected,
                 onExportDiagnosticLogs = onExportDiagnosticLogs,
@@ -226,14 +249,21 @@ fun TecomHeadUnitApp(
                 onDismissBluetoothPicker = onDismissBluetoothPicker,
                 onUnlockPremium = onUnlockPremium,
                 onRefreshPurchases = onRefreshPurchases,
-                onOpenFirstRunOnboarding = { showFirstRunOnboarding = true },
+                onOpenFirstRunOnboarding = {
+                    highlightSettingsClose = false
+                    showFirstRunOnboarding = true
+                },
             )
         }
 
         if (showFirstRunOnboarding) {
             FirstRunOnboardingDialog(
+                onOpenAndroidAutoSettings = onOpenAndroidAutoSettings,
                 onFinished = {
                     showFirstRunOnboarding = false
+                    highlightSettingsClose = shouldHighlightSettingsCloseAfterOnboarding(
+                        settingsVisible = showSettings,
+                    )
                     onFirstRunOnboardingCompleted()
                 },
             )
@@ -243,6 +273,7 @@ fun TecomHeadUnitApp(
 
 @Composable
 private fun AppHeader(onOpenDrawer: () -> Unit) {
+    val openDrawerDescription = stringResource(R.string.ui_nav_open_drawer)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -251,8 +282,17 @@ private fun AppHeader(onOpenDrawer: () -> Unit) {
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onOpenDrawer) {
-            Text("☰", style = MaterialTheme.typography.headlineSmall)
+        IconButton(
+            onClick = onOpenDrawer,
+            modifier = Modifier.semantics {
+                contentDescription = openDrawerDescription
+            },
+        ) {
+            Text(
+                "☰",
+                modifier = Modifier.clearAndSetSemantics {},
+                style = MaterialTheme.typography.headlineSmall,
+            )
         }
         Column(modifier = Modifier.padding(horizontal = 6.dp)) {
             Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
@@ -276,6 +316,7 @@ private fun HomeScreen(
     premiumPurchase: PremiumPurchaseUiState,
     onUnlockPremium: () -> Unit,
 ) {
+    val sessionMessage = session.messageRes?.let { stringResource(it) } ?: session.message
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -285,11 +326,11 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "휴대전화의 Android Auto 화면을 같은 네트워크의 브라우저로 연결합니다.",
+            text = stringResource(R.string.ui_home_intro),
             color = Color(0xFFAAB7C7),
             style = MaterialTheme.typography.bodyLarge,
         )
-        StatusCard(phase = session.phase, message = session.message)
+        StatusCard(phase = session.phase, message = sessionMessage)
         AndroidAutoConnectionCard(session.androidAutoConnection)
 
         Card(
@@ -307,7 +348,11 @@ private fun HomeScreen(
                         containerColor = if (running) Color(0xFF324152) else MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text(if (running) "서비스 중지" else "서비스 시작")
+                    Text(
+                        stringResource(
+                            if (running) R.string.ui_service_stop else R.string.ui_service_start,
+                        ),
+                    )
                 }
                 if (!premiumPurchase.entitled) {
                     OutlinedButton(
@@ -340,6 +385,8 @@ private fun SettingsDialog(
     diagnosticUploadStatus: DiagnosticUploadStatusSnapshot,
     serviceAutomation: ServiceAutomationUiState,
     premiumPurchase: PremiumPurchaseUiState,
+    highlightCloseButton: Boolean,
+    onSettingsScrolled: () -> Unit,
     onDismiss: () -> Unit,
     onProjectionProfileSelected: (String) -> Unit,
     onWebRtcCodecSelected: (WebRtcCodecPreferenceOption) -> Unit,
@@ -355,6 +402,39 @@ private fun SettingsDialog(
     onRefreshPurchases: () -> Unit,
     onOpenFirstRunOnboarding: () -> Unit,
 ) {
+    val settingsScrollState = rememberScrollState()
+    var closeButtonEmphasized by remember { mutableStateOf(false) }
+    LaunchedEffect(highlightCloseButton) {
+        closeButtonEmphasized = highlightCloseButton
+        while (highlightCloseButton) {
+            delay(SETTINGS_CLOSE_HIGHLIGHT_INTERVAL_MILLIS)
+            closeButtonEmphasized = !closeButtonEmphasized
+        }
+    }
+    LaunchedEffect(highlightCloseButton, settingsScrollState) {
+        if (highlightCloseButton) {
+            snapshotFlow { settingsScrollState.isScrollInProgress }.first { it }
+            onSettingsScrolled()
+        }
+    }
+    val closeButtonContainerColor by animateColorAsState(
+        targetValue = if (closeButtonEmphasized) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 250),
+        label = "settings-close-highlight-background",
+    )
+    val closeButtonContentColor by animateColorAsState(
+        targetValue = if (closeButtonEmphasized) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        animationSpec = tween(durationMillis = 250),
+        label = "settings-close-highlight-content",
+    )
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -373,17 +453,25 @@ private fun SettingsDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "설정",
+                        text = stringResource(R.string.ui_settings_title),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    TextButton(onClick = onDismiss) { Text("닫기") }
+                    TextButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = closeButtonContainerColor,
+                            contentColor = closeButtonContentColor,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.ui_close))
+                    }
                 }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(settingsScrollState)
                         .navigationBarsPadding()
                         .padding(horizontal = 20.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -459,7 +547,10 @@ private fun GettingStartedCard(onOpen: () -> Unit) {
 }
 
 @Composable
-private fun FirstRunOnboardingDialog(onFinished: () -> Unit) {
+private fun FirstRunOnboardingDialog(
+    onOpenAndroidAutoSettings: () -> Unit,
+    onFinished: () -> Unit,
+) {
     val steps = listOf(
         FirstRunOnboardingStep(
             title = stringResource(R.string.first_run_welcome_title),
@@ -566,6 +657,17 @@ private fun FirstRunOnboardingDialog(onFinished: () -> Unit) {
                         color = Color(0xFFD7E1EC),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    if (
+                        firstRunOnboardingAction(safePage) ==
+                        FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
+                    ) {
+                        Button(
+                            onClick = onOpenAndroidAutoSettings,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.first_run_open_android_auto_settings))
+                        }
+                    }
                     step.warning?.let { warning ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF2B1D0B)),
@@ -633,6 +735,20 @@ private data class FirstRunOnboardingStep(
     val body: String,
     val warning: String? = null,
 )
+
+internal enum class FirstRunOnboardingAction {
+    OPEN_ANDROID_AUTO_SETTINGS,
+}
+
+/** Welcome is page 1, so the Android Auto server instructions are page 2 of 5. */
+internal fun firstRunOnboardingAction(pageIndex: Int): FirstRunOnboardingAction? =
+    if (pageIndex == FIRST_RUN_ANDROID_AUTO_PAGE_INDEX) {
+        FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
+    } else {
+        null
+    }
+
+private const val FIRST_RUN_ANDROID_AUTO_PAGE_INDEX = 1
 
 @Composable
 private fun ServiceAutomationCard(
@@ -889,6 +1005,8 @@ private fun DiagnosticLogCard(
     onCancelPendingUploads: () -> Unit,
     onClear: () -> Unit,
 ) {
+    val configuration = LocalConfiguration.current
+    val locale = configuration.locales[0]
     var confirmClear by remember { mutableStateOf(false) }
     var confirmCancelPendingUploads by remember { mutableStateOf(false) }
     var showUploadDialog by remember { mutableStateOf(false) }
@@ -908,29 +1026,39 @@ private fun DiagnosticLogCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("진단 로그", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ui_diagnostic_title), fontWeight = FontWeight.SemiBold)
             Text(
                 text = if (summary.fileCount == 0) {
-                    "아직 저장된 진단 로그가 없습니다."
+                    stringResource(R.string.ui_diagnostic_empty)
                 } else {
-                    "${summary.fileCount}개 파일 · ${formatByteSize(summary.totalBytes)} · " +
-                        formatLastLogTime(summary.lastModifiedEpochMillis)
+                    stringResource(
+                        R.string.ui_diagnostic_summary,
+                        pluralStringResource(
+                            R.plurals.ui_diagnostic_file_count,
+                            summary.fileCount,
+                            summary.fileCount,
+                        ),
+                        formatByteSize(summary.totalBytes, locale),
+                        formatLastLogTime(summary.lastModifiedEpochMillis, locale),
+                    )
                 },
                 color = Color(0xFFB9C8D8),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "앱 전용 공간에 상태 변경과 1분 집계만 보관합니다. " +
-                    "등록 코드, 자격증명, 위치, 네트워크 주소와 원문 미디어는 기록하지 않습니다. " +
-                    "파일당 1 MiB, 최대 4개, 7일 보관입니다.",
+                text = stringResource(R.string.ui_diagnostic_storage_policy),
                 color = Color(0xFF8292A5),
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
                 text = if (uploadStatus.pendingCount == 0) {
-                    "대기 중인 오류 로그 없음"
+                    stringResource(R.string.ui_diagnostic_pending_none)
                 } else {
-                    "오류 로그 ${uploadStatus.pendingCount}건 전송 대기 중"
+                    pluralStringResource(
+                        R.plurals.ui_diagnostic_pending_count,
+                        uploadStatus.pendingCount,
+                        uploadStatus.pendingCount,
+                    )
                 },
                 color = if (uploadStatus.pendingCount == 0) {
                     Color(0xFF8292A5)
@@ -939,7 +1067,7 @@ private fun DiagnosticLogCard(
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
-            formatLastDiagnosticUpload(uploadStatus)?.let { lastResult ->
+            formatLastDiagnosticUpload(uploadStatus, locale)?.let { lastResult ->
                 Text(
                     text = lastResult,
                     color = Color(0xFF8292A5),
@@ -954,18 +1082,18 @@ private fun DiagnosticLogCard(
                     },
                     enabled = summary.fileCount > 0 && uploadAvailable,
                 ) {
-                    Text("오류 로그 전송")
+                    Text(stringResource(R.string.ui_diagnostic_upload))
                 }
                 TextButton(onClick = onExport, enabled = summary.fileCount > 0) {
-                    Text("로그 파일 저장")
+                    Text(stringResource(R.string.ui_diagnostic_save))
                 }
                 TextButton(onClick = { confirmClear = true }, enabled = summary.fileCount > 0) {
-                    Text("로그 삭제")
+                    Text(stringResource(R.string.ui_diagnostic_delete))
                 }
             }
             if (uploadStatus.pendingCount > 0) {
                 TextButton(onClick = { confirmCancelPendingUploads = true }) {
-                    Text("대기 전송 모두 취소·삭제")
+                    Text(stringResource(R.string.ui_diagnostic_cancel_pending))
                 }
             }
             if (message.isNotBlank()) {
@@ -973,7 +1101,7 @@ private fun DiagnosticLogCard(
             }
             if (!uploadAvailable) {
                 Text(
-                    "원격 오류 로그 전송 기능이 아직 구성되지 않았습니다.",
+                    stringResource(R.string.ui_diagnostic_upload_unavailable),
                     color = Color(0xFF8292A5),
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -984,11 +1112,14 @@ private fun DiagnosticLogCard(
     if (confirmCancelPendingUploads) {
         AlertDialog(
             onDismissRequest = { confirmCancelPendingUploads = false },
-            title = { Text("대기 중인 전송을 모두 취소할까요?") },
+            title = { Text(stringResource(R.string.ui_diagnostic_cancel_pending_title)) },
             text = {
                 Text(
-                    "아직 전송되지 않은 오류 로그 ${uploadStatus.pendingCount}건을 취소하고 " +
-                        "앱 내부 대기 파일을 삭제합니다.",
+                    pluralStringResource(
+                        R.plurals.ui_diagnostic_cancel_pending_body,
+                        uploadStatus.pendingCount,
+                        uploadStatus.pendingCount,
+                    ),
                 )
             },
             confirmButton = {
@@ -997,10 +1128,12 @@ private fun DiagnosticLogCard(
                         confirmCancelPendingUploads = false
                         onCancelPendingUploads()
                     },
-                ) { Text("모두 취소·삭제") }
+                ) { Text(stringResource(R.string.ui_diagnostic_cancel_pending_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmCancelPendingUploads = false }) { Text("돌아가기") }
+                TextButton(onClick = { confirmCancelPendingUploads = false }) {
+                    Text(stringResource(R.string.ui_back))
+                }
             },
         )
     }
@@ -1013,27 +1146,32 @@ private fun DiagnosticLogCard(
             byteCount <= MAX_DIAGNOSTIC_DESCRIPTION_BYTES
         AlertDialog(
             onDismissRequest = { showUploadDialog = false },
-            title = { Text("오류 당시 상황 설명") },
+            title = { Text(stringResource(R.string.ui_diagnostic_description_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "문제가 발생하기 직전에 한 동작과 화면 상태를 적어 주세요. " +
-                            "개인정보, 비밀번호, 등록 코드는 입력하지 마세요.",
+                        stringResource(R.string.ui_diagnostic_description_instructions),
                     )
                     OutlinedTextField(
                         value = uploadDescription,
                         onValueChange = { uploadDescription = boundDiagnosticDescription(it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("상황 설명") },
+                        label = { Text(stringResource(R.string.ui_diagnostic_description_label)) },
                         minLines = 3,
                         maxLines = 6,
                         supportingText = {
-                            Text("$codePointCount/500자 · 최신 로그 최대 256 KiB · 서버 보관 30일")
+                            Text(
+                                stringResource(
+                                    R.string.ui_diagnostic_description_counter,
+                                    NumberFormat.getIntegerInstance(locale).format(codePointCount),
+                                    NumberFormat.getIntegerInstance(locale)
+                                        .format(MAX_DIAGNOSTIC_DESCRIPTION_CODE_POINTS),
+                                ),
+                            )
                         },
                     )
                     Text(
-                        "확인을 마치면 첫 전송을 즉시 시작합니다. 새 전송은 사용자 승인 기준 " +
-                            "30분당 1회이며, 승인된 항목의 일시 실패만 최소 30분 뒤 재시도합니다.",
+                        stringResource(R.string.ui_diagnostic_upload_rate_policy),
                         color = Color(0xFF8292A5),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -1047,7 +1185,7 @@ private fun DiagnosticLogCard(
                         showUploadConsentDialog = true
                     },
                     enabled = canSubmit,
-                ) { Text("전송") }
+                ) { Text(stringResource(R.string.ui_send)) }
             },
             dismissButton = {
                 TextButton(
@@ -1055,7 +1193,7 @@ private fun DiagnosticLogCard(
                         uploadConsentGate.cancel()
                         showUploadDialog = false
                     },
-                ) { Text("취소") }
+                ) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1068,8 +1206,8 @@ private fun DiagnosticLogCard(
         }
         AlertDialog(
             onDismissRequest = cancelConsent,
-            title = { Text("진단 데이터 전송 확인") },
-            text = { Text(DIAGNOSTIC_UPLOAD_CONSENT_MESSAGE) },
+            title = { Text(stringResource(R.string.ui_diagnostic_consent_title)) },
+            text = { Text(stringResource(R.string.ui_diagnostic_consent_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1077,10 +1215,10 @@ private fun DiagnosticLogCard(
                         uploadDescription = ""
                         uploadConsentGate.confirm()
                     },
-                ) { Text("확인") }
+                ) { Text(stringResource(R.string.ui_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = cancelConsent) { Text("취소") }
+                TextButton(onClick = cancelConsent) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1088,18 +1226,18 @@ private fun DiagnosticLogCard(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("진단 로그를 삭제할까요?") },
-            text = { Text("앱 내부에 보관된 현재 로그와 이전 회전 파일을 모두 삭제합니다.") },
+            title = { Text(stringResource(R.string.ui_diagnostic_delete_title)) },
+            text = { Text(stringResource(R.string.ui_diagnostic_delete_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         confirmClear = false
                         onClear()
                     },
-                ) { Text("삭제") }
+                ) { Text(stringResource(R.string.ui_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("취소") }
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1131,10 +1269,13 @@ private fun OpenSourceLicensesCard() {
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("오픈소스 라이선스", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ui_open_source_title), fontWeight = FontWeight.SemiBold)
             Text(
-                text = "NavOnWeb ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})는 " +
-                    "GPL-3.0-or-later로 제공되며 OpenAuto와 AASDK 기반 수정물을 포함합니다.",
+                text = stringResource(
+                    R.string.ui_open_source_summary,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.VERSION_CODE,
+                ),
                 color = Color(0xFFB9C8D8),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1142,20 +1283,27 @@ private fun OpenSourceLicensesCard() {
             Text("AASDK · GPL-3.0-or-later · 046b3b381595")
             Text("WebRTC Android SDK 144.7559.09 · BSD-3-Clause")
             TextButton(onClick = { selectedDocument = LegalDocument.THIRD_PARTY_NOTICES }) {
-                Text("제3자 고지 보기")
+                Text(stringResource(R.string.ui_open_source_view_third_party))
             }
             TextButton(onClick = { selectedDocument = LegalDocument.GPL_V3 }) {
-                Text("GNU GPL v3 전문 보기")
+                Text(stringResource(R.string.ui_open_source_view_gpl))
             }
             TextButton(
                 onClick = { if (sourceUrl.isNotBlank()) uriHandler.openUri(sourceUrl) },
                 enabled = sourceUrl.isNotBlank(),
             ) {
-                Text(if (sourceUrl.isBlank()) "대응 소스 주소 · 배포 전 지정 필요" else "대응 소스 코드 열기")
+                Text(
+                    stringResource(
+                        if (sourceUrl.isBlank()) {
+                            R.string.ui_open_source_url_required
+                        } else {
+                            R.string.ui_open_source_open_code
+                        },
+                    ),
+                )
             }
             Text(
-                text = "Android 및 Android Auto는 Google LLC의 상표이며 Tesla는 Tesla, Inc.의 " +
-                    "상표입니다. 이 제품은 해당 회사의 인증·후원·보증을 받지 않았습니다.",
+                text = stringResource(R.string.ui_trademark_disclaimer),
                 color = Color(0xFF8292A5),
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1170,10 +1318,11 @@ private fun OpenSourceLicensesCard() {
 @Composable
 private fun LegalDocumentDialog(document: LegalDocument, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val content = remember(context, document) {
+    val loadFailedMessage = stringResource(R.string.ui_legal_document_load_failed)
+    val content = remember(context, document, loadFailedMessage) {
         runCatching {
             context.assets.open(document.assetName).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        }.getOrElse { "라이선스 문서를 불러오지 못했습니다." }
+        }.getOrElse { loadFailedMessage }
     }
     Dialog(
         onDismissRequest = onDismiss,
@@ -1192,12 +1341,12 @@ private fun LegalDocumentDialog(document: LegalDocument, onDismiss: () -> Unit) 
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = document.title,
+                        text = stringResource(document.titleResource),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    TextButton(onClick = onDismiss) { Text("닫기") }
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_close)) }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 SelectionContainer {
@@ -1216,39 +1365,60 @@ private fun LegalDocumentDialog(document: LegalDocument, onDismiss: () -> Unit) 
     }
 }
 
-private enum class LegalDocument(val title: String, val assetName: String) {
-    THIRD_PARTY_NOTICES("제3자 오픈소스 고지", "THIRD_PARTY_NOTICES.md"),
-    GPL_V3("GNU General Public License v3", "GPL-3.0.txt"),
+private enum class LegalDocument(val titleResource: Int, val assetName: String) {
+    THIRD_PARTY_NOTICES(R.string.ui_legal_third_party_title, "THIRD_PARTY_NOTICES.md"),
+    GPL_V3(R.string.ui_legal_gpl_title, "GPL-3.0.txt"),
 }
 
-private fun formatByteSize(bytes: Long): String = when {
-    bytes < 1_024L -> "$bytes B"
-    bytes < 1_048_576L -> String.format("%.1f KiB", bytes / 1_024.0)
-    else -> String.format("%.1f MiB", bytes / 1_048_576.0)
+private fun formatByteSize(bytes: Long, locale: Locale): String = when {
+    bytes < 1_024L -> "${NumberFormat.getIntegerInstance(locale).format(bytes)} B"
+    bytes < 1_048_576L -> "${formatDecimal(bytes / 1_024.0, locale)} KiB"
+    else -> "${formatDecimal(bytes / 1_048_576.0, locale)} MiB"
 }
 
-private fun formatLastLogTime(epochMillis: Long?): String = epochMillis?.let {
-    "마지막 기록 ${LOG_TIMESTAMP_FORMATTER.format(Instant.ofEpochMilli(it))}"
-} ?: "기록 시각 없음"
+private fun formatDecimal(value: Double, locale: Locale): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits = 1
+        maximumFractionDigits = 1
+    }.format(value)
 
-private fun formatLastDiagnosticUpload(status: DiagnosticUploadStatusSnapshot): String? {
+@Composable
+private fun formatLastLogTime(epochMillis: Long?, locale: Locale): String = epochMillis?.let {
+    stringResource(R.string.ui_diagnostic_last_record, formatDateTime(it, locale))
+} ?: stringResource(R.string.ui_diagnostic_no_record_time)
+
+@Composable
+private fun formatLastDiagnosticUpload(
+    status: DiagnosticUploadStatusSnapshot,
+    locale: Locale,
+): String? {
     val completedAt = status.lastCompletedAtEpochMillis ?: return null
-    val timestamp = LOG_TIMESTAMP_FORMATTER.format(Instant.ofEpochMilli(completedAt))
+    val timestamp = formatDateTime(completedAt, locale)
     return when (status.lastOutcome) {
-        DiagnosticUploadTerminalOutcome.SUCCESS -> "마지막 오류 로그 전송 성공 · $timestamp"
+        DiagnosticUploadTerminalOutcome.SUCCESS ->
+            stringResource(R.string.ui_diagnostic_last_upload_success, timestamp)
         DiagnosticUploadTerminalOutcome.PERMANENT_FAILURE -> {
-            val reason = when (status.lastFailure) {
-                WorkerFailure.INVALID_INPUT -> "잘못된 작업 정보"
-                WorkerFailure.CONFIGURATION -> "서버 설정 오류"
-                WorkerFailure.SERVER_REJECTED -> "서버 거부"
-                WorkerFailure.EXPIRED_OR_ATTEMPTS_EXHAUSTED -> "재시도 기한 또는 횟수 초과"
-                null -> "알 수 없는 오류"
+            val reasonResource = when (status.lastFailure) {
+                WorkerFailure.INVALID_INPUT -> R.string.ui_diagnostic_failure_invalid_input
+                WorkerFailure.CONFIGURATION -> R.string.ui_diagnostic_failure_configuration
+                WorkerFailure.SERVER_REJECTED -> R.string.ui_diagnostic_failure_server_rejected
+                WorkerFailure.EXPIRED_OR_ATTEMPTS_EXHAUSTED ->
+                    R.string.ui_diagnostic_failure_retry_exhausted
+                null -> R.string.ui_diagnostic_failure_unknown
             }
-            "마지막 오류 로그 전송 실패 · $reason · $timestamp"
+            stringResource(
+                R.string.ui_diagnostic_last_upload_failure,
+                stringResource(reasonResource),
+                timestamp,
+            )
         }
         null -> null
     }
 }
+
+private fun formatDateTime(epochMillis: Long, locale: Locale): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+        .format(Date(epochMillis))
 
 @Composable
 private fun ProjectionSettingsCard(
@@ -1270,10 +1440,10 @@ private fun ProjectionSettingsCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("영상 프로필", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ui_projection_profile_title), fontWeight = FontWeight.SemiBold)
             if (state.profileOptions.isEmpty()) {
                 Text(
-                    text = "서비스에서 사용 가능한 프로필을 확인하는 중입니다.",
+                    text = stringResource(R.string.ui_projection_profile_loading),
                     color = Color(0xFFAAB7C7),
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1298,7 +1468,7 @@ private fun ProjectionSettingsCard(
             )
 
             Spacer(Modifier.height(4.dp))
-            Text("WebRTC 코덱", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ui_webrtc_codec_title), fontWeight = FontWeight.SemiBold)
             WebRtcCodecPreferenceOption.selectableOptions.forEach { option ->
                 CodecPreferenceRow(
                     option = option,
@@ -1386,7 +1556,7 @@ private fun ProjectionProfileRow(
                 )
                 if (profile.active) {
                     Text(
-                        text = "활성",
+                        text = stringResource(R.string.ui_active),
                         color = MaterialTheme.colorScheme.secondary,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -1425,9 +1595,9 @@ private fun CodecPreferenceRow(
     ) {
         RadioButton(selected = selected, onClick = onClick)
         Column(modifier = Modifier.weight(1f)) {
-            Text(option.displayName, fontWeight = FontWeight.Medium)
+            Text(stringResource(option.displayNameRes), fontWeight = FontWeight.Medium)
             Text(
-                text = option.description,
+                text = stringResource(option.descriptionRes),
                 color = Color(0xFF8292A5),
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1530,10 +1700,10 @@ private fun StatusCard(phase: SessionPhase, message: String) {
         SessionPhase.ERROR -> MaterialTheme.colorScheme.error
     }
     val phaseLabel = when (phase) {
-        SessionPhase.IDLE -> "중지됨"
-        SessionPhase.STARTING -> "시작 중"
-        SessionPhase.READY -> "사용 가능"
-        SessionPhase.ERROR -> "확인 필요"
+        SessionPhase.IDLE -> stringResource(R.string.ui_session_idle)
+        SessionPhase.STARTING -> stringResource(R.string.ui_session_starting)
+        SessionPhase.READY -> stringResource(R.string.ui_session_ready)
+        SessionPhase.ERROR -> stringResource(R.string.ui_session_attention_required)
     }
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121922)),
@@ -1567,17 +1737,17 @@ private fun AndroidAutoConnectionCard(connection: AndroidAutoConnectionStatus) {
         AndroidAutoConnectionState.CONNECTED -> Triple(
             Color(0xFF86EFAC),
             Color(0xFF0B2419),
-            "Android Auto · 연결됨",
+            stringResource(R.string.ui_android_auto_connected),
         )
         AndroidAutoConnectionState.RECONNECTING -> Triple(
             Color(0xFFFBBF24),
             Color(0xFF251D0B),
-            "Android Auto · 다시 연결 중",
+            stringResource(R.string.ui_android_auto_reconnecting),
         )
         AndroidAutoConnectionState.DISCONNECTED -> Triple(
             Color(0xFFFB7185),
             Color(0xFF281018),
-            "Android Auto · 연결 끊김",
+            stringResource(R.string.ui_android_auto_disconnected),
         )
     }
     Card(
@@ -1596,7 +1766,7 @@ private fun AndroidAutoConnectionCard(connection: AndroidAutoConnectionStatus) {
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
-            Text(connection.reason.userMessage, color = Color(0xFFE7EEF7))
+            Text(stringResource(connection.reason.messageRes), color = Color(0xFFE7EEF7))
         }
     }
 }
@@ -1662,5 +1832,3 @@ private fun ConnectionCard(
 
 private const val PROJECTION_WIDTH = 800
 private const val PROJECTION_HEIGHT = 480
-private val LOG_TIMESTAMP_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())

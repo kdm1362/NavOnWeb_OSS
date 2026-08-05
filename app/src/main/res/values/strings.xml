@@ -93,9 +93,10 @@
     <string name="first_run_android_auto_title">1. Start Android Auto Head Unit Server</string>
     <string name="first_run_android_auto_body">Search for Android Auto in phone settings. Near the bottom, tap Version and then tap Version and permission info 10 times to enable developer mode. Open the top-right overflow menu and tap Start head unit server. If Stop head unit server is shown, it is already running.</string>
     <string name="first_run_android_auto_warning">A phone restart or Android Auto update may stop this developer server. Start it again before using NavOnWeb.</string>
-    <string name="first_run_hotspot_title">2. Connect the car to this phone hotspot</string>
-    <string name="first_run_hotspot_body">Turn on Mobile Hotspot in phone Settings. In the Tesla Wi-Fi menu, select this hotspot and enter its password.</string>
-    <string name="first_run_hotspot_warning">While Tesla uses this hotspot, vehicle diagnostics and service data, map or software updates, and high-quality music or video can also use the phone mobile data. Check the data allowance and vehicle streaming or update settings first.</string>
+    <string name="first_run_open_android_auto_settings">Open Android Auto settings</string>
+    <string name="first_run_hotspot_title">2. Connect the viewing device to this phone hotspot</string>
+    <string name="first_run_hotspot_body">Turn on Mobile Hotspot in phone Settings. In the viewing device’s Wi-Fi menu, select this hotspot and enter its password.</string>
+    <string name="first_run_hotspot_warning">NavOnWeb video travels directly over the local connection between the phone and viewing device, so the video stream itself does not use the phone’s mobile data. Opening navonweb.com and setting up the connection may use a small amount of internet data. Diagnostics or service traffic, map or software updates, and music or video streaming from the viewing device can also use mobile data. Check the data allowance and automatic update or streaming settings first.</string>
     <string name="first_run_service_title">3. Start NavOnWeb</string>
     <string name="first_run_service_body">Return to NavOnWeb and tap Start service. Review any notification or approximate-location permission request. Wait until Android Auto shows Connected and a browser address appears.</string>
     <string name="first_run_browser_title">4. Pair the Tesla browser</string>
