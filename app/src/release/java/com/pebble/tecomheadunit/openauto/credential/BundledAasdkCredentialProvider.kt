@@ -27,12 +27,12 @@ internal class BundledAasdkCredentialProvider(
             validator.validate(
                 certificateChain = listOf(certificate),
                 privateKey = privateKey,
-                source = HeadUnitCredentialSource.DEVELOPMENT_PEM,
+                source = HeadUnitCredentialSource.BUNDLED_RELEASE,
             )
         } catch (_: Exception) {
             unavailable(
                 HeadUnitCredentialCode.INVALID_CERTIFICATE,
-                HeadUnitCredentialSource.DEVELOPMENT_PEM,
+                HeadUnitCredentialSource.BUNDLED_RELEASE,
             )
         } finally {
             certificateBytes?.fill(0)

@@ -128,6 +128,7 @@ class ProjectionService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val projectionReconfigurationMutex = Mutex()
     private var startJob: Job? = null
+    private var stopJob: Job? = null
     private var projectionJob: Job? = null
     private var profileApplyJob: Job? = null
     private var viewportApplyJob: Job? = null
@@ -1168,14 +1169,19 @@ class ProjectionService : Service() {
     }
 
     private fun stopSession(message: String) {
+        if (stopJob?.isActive == true) return
         AppDiagnostics.record(
             DiagnosticEventCode.SESSION_STOPPED,
             fields = mapOf("reason" to "user_or_service_request"),
         )
-        releaseResources()
-        SessionController.idle(message)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopJob = serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                releaseResources()
+            }
+            SessionController.idle(message)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     /** Idempotent fail-closed order: input gate, socket, jobs, then browser. */

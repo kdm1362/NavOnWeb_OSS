@@ -9,6 +9,7 @@ import java.security.cert.X509Certificate
 enum class HeadUnitCredentialSource {
     NONE,
     DEVELOPMENT_PEM,
+    BUNDLED_RELEASE,
     ANDROID_KEYSTORE,
 }
 
@@ -64,6 +65,7 @@ data class HeadUnitCredentialStatus(
         val sourceLabel = when (source) {
             HeadUnitCredentialSource.NONE -> null
             HeadUnitCredentialSource.DEVELOPMENT_PEM -> "개발 PEM"
+            HeadUnitCredentialSource.BUNDLED_RELEASE -> "bundled release"
             HeadUnitCredentialSource.ANDROID_KEYSTORE -> "Android Keystore"
         }
         val fingerprint = leafFingerprintSha256?.take(12)?.let { " · SHA-256 $it…" }.orEmpty()
