@@ -56,6 +56,57 @@ class ProjectionProfilesTest {
     }
 
     @Test
+    fun idleProfileRequestUsesCurrentTrustedPremiumControl() {
+        val store = MemoryStore()
+        val currentControl = ProjectionProfileManager(
+            entitlementProvider = ServerProjectionEntitlementProvider {
+                ServerProjectionEntitlementGrant.serverVerifiedPremium("current-entitlement")
+            },
+            preferenceStore = store,
+        )
+
+        val result = requestProjectionProfileWithCurrentEntitlement(
+            activeControl = null,
+            currentEntitlementControl = currentControl,
+            profileId = ProjectionVideoProfile.PREMIUM_720P.profileId,
+        )
+
+        assertTrue(result is ProjectionProfileRequestResult.Accepted)
+        assertEquals(ProjectionVideoProfile.PREMIUM_720P.profileId, store.profileId)
+    }
+
+    @Test
+    fun staleFreeControlRoutesNewlyAvailablePremiumRequestThroughCurrentControl() {
+        val activeStore = MemoryStore()
+        val activeControl = ProjectionProfileManager(
+            entitlementProvider = FailClosedProjectionEntitlementProvider,
+            preferenceStore = activeStore,
+        )
+        val currentStore = MemoryStore()
+        val currentControl = ProjectionProfileManager(
+            entitlementProvider = ServerProjectionEntitlementProvider {
+                ServerProjectionEntitlementGrant.serverVerifiedPremium("current-entitlement")
+            },
+            preferenceStore = currentStore,
+        )
+
+        val result = requestProjectionProfileWithCurrentEntitlement(
+            activeControl = activeControl,
+            currentEntitlementControl = currentControl,
+            profileId = ProjectionVideoProfile.PREMIUM_1080P.profileId,
+        )
+
+        assertTrue(result is ProjectionProfileRequestResult.Accepted)
+        assertEquals(null, activeStore.profileId)
+        assertEquals(ProjectionVideoProfile.PREMIUM_1080P.profileId, currentStore.profileId)
+        assertEquals(ProjectionVideoProfile.FREE_800X480, activeControl.snapshot().activeProfile)
+        assertEquals(
+            ProjectionVideoProfile.FREE_800X480,
+            (result as ProjectionProfileRequestResult.Accepted).snapshot.activeProfile,
+        )
+    }
+
+    @Test
     fun serverPremiumGrantSchedulesAuditedProfileForAutomaticReconnect() {
         val store = MemoryStore()
         val scheduled = mutableListOf<ProjectionVideoProfile>()

@@ -69,6 +69,7 @@ import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 import com.pebble.tecomheadunit.openauto.ProjectionViewportApplyScheduler
 import com.pebble.tecomheadunit.openauto.ProjectionViewportLayout
 import com.pebble.tecomheadunit.openauto.ProjectionViewportManager
+import com.pebble.tecomheadunit.openauto.requestProjectionProfileWithCurrentEntitlement
 import com.pebble.tecomheadunit.openauto.protocol.AasdkProtocolException
 import com.pebble.tecomheadunit.openauto.protocol.AasdkTlsEngineException
 import com.pebble.tecomheadunit.openauto.protocol.AasdkTlsPolicyException
@@ -152,6 +153,12 @@ class ProjectionService : Service() {
         ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig()
     private var viewportControl: ProjectionViewportManager? = null
 
+    private fun freshStandbyProfileControl(): ProjectionProfileManager =
+        ProjectionProfileManager(
+            entitlementProvider = ProjectionEntitlementProviderFactory.create(applicationContext),
+            preferenceStore = AndroidProjectionProfilePreferenceStore(applicationContext),
+        )
+
     inner class LocalBinder : Binder() {
         fun attachProjectionSurface(surface: Surface, generation: Long): Boolean =
             this@ProjectionService.attachProjectionSurface(surface, generation)
@@ -162,11 +169,14 @@ class ProjectionService : Service() {
 
         fun projectionProfileSnapshot(): ProjectionProfileSnapshot =
             profileControl?.snapshot()
-                ?: com.pebble.tecomheadunit.openauto.FreeProjectionProfileControl.snapshot()
+                ?: freshStandbyProfileControl().snapshot()
 
         fun requestProjectionProfile(profileId: String?): ProjectionProfileRequestResult =
-            profileControl?.requestProfile(profileId)
-                ?: com.pebble.tecomheadunit.openauto.FreeProjectionProfileControl.requestProfile(profileId)
+            requestProjectionProfileWithCurrentEntitlement(
+                activeControl = profileControl,
+                currentEntitlementControl = freshStandbyProfileControl(),
+                profileId = profileId,
+            )
 
         /** Read-only, caller must discard ICE server fields before placing this in UI state. */
         fun webRtcCapabilities() =

@@ -145,6 +145,27 @@ interface ProjectionProfileControl {
 }
 
 /**
+ * Routes a profile request through the control whose trusted snapshot currently grants it while
+ * keeping an active session's fixed entitlement unchanged.
+ */
+internal fun requestProjectionProfileWithCurrentEntitlement(
+    activeControl: ProjectionProfileControl?,
+    currentEntitlementControl: ProjectionProfileControl,
+    profileId: String?,
+): ProjectionProfileRequestResult {
+    val active = activeControl ?: return currentEntitlementControl.requestProfile(profileId)
+    val profile = ProjectionVideoProfile.fromProfileId(profileId)
+        ?: return active.requestProfile(profileId)
+    val activeEntitled = active.snapshot().isEntitledTo(profile)
+    val currentEntitled = currentEntitlementControl.snapshot().isEntitledTo(profile)
+    return if (!activeEntitled && currentEntitled) {
+        currentEntitlementControl.requestProfile(profileId)
+    } else {
+        active.requestProfile(profileId)
+    }
+}
+
+/**
  * Trusted native entitlement boundary. A browser request is never passed into this provider and
  * therefore cannot supply a tier, receipt, token or grant ID. Concrete grants retain provenance:
  * server verification and the weaker cached local Play ownership query are distinct types.
