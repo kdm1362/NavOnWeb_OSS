@@ -7,11 +7,5 @@ import android.content.Context
 
 object HeadUnitCredentialProviderFactory {
     fun create(@Suppress("UNUSED_PARAMETER") context: Context): HeadUnitCredentialProvider =
-        AndroidKeyStoreCredentialProvider(
-            requireHardwareBacked = false,
-            provisionIfMissing = true,
-            trustPolicy = HeadUnitCredentialTrustPolicy {
-                HeadUnitCredentialTrustDecision.TRUSTED
-            },
-        )
+        BundledAasdkCredentialProvider()
 }

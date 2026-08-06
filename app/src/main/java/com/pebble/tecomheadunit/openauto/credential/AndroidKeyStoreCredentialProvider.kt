@@ -4,17 +4,11 @@
 package com.pebble.tecomheadunit.openauto.credential
 
 import android.os.Build
-import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
-import java.math.BigInteger
 import java.security.KeyFactory
-import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.cert.X509Certificate
-import java.security.spec.RSAKeyGenParameterSpec
-import java.util.Date
-import javax.security.auth.x500.X500Principal
 
 internal enum class HeadUnitCredentialTrustDecision {
     TRUSTED,
@@ -45,7 +39,6 @@ internal fun acceptsHardwareSecurity(
 internal class AndroidKeyStoreCredentialProvider(
     private val validator: HeadUnitCredentialValidator = HeadUnitCredentialValidator(),
     private val requireHardwareBacked: Boolean = true,
-    private val provisionIfMissing: Boolean = false,
     private val trustPolicy: HeadUnitCredentialTrustPolicy =
         UnconfiguredHeadUnitCredentialTrustPolicy,
     private val keyAlias: String = KEY_ALIAS,
@@ -53,14 +46,10 @@ internal class AndroidKeyStoreCredentialProvider(
     override fun load(): HeadUnitCredentialResult = try {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         if (!keyStore.containsAlias(keyAlias)) {
-            if (!provisionIfMissing) {
-                return unavailable(
-                    HeadUnitCredentialCode.CERT_NOT_PROVISIONED,
-                    HeadUnitCredentialSource.ANDROID_KEYSTORE,
-                )
-            }
-            provisionCredential()
-            keyStore.load(null)
+            return unavailable(
+                HeadUnitCredentialCode.CERT_NOT_PROVISIONED,
+                HeadUnitCredentialSource.ANDROID_KEYSTORE,
+            )
         }
 
         val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.PrivateKeyEntry
@@ -115,33 +104,6 @@ internal class AndroidKeyStoreCredentialProvider(
         )
     }
 
-    private fun provisionCredential() = synchronized(PROVISION_LOCK) {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        if (keyStore.containsAlias(keyAlias)) return@synchronized
-
-        val now = System.currentTimeMillis()
-        val specification = KeyGenParameterSpec.Builder(
-            keyAlias,
-            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-        )
-            .setAlgorithmParameterSpec(
-                RSAKeyGenParameterSpec(RSA_KEY_SIZE_BITS, RSAKeyGenParameterSpec.F4),
-            )
-            .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
-            .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-            .setCertificateSubject(CERTIFICATE_SUBJECT)
-            .setCertificateSerialNumber(BigInteger.valueOf(now.coerceAtLeast(1L)))
-            .setCertificateNotBefore(Date(now - CERTIFICATE_CLOCK_SKEW_MILLIS))
-            .setCertificateNotAfter(Date(now + CERTIFICATE_VALIDITY_MILLIS))
-            .setUserAuthenticationRequired(false)
-            .build()
-
-        KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, ANDROID_KEYSTORE).run {
-            initialize(specification)
-            generateKeyPair()
-        }
-    }
-
     private fun isHardwareBacked(privateKey: java.security.PrivateKey): Boolean = try {
         val keyInfo = KeyFactory.getInstance(privateKey.algorithm, ANDROID_KEYSTORE)
             .getKeySpec(privateKey, KeyInfo::class.java)
@@ -167,10 +129,5 @@ internal class AndroidKeyStoreCredentialProvider(
     companion object {
         const val KEY_ALIAS = "aa_head_unit_identity_v1"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        private const val RSA_KEY_SIZE_BITS = 2048
-        private const val CERTIFICATE_CLOCK_SKEW_MILLIS = 24L * 60L * 60L * 1_000L
-        private const val CERTIFICATE_VALIDITY_MILLIS = 10L * 365L * 24L * 60L * 60L * 1_000L
-        private val CERTIFICATE_SUBJECT = X500Principal("CN=NavOnWeb Android Auto Head Unit")
-        private val PROVISION_LOCK = Any()
     }
 }

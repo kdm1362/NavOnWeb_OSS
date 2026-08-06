@@ -19,7 +19,7 @@ The selected upstream files retain their original notices. NavOnWeb as a combine
 - Use in this repository: protocol behavior and service/channel handling informed the Kotlin implementation under `app/src/main/java/com/pebble/tecomheadunit/openauto/`.
 - Bundled upstream source: no
 
-No AASDK certificate, private key, or other identity credential is included in this repository.
+Android Auto identity material is supplied per build. Public development material is not a production secret.
 
 ## open-headunit
 
