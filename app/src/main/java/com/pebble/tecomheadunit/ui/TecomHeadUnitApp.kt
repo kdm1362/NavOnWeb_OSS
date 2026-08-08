@@ -9,7 +9,10 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +31,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -35,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -61,9 +67,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -72,6 +82,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -80,6 +92,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pebble.tecomheadunit.BuildConfig
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.automation.AutomationTriggerMode
+import com.pebble.tecomheadunit.browser.cloud.CloudPairingRegistrationStatus
 import com.pebble.tecomheadunit.diagnostics.DiagnosticLogSummary
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadConsentGate
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadStatusSnapshot
@@ -89,11 +102,14 @@ import com.pebble.tecomheadunit.session.SessionController
 import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
+import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 import java.nio.charset.StandardCharsets
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -108,9 +124,13 @@ private val AppColors = darkColorScheme(
     error = Color(0xFFFF8A8A),
 )
 
+private val PremiumGold = Color(0xFFFFC83D)
+private val PremiumGoldContent = Color(0xFF2A1B00)
+
 private const val MAX_DIAGNOSTIC_DESCRIPTION_CODE_POINTS = 500
 private const val MAX_DIAGNOSTIC_DESCRIPTION_BYTES = 2 * 1_024
 internal const val SETTINGS_CLOSE_HIGHLIGHT_INTERVAL_MILLIS = 1_000L
+internal const val PREMIUM_UNLOCK_CELEBRATION_MILLIS = 1_800L
 
 internal fun shouldHighlightSettingsCloseAfterOnboarding(settingsVisible: Boolean): Boolean =
     settingsVisible
@@ -135,6 +155,7 @@ fun TecomHeadUnitApp(
     onAutomationModeSelected: (AutomationTriggerMode) -> Unit,
     onSelectBluetoothDevice: () -> Unit,
     onBluetoothDeviceSelected: (String) -> Unit,
+    onClearBluetoothDeviceSelection: () -> Unit,
     onDismissBluetoothPicker: () -> Unit,
     onProjectionSurfaceAvailable: (AndroidSurface) -> Unit,
     onProjectionSurfaceDestroyed: (AndroidSurface) -> Unit,
@@ -144,6 +165,10 @@ fun TecomHeadUnitApp(
     premiumPurchase: PremiumPurchaseUiState = PremiumPurchaseUiState(),
     onUnlockPremium: () -> Unit = {},
     onRefreshPurchases: () -> Unit = {},
+    onDismissPremiumPurchaseConfirmation: () -> Unit = {},
+    onPremiumLicenseConfirmationPresented: () -> Unit = {},
+    onProjectionDpiChanged: (String, Int) -> Unit = { _, _ -> },
+    onProjectionDpiReset: (String) -> Unit = {},
 ) {
     val session by SessionController.state.collectAsStateWithLifecycle()
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -151,11 +176,22 @@ fun TecomHeadUnitApp(
         mutableStateOf(firstRunOnboardingRequired)
     }
     var highlightSettingsClose by rememberSaveable { mutableStateOf(false) }
+    var showPremiumLicenseConfirmedDialog by rememberSaveable { mutableStateOf(false) }
+    var celebratePremiumUnlock by rememberSaveable { mutableStateOf(false) }
     val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val running = session.phase == SessionPhase.STARTING || session.phase == SessionPhase.READY
     LaunchedEffect(firstRunOnboardingRequired) {
         if (firstRunOnboardingRequired) showFirstRunOnboarding = true
+    }
+    LaunchedEffect(premiumPurchase.licenseConfirmationPending) {
+        if (premiumPurchase.licenseConfirmationPending) {
+            showPremiumLicenseConfirmedDialog = true
+            celebratePremiumUnlock = true
+            delay(PREMIUM_UNLOCK_CELEBRATION_MILLIS)
+            celebratePremiumUnlock = false
+            onPremiumLicenseConfirmationPresented()
+        }
     }
     MaterialTheme(colorScheme = AppColors) {
         ModalNavigationDrawer(
@@ -199,7 +235,9 @@ fun TecomHeadUnitApp(
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        AppHeader(onOpenDrawer = { coroutineScope.launch { drawerState.open() } })
+                        AppHeader(
+                            onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                        )
                         HomeScreen(
                             running = running,
                             projectionControl = projectionControl,
@@ -209,6 +247,7 @@ fun TecomHeadUnitApp(
                             onRequestNewBrowserPairing = onRequestNewBrowserPairing,
                             premiumPurchase = premiumPurchase,
                             onUnlockPremium = onUnlockPremium,
+                            celebratePremiumUnlock = celebratePremiumUnlock,
                         )
                     }
                     HiddenProjectionSurfaceHost(
@@ -238,6 +277,8 @@ fun TecomHeadUnitApp(
                     showSettings = false
                 },
                 onProjectionProfileSelected = onProjectionProfileSelected,
+                onProjectionDpiChanged = onProjectionDpiChanged,
+                onProjectionDpiReset = onProjectionDpiReset,
                 onWebRtcCodecSelected = onWebRtcCodecSelected,
                 onExportDiagnosticLogs = onExportDiagnosticLogs,
                 onUploadDiagnosticLogs = onUploadDiagnosticLogs,
@@ -246,6 +287,7 @@ fun TecomHeadUnitApp(
                 onAutomationModeSelected = onAutomationModeSelected,
                 onSelectBluetoothDevice = onSelectBluetoothDevice,
                 onBluetoothDeviceSelected = onBluetoothDeviceSelected,
+                onClearBluetoothDeviceSelection = onClearBluetoothDeviceSelection,
                 onDismissBluetoothPicker = onDismissBluetoothPicker,
                 onUnlockPremium = onUnlockPremium,
                 onRefreshPurchases = onRefreshPurchases,
@@ -268,11 +310,33 @@ fun TecomHeadUnitApp(
                 },
             )
         }
+
+        if (premiumPurchase.confirmationDialog != PremiumPurchaseConfirmationDialog.HIDDEN) {
+            PremiumPurchaseConfirmationAlert(
+                state = premiumPurchase,
+                onDismiss = onDismissPremiumPurchaseConfirmation,
+            )
+        }
+
+        if (showPremiumLicenseConfirmedDialog) {
+            AlertDialog(
+                onDismissRequest = { showPremiumLicenseConfirmedDialog = false },
+                title = { Text(stringResource(R.string.billing_license_confirmed_title)) },
+                text = { Text(stringResource(R.string.billing_license_confirmed_message)) },
+                confirmButton = {
+                    TextButton(onClick = { showPremiumLicenseConfirmedDialog = false }) {
+                        Text(stringResource(R.string.ui_confirm))
+                    }
+                },
+            )
+        }
     }
 }
 
 @Composable
-private fun AppHeader(onOpenDrawer: () -> Unit) {
+private fun AppHeader(
+    onOpenDrawer: () -> Unit,
+) {
     val openDrawerDescription = stringResource(R.string.ui_nav_open_drawer)
     Row(
         modifier = Modifier
@@ -295,7 +359,10 @@ private fun AppHeader(onOpenDrawer: () -> Unit) {
             )
         }
         Column(modifier = Modifier.padding(horizontal = 6.dp)) {
-            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
+            Text(
+                text = stringResource(R.string.app_name),
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 stringResource(R.string.app_subtitle),
                 color = Color(0xFFAAB7C7),
@@ -315,6 +382,7 @@ private fun HomeScreen(
     onRequestNewBrowserPairing: () -> Unit,
     premiumPurchase: PremiumPurchaseUiState,
     onUnlockPremium: () -> Unit,
+    celebratePremiumUnlock: Boolean,
 ) {
     val sessionMessage = session.messageRes?.let { stringResource(it) } ?: session.message
     Column(
@@ -354,14 +422,12 @@ private fun HomeScreen(
                         ),
                     )
                 }
-                if (!premiumPurchase.entitled) {
-                    OutlinedButton(
+                if (!premiumPurchase.entitled || celebratePremiumUnlock) {
+                    PremiumHomePurchaseButton(
+                        state = premiumPurchase,
+                        celebrate = celebratePremiumUnlock,
                         onClick = onUnlockPremium,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = premiumPurchase.canLaunchPurchase,
-                    ) {
-                        Text(stringResource(R.string.premium_unlock_features))
-                    }
+                    )
                 }
             }
         }
@@ -370,10 +436,129 @@ private fun HomeScreen(
             ConnectionCard(
                 browserUrl = session.browserUrl.orEmpty(),
                 pairingCode = session.pairingCode,
+                cloudPairingRegistrationStatus = session.cloudPairingRegistrationStatus,
                 onRequestNewBrowserPairing = onRequestNewBrowserPairing,
             )
         }
     }
+}
+
+@Composable
+private fun PremiumHomePurchaseButton(
+    state: PremiumPurchaseUiState,
+    celebrate: Boolean,
+    onClick: () -> Unit,
+) {
+    val burstProgress = remember { Animatable(1f) }
+    LaunchedEffect(celebrate) {
+        if (celebrate) {
+            burstProgress.snapTo(0f)
+            burstProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = 1_500,
+                    easing = FastOutSlowInEasing,
+                ),
+            )
+        } else {
+            burstProgress.snapTo(1f)
+        }
+    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (state.entitled) {
+            Button(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = false,
+                colors = ButtonDefaults.buttonColors(
+                    disabledContainerColor = PremiumGold,
+                    disabledContentColor = PremiumGoldContent,
+                ),
+            ) {
+                Text(stringResource(R.string.premium_already_unlocked))
+            }
+        } else {
+            OutlinedButton(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = state.canLaunchPurchase,
+            ) {
+                Text(stringResource(R.string.premium_unlock_features))
+            }
+        }
+        if (celebrate) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val progress = burstProgress.value
+                val fade = (1f - progress).coerceIn(0f, 1f)
+                val origin = Offset(size.width / 2f, size.height / 2f)
+                repeat(28) { index ->
+                    val angle = Math.toRadians(index * 137.5)
+                    val distance = size.width * (0.08f + (index % 7) * 0.055f) * progress
+                    val gravity = size.height * 0.34f * progress * progress
+                    val center = Offset(
+                        x = origin.x + cos(angle).toFloat() * distance,
+                        y = origin.y + sin(angle).toFloat() * distance * 0.38f + gravity,
+                    )
+                    val color = when (index % 4) {
+                        0 -> PremiumGold
+                        1 -> Color(0xFFFF7A59)
+                        2 -> Color(0xFF67E8F9)
+                        else -> Color(0xFFA7F3D0)
+                    }
+                    drawCircle(
+                        color = color,
+                        radius = (2.5f + (index % 3) * 1.5f).dp.toPx(),
+                        center = center,
+                        alpha = fade,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PremiumPurchaseConfirmationAlert(
+    state: PremiumPurchaseUiState,
+    onDismiss: () -> Unit,
+) {
+    val message = stringResource(
+        when (state.confirmationDialog) {
+            PremiumPurchaseConfirmationDialog.VERIFYING ->
+                R.string.billing_confirmation_verifying
+            PremiumPurchaseConfirmationDialog.DELAYED ->
+                R.string.billing_confirmation_delayed
+            PremiumPurchaseConfirmationDialog.FAILED ->
+                R.string.billing_confirmation_failed
+            PremiumPurchaseConfirmationDialog.HIDDEN ->
+                R.string.billing_confirmation_verifying
+        },
+    )
+    AlertDialog(
+        onDismissRequest = { if (state.confirmationCanBeDismissed) onDismiss() },
+        title = { Text(stringResource(R.string.billing_confirmation_title)) },
+        text = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                if (state.confirmationDialog != PremiumPurchaseConfirmationDialog.FAILED) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                Text(message)
+            }
+        },
+        confirmButton = {
+            if (state.confirmationCanBeDismissed) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.ui_close))
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -389,6 +574,8 @@ private fun SettingsDialog(
     onSettingsScrolled: () -> Unit,
     onDismiss: () -> Unit,
     onProjectionProfileSelected: (String) -> Unit,
+    onProjectionDpiChanged: (String, Int) -> Unit,
+    onProjectionDpiReset: (String) -> Unit,
     onWebRtcCodecSelected: (WebRtcCodecPreferenceOption) -> Unit,
     onExportDiagnosticLogs: () -> Unit,
     onUploadDiagnosticLogs: (String) -> Unit,
@@ -397,12 +584,15 @@ private fun SettingsDialog(
     onAutomationModeSelected: (AutomationTriggerMode) -> Unit,
     onSelectBluetoothDevice: () -> Unit,
     onBluetoothDeviceSelected: (String) -> Unit,
+    onClearBluetoothDeviceSelection: () -> Unit,
     onDismissBluetoothPicker: () -> Unit,
     onUnlockPremium: () -> Unit,
     onRefreshPurchases: () -> Unit,
     onOpenFirstRunOnboarding: () -> Unit,
 ) {
     val settingsScrollState = rememberScrollState()
+    val openSourceScrollState = rememberScrollState()
+    var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     var closeButtonEmphasized by remember { mutableStateOf(false) }
     LaunchedEffect(highlightCloseButton) {
         closeButtonEmphasized = highlightCloseButton
@@ -436,7 +626,13 @@ private fun SettingsDialog(
         label = "settings-close-highlight-content",
     )
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (showOpenSourceLicenses) {
+                showOpenSourceLicenses = false
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
@@ -452,8 +648,19 @@ private fun SettingsDialog(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (showOpenSourceLicenses) {
+                        TextButton(onClick = { showOpenSourceLicenses = false }) {
+                            Text(stringResource(R.string.ui_back))
+                        }
+                    }
                     Text(
-                        text = stringResource(R.string.ui_settings_title),
+                        text = stringResource(
+                            if (showOpenSourceLicenses) {
+                                R.string.ui_open_source_title
+                            } else {
+                                R.string.ui_settings_title
+                            },
+                        ),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -468,44 +675,63 @@ private fun SettingsDialog(
                         Text(stringResource(R.string.ui_close))
                     }
                 }
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(settingsScrollState)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    GettingStartedCard(onOpen = onOpenFirstRunOnboarding)
-                    PremiumPurchaseCard(
-                        state = premiumPurchase,
-                        onUnlockPremium = onUnlockPremium,
-                        onRefreshPurchases = onRefreshPurchases,
-                    )
-                    ServiceAutomationCard(
-                        state = serviceAutomation,
-                        premiumEntitled = premiumPurchase.entitled,
-                        onModeSelected = onAutomationModeSelected,
-                        onSelectBluetoothDevice = onSelectBluetoothDevice,
-                    )
-                    ProjectionSettingsCard(
-                        state = projectionControl,
-                        premiumPurchase = premiumPurchase,
-                        onProjectionProfileSelected = onProjectionProfileSelected,
-                        onUnlockPremium = onUnlockPremium,
-                        onWebRtcCodecSelected = onWebRtcCodecSelected,
-                    )
-                    DiagnosticLogCard(
-                        summary = diagnosticLogs,
-                        message = diagnosticLogMessage,
-                        uploadAvailable = diagnosticUploadAvailable,
-                        uploadStatus = diagnosticUploadStatus,
-                        onExport = onExportDiagnosticLogs,
-                        onUpload = onUploadDiagnosticLogs,
-                        onCancelPendingUploads = onCancelPendingDiagnosticUploads,
-                        onClear = onClearDiagnosticLogs,
-                    )
-                    OpenSourceLicensesCard()
+                if (showOpenSourceLicenses) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(openSourceScrollState)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                    ) {
+                        OpenSourceLicensesCard()
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(settingsScrollState)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        GettingStartedCard(onOpen = onOpenFirstRunOnboarding)
+                        PremiumPurchaseCard(
+                            state = premiumPurchase,
+                            onUnlockPremium = onUnlockPremium,
+                            onRefreshPurchases = onRefreshPurchases,
+                        )
+                        ServiceAutomationCard(
+                            state = serviceAutomation,
+                            premiumEntitled = premiumPurchase.entitled,
+                            onModeSelected = onAutomationModeSelected,
+                            onSelectBluetoothDevice = onSelectBluetoothDevice,
+                        )
+                        ProjectionSettingsCard(
+                            state = projectionControl,
+                            premiumPurchase = premiumPurchase,
+                            onProjectionProfileSelected = onProjectionProfileSelected,
+                            onProjectionDpiChanged = onProjectionDpiChanged,
+                            onProjectionDpiReset = onProjectionDpiReset,
+                            onUnlockPremium = onUnlockPremium,
+                            onWebRtcCodecSelected = onWebRtcCodecSelected,
+                        )
+                        DiagnosticLogCard(
+                            summary = diagnosticLogs,
+                            message = diagnosticLogMessage,
+                            uploadAvailable = diagnosticUploadAvailable,
+                            uploadStatus = diagnosticUploadStatus,
+                            onExport = onExportDiagnosticLogs,
+                            onUpload = onUploadDiagnosticLogs,
+                            onCancelPendingUploads = onCancelPendingDiagnosticUploads,
+                            onClear = onClearDiagnosticLogs,
+                        )
+                        OpenSourceLicensesEntryCard(
+                            onOpen = {
+                                onSettingsScrolled()
+                                showOpenSourceLicenses = true
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -514,9 +740,47 @@ private fun SettingsDialog(
     if (serviceAutomation.bluetoothPickerVisible) {
         BluetoothDevicePickerDialog(
             devices = serviceAutomation.bluetoothDevices,
+            selectedDeviceId = serviceAutomation.selectedBluetoothDeviceId,
             onSelected = onBluetoothDeviceSelected,
+            onClearSelection = onClearBluetoothDeviceSelection,
             onDismiss = onDismissBluetoothPicker,
         )
+    }
+}
+
+@Composable
+private fun OpenSourceLicensesEntryCard(onOpen: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF10161E)),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.ui_open_source_title),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.ui_open_source_settings_summary),
+                    color = Color(0xFFA0B6BA),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(
+                text = stringResource(R.string.ui_open_source_open_details),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
     }
 }
 
@@ -787,23 +1051,14 @@ private fun ServiceAutomationCard(
             )
             AutomationModeRow(
                 selected = state.mode == AutomationTriggerMode.BLUETOOTH,
-                enabled = premiumEntitled && state.selectedBluetoothDeviceName != null,
+                enabled = premiumEntitled,
                 title = stringResource(R.string.service_automation_bluetooth),
                 description = state.selectedBluetoothDeviceName?.let { name ->
                     val hint = state.selectedBluetoothAddressHint.orEmpty()
                     stringResource(R.string.service_automation_selected_device, name, hint)
                 } ?: stringResource(R.string.service_automation_select_device_first),
-                onClick = { onModeSelected(AutomationTriggerMode.BLUETOOTH) },
+                onClick = onSelectBluetoothDevice,
             )
-            TextButton(onClick = onSelectBluetoothDevice, enabled = premiumEntitled) {
-                Text(
-                    if (state.selectedBluetoothDeviceName == null) {
-                        stringResource(R.string.service_automation_choose_device)
-                    } else {
-                        stringResource(R.string.service_automation_change_device)
-                    },
-                )
-            }
             AutomationModeRow(
                 selected = state.mode == AutomationTriggerMode.HOTSPOT,
                 enabled = premiumEntitled && state.hotspotSupported,
@@ -832,6 +1087,20 @@ private fun PremiumPurchaseCard(
     onUnlockPremium: () -> Unit,
     onRefreshPurchases: () -> Unit,
 ) {
+    val purchaseButtonContainerColor by animateColorAsState(
+        targetValue = if (state.entitled) PremiumGold else MaterialTheme.colorScheme.primary,
+        animationSpec = tween(durationMillis = 900),
+        label = "premium-purchase-button-background",
+    )
+    val purchaseButtonContentColor by animateColorAsState(
+        targetValue = if (state.entitled) {
+            PremiumGoldContent
+        } else {
+            MaterialTheme.colorScheme.onPrimary
+        },
+        animationSpec = tween(durationMillis = 900),
+        label = "premium-purchase-button-content",
+    )
     val priceText = state.formattedPrice?.takeIf(String::isNotBlank)
         ?: stringResource(R.string.premium_price_google_play)
     val statusText = if (state.statusMessage.isBlank()) {
@@ -872,6 +1141,20 @@ private fun PremiumPurchaseCard(
                 onClick = onUnlockPremium,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = state.canLaunchPurchase,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = purchaseButtonContainerColor,
+                    contentColor = purchaseButtonContentColor,
+                    disabledContainerColor = if (state.entitled) {
+                        purchaseButtonContainerColor
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                    },
+                    disabledContentColor = if (state.entitled) {
+                        purchaseButtonContentColor
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
+                ),
             ) {
                 Text(
                     stringResource(
@@ -954,7 +1237,9 @@ private fun AutomationModeRow(
 @Composable
 private fun BluetoothDevicePickerDialog(
     devices: List<BluetoothDeviceOptionUi>,
+    selectedDeviceId: String?,
     onSelected: (String) -> Unit,
+    onClearSelection: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -976,6 +1261,10 @@ private fun BluetoothDevicePickerDialog(
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            RadioButton(
+                                selected = device.id == selectedDeviceId,
+                                onClick = { onSelected(device.id) },
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(device.name, fontWeight = FontWeight.Medium)
                                 Text(
@@ -989,7 +1278,13 @@ private fun BluetoothDevicePickerDialog(
                 }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            if (selectedDeviceId != null) {
+                TextButton(onClick = onClearSelection) {
+                    Text(stringResource(R.string.service_automation_clear_device))
+                }
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
@@ -1425,6 +1720,8 @@ private fun ProjectionSettingsCard(
     state: ProjectionControlUiState,
     premiumPurchase: PremiumPurchaseUiState,
     onProjectionProfileSelected: (String) -> Unit,
+    onProjectionDpiChanged: (String, Int) -> Unit,
+    onProjectionDpiReset: (String) -> Unit,
     onUnlockPremium: () -> Unit,
     onWebRtcCodecSelected: (WebRtcCodecPreferenceOption) -> Unit,
 ) {
@@ -1458,12 +1755,23 @@ private fun ProjectionSettingsCard(
                                 onProjectionProfileSelected(profile.profileId)
                             }
                         },
+                        onDensityDpiChanged = { densityDpi ->
+                            onProjectionDpiChanged(profile.profileId, densityDpi)
+                        },
+                        onDensityDpiReset = { onProjectionDpiReset(profile.profileId) },
                     )
                 }
             }
             Text(
                 text = state.profileStatus,
                 color = if (state.profileChangeInProgress) Color(0xFFFFC98B) else Color(0xFFAAB7C7),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = state.dpiStatus.ifBlank {
+                    stringResource(R.string.ui_projection_dpi_help)
+                },
+                color = Color(0xFFAAB7C7),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -1530,52 +1838,201 @@ private fun ProjectionSettingsCard(
 private fun ProjectionProfileRow(
     profile: ProjectionProfileOptionUi,
     onClick: () -> Unit,
+    onDensityDpiChanged: (Int) -> Unit,
+    onDensityDpiReset: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = profile.enabled, onClick = onClick)
-            .padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(
-            selected = profile.selected,
-            onClick = onClick,
-            enabled = profile.enabled,
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = profile.title,
-                    color = if (profile.enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        Color(0xFF8995A3)
-                    },
-                    fontWeight = FontWeight.Medium,
-                )
-                if (profile.active) {
-                    Text(
-                        text = stringResource(R.string.ui_active),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                if (profile.premiumLocked) {
-                    Text(
-                        text = stringResource(R.string.premium_badge),
-                        color = Color(0xFFFFC98B),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
+    var draftDensityDpi by rememberSaveable(profile.profileId) {
+        mutableStateOf(profile.densityDpi.toString())
+    }
+    var validationError by rememberSaveable(profile.profileId) {
+        mutableStateOf<ProjectionDpiInputError?>(null)
+    }
+    var inputWasFocused by remember(profile.profileId) { mutableStateOf(false) }
+    var suppressNextBlurCommit by remember(profile.profileId) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun applyDensityDpiDraft() {
+        when (val validation = validateProjectionDpiDraft(draftDensityDpi)) {
+            is ProjectionDpiInputValidation.Valid -> {
+                validationError = null
+                draftDensityDpi = validation.densityDpi.toString()
+                if (validation.densityDpi != profile.densityDpi) {
+                    onDensityDpiChanged(validation.densityDpi)
                 }
             }
-            Text(
-                text = profile.detail,
-                color = Color(0xFF8292A5),
-                style = MaterialTheme.typography.bodySmall,
+
+            is ProjectionDpiInputValidation.Invalid -> validationError = validation.error
+        }
+    }
+
+    LaunchedEffect(profile.densityDpi) {
+        draftDensityDpi = profile.densityDpi.toString()
+        validationError = null
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = profile.enabled, onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(
+                selected = profile.selected,
+                onClick = onClick,
+                enabled = profile.enabled,
             )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = profile.title,
+                        color = if (profile.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            Color(0xFF8995A3)
+                        },
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (profile.active) {
+                        Text(
+                            text = stringResource(R.string.ui_active),
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    if (profile.premiumLocked) {
+                        Text(
+                            text = stringResource(R.string.premium_badge),
+                            color = Color(0xFFFFC98B),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Text(
+                    text = profile.detail,
+                    color = Color(0xFF8292A5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = draftDensityDpi,
+                onValueChange = {
+                    draftDensityDpi = it
+                    validationError = null
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focusState ->
+                        if (inputWasFocused && !focusState.isFocused) {
+                            if (suppressNextBlurCommit) {
+                                suppressNextBlurCommit = false
+                            } else {
+                                applyDensityDpiDraft()
+                            }
+                        }
+                        inputWasFocused = focusState.isFocused
+                    },
+                enabled = profile.densityControlEnabled,
+                label = { Text(stringResource(R.string.ui_projection_dpi_input_label)) },
+                suffix = { Text(stringResource(R.string.ui_projection_dpi_unit)) },
+                isError = validationError != null,
+                supportingText = validationError?.let { error ->
+                    {
+                        Text(
+                            stringResource(
+                                when (error) {
+                                    ProjectionDpiInputError.REQUIRED ->
+                                        R.string.ui_projection_dpi_error_required
+                                    ProjectionDpiInputError.NOT_AN_INTEGER ->
+                                        R.string.ui_projection_dpi_error_integer
+                                    ProjectionDpiInputError.OUT_OF_RANGE ->
+                                        R.string.ui_projection_dpi_error_range
+                                },
+                                ProjectionVideoProfile.MIN_DENSITY_DPI,
+                                ProjectionVideoProfile.MAX_DENSITY_DPI,
+                            ),
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        applyDensityDpiDraft()
+                        keyboardController?.hide()
+                    },
+                ),
+                singleLine = true,
+            )
+            TextButton(
+                onClick = {
+                    applyDensityDpiDraft()
+                    keyboardController?.hide()
+                },
+                enabled = profile.densityControlEnabled,
+            ) {
+                Text(stringResource(R.string.ui_projection_dpi_apply))
+            }
+        }
+        if (profile.profileId == ProjectionVideoProfile.FREE_800X480.profileId) {
+            Text(
+                text = stringResource(
+                    R.string.ui_projection_dpi_basic_applied,
+                    profile.appliedLandscapeDensityDpi,
+                    profile.appliedPortraitDensityDpi,
+                ),
+                modifier = Modifier.padding(start = 48.dp, top = 2.dp),
+                color = Color(0xFF8292A5),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.ui_projection_dpi_range,
+                    ProjectionVideoProfile.MIN_DENSITY_DPI,
+                    ProjectionVideoProfile.MAX_DENSITY_DPI,
+                    profile.recommendedDensityDpi,
+                ),
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF8292A5),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            TextButton(
+                onClick = {
+                    suppressNextBlurCommit = inputWasFocused
+                    draftDensityDpi = profile.recommendedDensityDpi.toString()
+                    validationError = null
+                    focusManager.clearFocus()
+                    onDensityDpiReset()
+                },
+                enabled = profile.densityControlEnabled &&
+                    (profile.densityDpi != profile.recommendedDensityDpi ||
+                        draftDensityDpi != profile.recommendedDensityDpi.toString()),
+            ) {
+                Text(stringResource(R.string.ui_projection_dpi_reset))
+            }
         }
     }
 }
@@ -1775,6 +2232,7 @@ private fun AndroidAutoConnectionCard(connection: AndroidAutoConnectionStatus) {
 private fun ConnectionCard(
     browserUrl: String,
     pairingCode: String?,
+    cloudPairingRegistrationStatus: CloudPairingRegistrationStatus?,
     onRequestNewBrowserPairing: () -> Unit,
 ) {
     Card(
@@ -1793,10 +2251,17 @@ private fun ConnectionCard(
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(Modifier.height(4.dp))
-            if (pairingCode != null) {
+            if (
+                shouldDisplayPairingCode(
+                    browserUrl = browserUrl,
+                    pairingCode = pairingCode,
+                    cloudPairingRegistrationStatus = cloudPairingRegistrationStatus,
+                )
+            ) {
+                val visiblePairingCode = requireNotNull(pairingCode)
                 Text(stringResource(R.string.browser_pairing_code_title))
                 Text(
-                    text = pairingCode,
+                    text = formatPairingCodeForDisplay(visiblePairingCode),
                     color = Color.White,
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.headlineLarge,
@@ -1813,6 +2278,36 @@ private fun ConnectionCard(
                 ) {
                     Text(stringResource(R.string.browser_pairing_refresh_button))
                 }
+            } else if (pairingCode != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(
+                        text = stringResource(R.string.browser_pairing_preparing_title),
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Text(
+                    text = stringResource(
+                        when (cloudPairingRegistrationStatus) {
+                            CloudPairingRegistrationStatus.RETRY ->
+                                R.string.browser_pairing_retry_hint
+                            CloudPairingRegistrationStatus.THROTTLED ->
+                                R.string.browser_pairing_throttled_hint
+                            CloudPairingRegistrationStatus.EXPIRED ->
+                                R.string.browser_pairing_refreshing_hint
+                            else -> R.string.browser_pairing_preparing_hint
+                        },
+                    ),
+                    color = Color(0xFFA0B6BA),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             } else {
                 Text(
                     text = stringResource(R.string.browser_pairing_remembered_hint),
@@ -1829,6 +2324,24 @@ private fun ConnectionCard(
         }
     }
 }
+
+internal fun shouldDisplayPairingCode(
+    browserUrl: String,
+    pairingCode: String?,
+    cloudPairingRegistrationStatus: CloudPairingRegistrationStatus?,
+): Boolean {
+    if (pairingCode == null) return false
+    val cloudAddress = browserUrl.trim().startsWith("https://", ignoreCase = true)
+    return !cloudAddress || cloudPairingRegistrationStatus == CloudPairingRegistrationStatus.READY
+}
+
+internal fun formatPairingCodeForDisplay(pairingCode: String): String =
+    if (pairingCode.length == 6 || pairingCode.length == 8) {
+        val midpoint = pairingCode.length / 2
+        "${pairingCode.take(midpoint)} ${pairingCode.drop(midpoint)}"
+    } else {
+        pairingCode
+    }
 
 private const val PROJECTION_WIDTH = 800
 private const val PROJECTION_HEIGHT = 480

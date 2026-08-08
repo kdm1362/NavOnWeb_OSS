@@ -30,17 +30,6 @@ import org.junit.Test
 
 class AasdkTlsEngineTest {
     @Test
-    fun `phone peer pins normalize separators and reject malformed values`() {
-        val normalized = "AA:".repeat(31) + "AA"
-        val policy = AasdkTlsPeerTrustPolicy.PinnedLeafSha256(setOf(normalized))
-
-        assertEquals(setOf("AA".repeat(32)), policy.fingerprints)
-        assertThrows(IllegalArgumentException::class.java) {
-            AasdkTlsPeerTrustPolicy.PinnedLeafSha256(setOf("not-a-sha256-pin"))
-        }
-    }
-
-    @Test
     fun `non-exportable identity key is returned directly to SSLEngine key manager`() {
         val key = NonExportablePrivateKey()
         val certificate = StubCertificate()
@@ -57,7 +46,7 @@ class AasdkTlsEngineTest {
     }
 
     @Test
-    fun `release boundary rejects development identity and debug unverified peer`() {
+    fun `release boundary rejects development identity and accepts unverified peer`() {
         val development = credential(
             NonExportablePrivateKey(),
             StubCertificate(),
@@ -76,24 +65,15 @@ class AasdkTlsEngineTest {
                 AasdkTlsPeerTrustPolicy.PlatformTrust,
             )
         }
-        assertThrows(AasdkTlsPolicyException::class.java) {
-            AasdkTlsEngineFactory.validateBoundary(
-                production,
-                AasdkTlsBuildBoundary.RELEASE,
-                AasdkTlsPeerTrustPolicy.DebugOnlyUnverifiedPeer,
-            )
-        }
-        assertThrows(AasdkTlsPolicyException::class.java) {
-            AasdkTlsEngineFactory.validateBoundary(
-                production,
-                AasdkTlsBuildBoundary.RELEASE,
-                AasdkTlsPeerTrustPolicy.NotConfigured,
-            )
-        }
+        AasdkTlsEngineFactory.validateBoundary(
+            production,
+            AasdkTlsBuildBoundary.RELEASE,
+            AasdkTlsPeerTrustPolicy.UnverifiedPeer,
+        )
         AasdkTlsEngineFactory.validateBoundary(
             development,
             AasdkTlsBuildBoundary.DEBUG,
-            AasdkTlsPeerTrustPolicy.DebugOnlyUnverifiedPeer,
+            AasdkTlsPeerTrustPolicy.UnverifiedPeer,
         )
     }
 

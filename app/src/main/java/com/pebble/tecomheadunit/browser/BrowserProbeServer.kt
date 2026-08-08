@@ -18,8 +18,10 @@ import com.pebble.tecomheadunit.openauto.EngineSnapshot
 import com.pebble.tecomheadunit.openauto.FreeProjectionProfileControl
 import com.pebble.tecomheadunit.openauto.FreeProjectionViewportControl
 import com.pebble.tecomheadunit.openauto.ProjectionProfileControl
+import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionViewportControl
 import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
+import com.pebble.tecomheadunit.openauto.ProjectionViewportSnapshot
 import com.pebble.tecomheadunit.session.BrowserTrustStore
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
@@ -51,6 +53,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+internal fun shouldRotateAfterBootstrapConflict(
+    currentPublication: PairingCodeLease?,
+    expectedPublication: PairingCodeLease?,
+): Boolean = currentPublication != null &&
+    (expectedPublication == null || currentPublication == expectedPublication)
+
 class BrowserProbeServer(
     private val context: Context,
     private val pairingCode: String,
@@ -73,6 +81,11 @@ class BrowserProbeServer(
     /** A null value closes the public pairing window without revoking trusted browsers. */
     private val onPairingCodePublicationChanged: (PairingCodeLease?) -> Unit = {},
 ) : Closeable {
+    private data class CoherentProjectionSnapshot(
+        val profile: ProjectionProfileSnapshot,
+        val viewport: ProjectionViewportSnapshot,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
@@ -163,9 +176,14 @@ class BrowserProbeServer(
             .code
     }
 
-    fun rotatePairingCodeAfterBootstrapConflict(): String? {
+    fun rotatePairingCodeAfterBootstrapConflict(
+        expectedPublication: PairingCodeLease? = null,
+    ): String? {
         val replacement = synchronized(pairingCodeOperationLock) {
-            if (pairingCodePublication.currentCode() == null) return@synchronized null
+            val currentPublication = publishedPairingCodeLeaseLocked()
+            if (!shouldRotateAfterBootstrapConflict(currentPublication, expectedPublication)) {
+                return@synchronized null
+            }
             pairingCodeGate.rotateAfterBootstrapConflict().also { replacementCode ->
                 pairingCodePublication.afterRotation(replacementCode, keepOpen = true)
             }
@@ -175,16 +193,19 @@ class BrowserProbeServer(
     }
 
     /**
-     * Executes the small non-streaming browser API over an authenticated cloud relay.
+     * Executes only pairing, connection metadata, and WebRTC signaling over Cloudflare.
      *
-     * The relay never receives frame, output-audio, or microphone HTTP traffic. Video,
-     * microphone, and output audio use WebRTC; the audio data channels are negotiated alongside
-     * the video session. Keeping this allowlist here prevents an externally supplied target from
-     * turning the phone into an arbitrary loopback proxy.
+     * Touch, notices, frame, microphone, and output-audio requests are deliberately absent.
+     * Projection viewport changes are allowed only because the browser must apply its initial
+     * portrait/aspect geometry before the first WebRTC offer. After DataChannel cutover the browser
+     * routes them through [dispatchWebRtcControl].
      */
     fun dispatchRelay(request: BrowserRelayRequest): BrowserRelayResponse {
         val parsed = HttpRequest.fromRelay(request)
             ?: return BrowserRelayResponse(400, JSON_CONTENT_TYPE, ERROR_INVALID_RELAY_REQUEST)
+        if (!isCloudSignalingRelayRequest(parsed.method, parsed.path)) {
+            return BrowserRelayResponse(403, JSON_CONTENT_TYPE, ERROR_CLOUD_SIGNALING_ONLY)
+        }
         val output = ByteArrayOutputStream()
         when {
             parsed.method == "GET" && parsed.path == "/health" ->
@@ -195,12 +216,8 @@ class BrowserProbeServer(
                 writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
             parsed.method == "GET" && parsed.path == "/api/status" ->
                 serveStatus(parsed, output)
-            parsed.method == "GET" && parsed.path == "/api/notices" ->
-                serveNotices(output)
             parsed.method == "GET" && parsed.path == "/api/projection/profile" ->
                 serveProjectionProfile(output)
-            parsed.method == "POST" && parsed.path == "/api/projection/profile" ->
-                writeResponse(output, 405, JSON_CONTENT_TYPE, ERROR_PROFILE_APP_ONLY)
             parsed.method == "GET" && parsed.path == "/api/projection/viewport" ->
                 serveProjectionViewport(output)
             parsed.method == "POST" && parsed.path == "/api/projection/viewport" ->
@@ -213,10 +230,37 @@ class BrowserProbeServer(
                 serveWebRtcSession(parsed, output)
             isWebRtcSessionPath(parsed.path) && parsed.method == "DELETE" ->
                 serveWebRtcClose(parsed, output)
+            else -> writeResponse(output, 403, JSON_CONTENT_TYPE, ERROR_CLOUD_SIGNALING_ONLY)
+        }
+        return decodeRelayResponse(output)
+    }
+
+    /** Executes post-connect browser control exclusively on the local WebRTC DataChannel. */
+    fun dispatchWebRtcControl(request: BrowserRelayRequest): BrowserRelayResponse {
+        val parsed = HttpRequest.fromRelay(request)
+            ?: return BrowserRelayResponse(400, JSON_CONTENT_TYPE, ERROR_INVALID_RELAY_REQUEST)
+        val output = ByteArrayOutputStream()
+        when {
+            !isAuthorized(parsed) ->
+                writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            parsed.method == "GET" && parsed.path == "/api/status" ->
+                serveStatus(parsed, output)
+            parsed.method == "GET" && parsed.path == "/api/notices" ->
+                serveNotices(output)
+            parsed.method == "GET" && parsed.path == "/api/projection/profile" ->
+                serveProjectionProfile(output)
+            parsed.method == "GET" && parsed.path == "/api/projection/viewport" ->
+                serveProjectionViewport(output)
+            parsed.method == "POST" && parsed.path == "/api/projection/viewport" ->
+                serveProjectionViewportRequest(parsed, output)
             parsed.method == "POST" && parsed.path == "/api/touch" ->
                 serveTouch(parsed, output)
             else -> writeResponse(output, 404, "text/plain; charset=utf-8", "Not found".toByteArray())
         }
+        return decodeRelayResponse(output)
+    }
+
+    private fun decodeRelayResponse(output: ByteArrayOutputStream): BrowserRelayResponse {
         return BrowserRelayResponse.decodeHttpResponse(output.toByteArray())
             ?: BrowserRelayResponse(500, JSON_CONTENT_TYPE, ERROR_INVALID_RELAY_RESPONSE)
     }
@@ -321,6 +365,15 @@ class BrowserProbeServer(
 
     private fun serveStatus(request: HttpRequest, output: OutputStream) {
         refreshViewportController(request)
+        val projection = coherentProjectionSnapshot() ?: run {
+            writeResponse(
+                output,
+                503,
+                "application/json; charset=utf-8",
+                "{\"error\":\"projection_reconfiguring\"}".toByteArray(),
+            )
+            return
+        }
         val current = snapshot()
         val currentFrame = frameStore.latest()
         val connection = androidAutoConnection()
@@ -358,8 +411,8 @@ class BrowserProbeServer(
             append(",\"projection\":")
             append(
                 BrowserProjectionProfileApi.snapshotJsonString(
-                    snapshot = projectionProfiles.snapshot(),
-                    viewport = projectionViewport.snapshot(),
+                    snapshot = projection.profile,
+                    viewport = projection.viewport,
                 ),
             )
             append(",\"microphone\":{\"captureRequested\":")
@@ -399,6 +452,15 @@ class BrowserProbeServer(
         } else {
             capabilities.iceServers
         }
+        val projection = coherentProjectionSnapshot() ?: run {
+            writeResponse(
+                output,
+                503,
+                "application/json; charset=utf-8",
+                "{\"error\":\"projection_reconfiguring\"}".toByteArray(),
+            )
+            return
+        }
         val body = buildString {
             append("{\"available\":")
             append(capabilities.available)
@@ -436,7 +498,15 @@ class BrowserProbeServer(
             append("],\"signalingMode\":\"non-trickle\",\"detail\":")
             appendJsonString(capabilities.detail)
             append(",\"source\":")
-            append(BrowserProjectionProfileApi.profileJson(projectionProfiles.snapshot().activeProfile))
+            val activeProfile = projection.profile.activeProfile
+            val activeViewport = projection.viewport.activeLayout.encodedViewport
+            append(
+                BrowserProjectionProfileApi.profileJson(
+                    profile = activeProfile,
+                    viewport = activeViewport,
+                    densityDpi = projection.viewport.activeLayout.densityDpi,
+                ),
+            )
             append('}')
         }.toByteArray(StandardCharsets.UTF_8)
         writeResponse(output, 200, "application/json; charset=utf-8", body)
@@ -444,9 +514,10 @@ class BrowserProbeServer(
 
     private fun serveProjectionProfile(output: OutputStream) {
         val body = runCatching {
+            val projection = checkNotNull(coherentProjectionSnapshot())
             BrowserProjectionProfileApi.snapshotJsonString(
-                snapshot = projectionProfiles.snapshot(),
-                viewport = projectionViewport.snapshot(),
+                snapshot = projection.profile,
+                viewport = projection.viewport,
             ).toByteArray(StandardCharsets.UTF_8)
         }.getOrElse {
             writeResponse(
@@ -458,6 +529,23 @@ class BrowserProbeServer(
             return
         }
         writeResponse(output, 200, "application/json; charset=utf-8", body)
+    }
+
+    private fun coherentProjectionSnapshot(): CoherentProjectionSnapshot? {
+        repeat(PROJECTION_SNAPSHOT_ATTEMPTS) {
+            val before = projectionProfiles.snapshot()
+            val viewport = projectionViewport.snapshot()
+            val after = projectionProfiles.snapshot()
+            if (
+                before == after &&
+                after.activeProfile.supportsEncodedViewport(
+                    viewport.activeLayout.encodedViewport,
+                )
+            ) {
+                return CoherentProjectionSnapshot(after, viewport)
+            }
+        }
+        return null
     }
 
     private fun serveProjectionViewport(output: OutputStream) {
@@ -595,7 +683,14 @@ class BrowserProbeServer(
             )
             return
         }
-        val sdp = rewriteMdnsHostCandidateAddresses(originalSdp, directPeerIpv4)
+        // A cloud-relayed request has no LAN socket peer address. Chrome still supplies a
+        // private srflx candidate discovered through the phone's LAN STUN server, though. When
+        // that one unambiguous address shares a UDP port with the mDNS host candidates, it is the
+        // same browser endpoint and can safely replace the unresolvable mDNS tokens. Ambiguous,
+        // public, loopback, or port-mismatched offers remain byte-for-byte unchanged.
+        val resolvedDirectPeerIpv4 = directPeerIpv4
+            ?: inferDirectPeerIpv4FromPrivateSrflx(originalSdp)
+        val sdp = rewriteMdnsHostCandidateAddresses(originalSdp, resolvedDirectPeerIpv4)
         val phonePreferredCodec = runCatching(preferredWebRtcCodec)
             .getOrDefault(BrowserWebRtcCodec.AUTO)
 
@@ -1273,8 +1368,8 @@ class BrowserProbeServer(
             "{\"error\":\"invalid_relay_response\"}".toByteArray(StandardCharsets.UTF_8)
         private val ERROR_INVALID_BROWSER_CREDENTIAL =
             "{\"error\":\"invalid_browser_credential\"}".toByteArray(StandardCharsets.UTF_8)
-        private val ERROR_PROFILE_APP_ONLY =
-            "{\"error\":\"profile_changes_app_only\"}".toByteArray(StandardCharsets.UTF_8)
+        private val ERROR_CLOUD_SIGNALING_ONLY =
+            "{\"error\":\"cloud_relay_signaling_only\"}".toByteArray(StandardCharsets.UTF_8)
 
         /**
          * Keeps the checked-in/release asset fail-closed. A debug server enables the development
@@ -1431,6 +1526,23 @@ class BrowserProbeServer(
 
         internal fun isWebRtcSessionPath(path: String): Boolean = webRtcSessionId(path) != null
 
+        internal fun isCloudSignalingRelayRequest(method: String, path: String): Boolean = when {
+            method == "GET" && path in setOf(
+                "/health",
+                "/api/status",
+                "/api/projection/profile",
+                "/api/projection/viewport",
+                "/api/webrtc/capabilities",
+            ) -> true
+            method == "POST" && path in setOf(
+                "/api/pair",
+                "/api/projection/viewport",
+                "/api/webrtc/session",
+            ) -> true
+            method in setOf("GET", "DELETE") && isWebRtcSessionPath(path) -> true
+            else -> false
+        }
+
         internal fun isValidWebRtcOfferSdp(sdp: String): Boolean {
             if (sdp.isBlank() || sdp.length > MAX_WEBRTC_SDP_CHARS || '\u0000' in sdp) return false
             val lines = sdp.lineSequence().map(String::trim).toList()
@@ -1470,6 +1582,57 @@ class BrowserProbeServer(
                     }
                 }
             }.getOrDefault(sdp)
+        }
+
+        /**
+         * Recovers the LAN peer address hidden by browser mDNS when signaling arrives through
+         * the cloud relay. The app's LAN STUN response yields a private srflx candidate with the
+         * same UDP port as its corresponding host candidate. Requiring one private address and
+         * rejecting unrelated srflx ports avoids guessing across VPNs, interfaces, or NATs while
+         * allowing Chrome to omit a srflx candidate for one of several bundled transports.
+         */
+        internal fun inferDirectPeerIpv4FromPrivateSrflx(sdp: String): String? {
+            val mdnsHostPorts = mutableSetOf<Int>()
+            val privateSrflxAddresses = mutableSetOf<String>()
+            val privateSrflxAddressesByPort = mutableMapOf<Int, MutableSet<String>>()
+
+            sdp.lineSequence().forEach { rawLine ->
+                val line = rawLine.trim()
+                if (!line.startsWith("a=candidate:", ignoreCase = true)) return@forEach
+                val fields = line.split(Regex("[ \\t]+"))
+                if (fields.size < MIN_ICE_CANDIDATE_FIELDS ||
+                    !fields[ICE_PROTOCOL_FIELD].equals("udp", ignoreCase = true)
+                ) {
+                    return@forEach
+                }
+                val address = fields[ICE_ADDRESS_FIELD]
+                val port = fields[ICE_PORT_FIELD].toIntOrNull()
+                    ?.takeIf { it in MIN_UDP_PORT..MAX_UDP_PORT }
+                    ?: return@forEach
+                val typeMarker = fields.indexOfFirst { it.equals("typ", ignoreCase = true) }
+                val candidateType = fields.getOrNull(typeMarker + 1)
+                    ?.takeIf { typeMarker >= 0 }
+                    ?: return@forEach
+
+                when {
+                    candidateType.equals("host", ignoreCase = true) &&
+                        address.endsWith(".local", ignoreCase = true) -> mdnsHostPorts += port
+                    candidateType.equals("srflx", ignoreCase = true) &&
+                        isEligibleDirectPeerIpv4(address) -> {
+                        privateSrflxAddresses += address
+                        privateSrflxAddressesByPort.getOrPut(port) { mutableSetOf() } += address
+                    }
+                }
+            }
+
+            if (mdnsHostPorts.isEmpty() || privateSrflxAddresses.size != 1) return null
+            val inferredAddress = privateSrflxAddresses.single()
+            val privateSrflxPorts = privateSrflxAddressesByPort
+                .filterValues { addresses -> addresses == setOf(inferredAddress) }
+                .keys
+            val srflxPortsMatchMdnsCandidates = privateSrflxPorts.isNotEmpty() &&
+                privateSrflxPorts.all { it in mdnsHostPorts }
+            return inferredAddress.takeIf { srflxPortsMatchMdnsCandidates }
         }
 
         private fun isNumericIpv4Address(value: String?): Boolean {
@@ -1520,6 +1683,7 @@ class BrowserProbeServer(
                 "base-uri 'none'; frame-ancestors 'none'"
 
         private const val MAX_FRAME_VERSION_DIGITS = 19
+        private const val PROJECTION_SNAPSHOT_ATTEMPTS = 3
         private const val SDP_CONTENT_TYPE = "application/sdp"
         private const val WEBRTC_SESSION_PATH_PREFIX = "/api/webrtc/session/"
         private const val MIN_WEBRTC_SESSION_ID_LENGTH = 16
@@ -1539,6 +1703,12 @@ class BrowserProbeServer(
         private const val IPV4_PRIVATE_192_PREFIX = 192
         private const val IPV4_PRIVATE_192_SECOND = 168
         private val IPV4_MULTICAST_PREFIX_RANGE = 224..239
+        private const val MIN_ICE_CANDIDATE_FIELDS = 8
+        private const val ICE_PROTOCOL_FIELD = 2
+        private const val ICE_ADDRESS_FIELD = 4
+        private const val ICE_PORT_FIELD = 5
+        private const val MIN_UDP_PORT = 1
+        private const val MAX_UDP_PORT = 65_535
         private val UDP_HOST_CANDIDATE = Regex(
             pattern =
                 "^(a=candidate:[^ \\t\\r\\n]+[ \\t]+\\d+[ \\t]+udp[ \\t]+\\d+[ \\t]+)" +

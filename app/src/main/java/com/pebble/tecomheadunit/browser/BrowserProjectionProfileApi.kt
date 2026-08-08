@@ -3,6 +3,7 @@
  */
 package com.pebble.tecomheadunit.browser
 
+import com.pebble.tecomheadunit.core.VideoViewport
 import com.pebble.tecomheadunit.openauto.ProjectionProfileRequestResult
 import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
@@ -25,7 +26,17 @@ internal object BrowserProjectionProfileApi {
         append("{\"entitlement\":")
         appendJsonString(snapshot.entitlementTier.wireName)
         append(",\"activeProfile\":")
-        append(profileJson(snapshot.activeProfile))
+        val activeLayout = viewport?.activeLayout?.takeIf { layout ->
+            snapshot.activeProfile.supportsEncodedViewport(layout.encodedViewport)
+        }
+        val activeViewport = activeLayout?.encodedViewport ?: snapshot.activeProfile.landscapeViewport
+        append(
+            profileJson(
+                profile = snapshot.activeProfile,
+                viewport = activeViewport,
+                densityDpi = activeLayout?.densityDpi ?: snapshot.activeProfile.dpi,
+            ),
+        )
         append(",\"requestedProfile\":")
         append(profileJson(snapshot.requestedProfile))
         append(",\"availableProfiles\":[")
@@ -46,16 +57,27 @@ internal object BrowserProjectionProfileApi {
         append('}')
     }
 
-    fun profileJson(profile: ProjectionVideoProfile): String = buildString {
+    fun profileJson(
+        profile: ProjectionVideoProfile,
+        viewport: VideoViewport = profile.landscapeViewport,
+        densityDpi: Int = profile.dpi,
+    ): String = buildString {
+        require(profile.supportsEncodedViewport(viewport)) {
+            "encoded viewport is not supported by projection profile"
+        }
+        val divisor = greatestCommonDivisor(viewport.width, viewport.height)
         append("{\"id\":")
         appendJsonString(profile.profileId)
-        append(",\"width\":").append(profile.width)
-        append(",\"height\":").append(profile.height)
+        append(",\"width\":").append(viewport.width)
+        append(",\"height\":").append(viewport.height)
         append(",\"androidAutoFramesPerSecond\":").append(profile.androidAutoFramesPerSecond)
         append(",\"webRtcFramesPerSecond\":").append(profile.webRtcFramesPerSecond)
-        append(",\"densityDpi\":").append(profile.dpi)
-        append(",\"sourceAspectWidth\":").append(profile.sourceAspectWidth)
-        append(",\"sourceAspectHeight\":").append(profile.sourceAspectHeight)
+        require(ProjectionVideoProfile.isSupportedDensityDpi(densityDpi)) {
+            "projection density is outside the supported range"
+        }
+        append(",\"densityDpi\":").append(densityDpi)
+        append(",\"sourceAspectWidth\":").append(viewport.width / divisor)
+        append(",\"sourceAspectHeight\":").append(viewport.height / divisor)
         append('}')
     }
 
@@ -107,5 +129,16 @@ internal object BrowserProjectionProfileApi {
             }
         }
         append('"')
+    }
+
+    private fun greatestCommonDivisor(first: Int, second: Int): Int {
+        var a = first
+        var b = second
+        while (b != 0) {
+            val next = a % b
+            a = b
+            b = next
+        }
+        return a
     }
 }

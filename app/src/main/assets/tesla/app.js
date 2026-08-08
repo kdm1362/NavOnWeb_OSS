@@ -16,7 +16,7 @@
   const FRESH_CLOUD_ROUTE_REQUIRED_KEY = 'navonweb.freshCloudRouteRequired.v1';
   const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
   const FRAME_INTERVAL_MILLIS = 200;
-  const MAX_FRAME_BYTES = 1024 * 1024;
+  const MAX_FRAME_BYTES = 2 * 1024 * 1024;
   const STATUS_HEALTHY_MIN_INTERVAL_MILLIS = 1500;
   const STATUS_HEALTHY_MAX_INTERVAL_MILLIS = 2500;
   const STATUS_FAILURE_BASE_INTERVAL_MILLIS = 2000;
@@ -30,6 +30,7 @@
   const WEBRTC_RECOVERY_BASE_DELAY_MILLIS = 1500;
   const WEBRTC_RECOVERY_MAX_DELAY_MILLIS = 15000;
   const WEBRTC_RECOVERY_CLOSE_GRACE_MILLIS = 250;
+  const WEBRTC_VIDEO_STATS_INTERVAL_MILLIS = 5000;
   const CODEC_NAMES = ['h264', 'vp8', 'vp9', 'av1'];
   const AUDIO_TRACKS = ['media', 'speech', 'system'];
   const AUDIO_RECOVERY_BASE_DELAY_MILLIS = 1000;
@@ -87,6 +88,7 @@
   const TOUCH_REQUEST_TIMEOUT_MILLIS = 1500;
   const CLOUD_RELAY_REQUEST_TIMEOUT_MILLIS = 15000;
   const CLOUD_RELAY_CONNECT_TIMEOUT_MILLIS = 10000;
+  const CLOUD_ROUTE_STATUS_TIMEOUT_MILLIS = 3000;
   const REPAIR_PAIRING_DELAY_MILLIS = 10000;
   const CLOUD_RELAY_MAX_BODY_BYTES = 128 * 1024;
   const CLOUD_RELAY_MAX_RESPONSE_BYTES = 160 * 1024;
@@ -113,6 +115,7 @@
       return Object.freeze({
         roomId,
         bootstrapPairUrl: `${secureHttpOrigin}${pathPrefix}/bootstrap/pair`,
+        routeStatusUrl: `${location.origin}${pathPrefix}/bootstrap/route`,
         webSocketUrl: roomId
           ? `${origin.origin}${pathPrefix}/ws/browser/${roomId}`
           : `${origin.origin}${pathPrefix}/ws/browser`
@@ -152,18 +155,21 @@
       connectionExpired: 'The browser connection has expired. Enter a new code.',
       savedConnectionExpired: 'The saved connection has expired. Enter the new code shown on your phone.',
       videoWaiting: 'Waiting for video',
+      videoWaitingElapsed: 'Waiting time {time}',
       mediaPermissionPrompt: 'Tap once to enable sound and the browser microphone.',
       mediaPermissionAllow: 'Enable sound and microphone',
       mediaPermissionDenied: 'Microphone access is blocked. Allow it in this site\'s permissions, then retry.',
       localNetworkPrompt: 'Allow local network access to connect directly to your phone.',
-      localNetworkDenied: "Local network access is blocked. Allow it in this site's permissions, then retry.",
+      localNetworkDenied: "The browser could not confirm local network access. If connection fails, check this site's permission and retry.",
       localNetworkAllow: 'Allow local network',
       localNetworkRetry: 'Retry',
       androidAutoReconnecting: 'Reconnecting to Android Auto',
       serverWaiting: 'Waiting for server',
+      localControlRecovering: 'Recovering the local connection. Control data was not sent through the cloud.',
       eightDigitRequired: 'Enter an 8-digit number.',
       connecting: 'Connecting…',
       invalidCode: 'The code is not valid.',
+      codeNotRegistered: 'The phone has not registered this code yet. Confirm the service is running and that the phone and browser are on the same network, then try again.',
       expiredCode: 'The code has expired. Check the app for a new code.',
       retryLater: 'Try again in a moment.',
       unableToConnect: 'Unable to connect. Try again in a moment.',
@@ -171,7 +177,7 @@
       repairPairingLabel: 'Pair with a new code',
       repairPairingHint: 'Check your phone for a new pairing code, then enter it here.',
       landingEyebrow: 'Your phone. Your browser. One connected drive.',
-      landingTitle: 'Bring a supported phone projection to a nearby browser.',
+      landingTitle: 'Bring Android Auto to a nearby browser.',
       landingLead: 'NavOnWeb connects over your local network so you can see, hear and control the projection from a compatible browser.',
       landingHighlightsLabel: 'NavOnWeb highlights',
       landingHighlightLocal: 'Local-first connection',
@@ -194,7 +200,7 @@
       landingBenefitsTitle: 'A familiar drive, without another vehicle adapter.',
       landingBenefitsLead: 'Keep the supported projection session on your phone and bring it to a compatible vehicle, tablet or desktop browser on the same network.',
       landingLocalTitle: 'Connect locally',
-      landingLocalBody: 'Use your phone\'s hotspot or the same Wi-Fi network. Projection media stays on the direct browser-to-phone path whenever the network allows it.',
+      landingLocalBody: 'Use your phone\'s hotspot or the same Wi-Fi network. Projection media stays on the direct browser-to-phone path.',
       landingAdaptiveTitle: 'Fits changing screens',
       landingAdaptiveBody: 'The view adapts to wide, compact and portrait browser spaces while keeping touch coordinates aligned.',
       landingRememberedTitle: 'Pair once, return quickly',
@@ -208,6 +214,7 @@
       landingStepPairTitle: 'Open navonweb.com and pair',
       landingStepPairBody: 'Connect the browser to the phone\'s network, enter the eight-digit code above and start viewing.',
       landingSafety: 'Complete setup only while safely parked. Do not operate a phone or vehicle screen while driving.',
+      landingPrivacyPolicy: 'Privacy Policy',
       landingTrademark: 'Android Auto is a trademark of Google LLC. NavOnWeb is an independent product and is not affiliated with, endorsed by or sponsored by Google or any vehicle manufacturer.'
     }),
     ko: Object.freeze({
@@ -240,18 +247,21 @@
       connectionExpired: '브라우저 연결이 만료되었습니다. 새 코드를 입력하세요.',
       savedConnectionExpired: '저장된 연결이 만료되었습니다. 휴대전화의 새 코드를 입력하세요.',
       videoWaiting: '영상 연결 대기',
+      videoWaitingElapsed: '대기 시간 {time}',
       mediaPermissionPrompt: '소리와 브라우저 마이크를 사용하려면 한 번 눌러 주세요.',
       mediaPermissionAllow: '소리 및 마이크 사용',
       mediaPermissionDenied: '마이크 접근이 차단되었습니다. 이 사이트의 권한에서 허용한 뒤 다시 시도하세요.',
       localNetworkPrompt: '휴대전화에 직접 연결하려면 로컬 네트워크 접근을 허용하세요.',
-      localNetworkDenied: '로컬 네트워크 접근이 차단되었습니다. 이 사이트의 권한에서 허용한 뒤 다시 시도하세요.',
+      localNetworkDenied: '브라우저가 로컬 네트워크 권한을 확인하지 못했습니다. 연결되지 않으면 사이트 권한을 확인한 뒤 다시 시도하세요.',
       localNetworkAllow: '로컬 네트워크 허용',
       localNetworkRetry: '다시 시도',
       androidAutoReconnecting: 'Android Auto 다시 연결 중',
       serverWaiting: '서버 연결 대기',
+      localControlRecovering: '로컬 연결을 복구하는 중입니다. 제어 데이터는 클라우드로 전송되지 않았습니다.',
       eightDigitRequired: '8자리 숫자를 입력하세요.',
       connecting: '연결 중…',
       invalidCode: '코드가 올바르지 않습니다.',
+      codeNotRegistered: '휴대전화가 이 코드를 아직 등록하지 않았습니다. 서비스가 실행 중이고 휴대전화와 브라우저가 같은 네트워크에 연결되어 있는지 확인한 뒤 다시 시도하세요.',
       expiredCode: '코드가 만료되었습니다. 앱에서 새 코드를 확인하세요.',
       retryLater: '잠시 후 다시 시도하세요.',
       unableToConnect: '연결할 수 없습니다. 잠시 후 다시 시도하세요.',
@@ -259,7 +269,7 @@
       repairPairingLabel: '새 코드로 다시 페어링',
       repairPairingHint: '휴대전화 앱에서 새 페어링 코드를 확인한 뒤 입력하세요.',
       landingEyebrow: '휴대전화 하나로, 익숙한 화면을 더 크게',
-      landingTitle: '휴대전화의 차량용 화면을 가까운 브라우저로',
+      landingTitle: 'Android Auto 화면을 가까운 브라우저로',
       landingLead: 'NavOnWeb은 같은 로컬 네트워크에서 호환 브라우저로 프로젝션 화면을 보고, 듣고, 조작할 수 있도록 연결합니다.',
       landingHighlightsLabel: 'NavOnWeb 주요 특징',
       landingHighlightLocal: '로컬 중심 연결',
@@ -282,7 +292,7 @@
       landingBenefitsTitle: '별도 차량용 어댑터 없이 익숙한 주행 화면을',
       landingBenefitsLead: '휴대전화에서 실행되는 지원 프로젝션 화면을 같은 네트워크의 호환 차량·태블릿·데스크톱 브라우저로 가져옵니다.',
       landingLocalTitle: '가까운 네트워크에서 직접 연결',
-      landingLocalBody: '휴대전화 핫스팟이나 같은 Wi-Fi를 이용합니다. 네트워크가 허용하는 경우 프로젝션 미디어는 브라우저와 휴대전화 사이의 직접 경로로 전송됩니다.',
+      landingLocalBody: '휴대전화 핫스팟이나 같은 Wi-Fi를 이용합니다. 프로젝션 미디어는 브라우저와 휴대전화 사이의 직접 경로로 전송됩니다.',
       landingAdaptiveTitle: '달라지는 화면에도 알맞게',
       landingAdaptiveBody: '넓은 화면, 좁아진 화면, 세로 화면에 맞춰 표시하면서 터치 좌표가 어긋나지 않도록 조정합니다.',
       landingRememberedTitle: '한 번 승인하고 다음에는 빠르게',
@@ -296,11 +306,17 @@
       landingStepPairTitle: 'navonweb.com을 열고 페어링',
       landingStepPairBody: '브라우저를 휴대전화 네트워크에 연결하고 위 입력란에 8자리 코드를 입력하면 됩니다.',
       landingSafety: '모든 설정은 안전하게 주차한 상태에서 완료하세요. 운전 중에는 휴대전화나 차량 화면을 조작하지 마세요.',
+      landingPrivacyPolicy: '개인정보 처리방침',
       landingTrademark: 'Android Auto는 Google LLC의 상표입니다. NavOnWeb은 독립 제품이며 Google 또는 차량 제조사와 제휴하거나 보증·후원을 받은 제품이 아닙니다.'
     })
   });
-  let ACTIVE_LOCALE = resolveSystemLocale();
-  let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates();
+  const PATH_LOCALE = resolvePathLocale(window.location.pathname);
+  let ACTIVE_LOCALE = PATH_LOCALE || resolveSystemLocale();
+  const browserLanguageCandidates = resolveBrowserLanguageCandidates();
+  let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates(
+    PATH_LOCALE ? [PATH_LOCALE, ...browserLanguageCandidates] : browserLanguageCandidates,
+    ACTIVE_LOCALE
+  );
   let NOTICE_DATE_TIME_LOCALE = resolveDateTimeLocale(
     NOTICE_LOCALE_CANDIDATES,
     ACTIVE_LOCALE
@@ -341,6 +357,8 @@
   const frame = document.querySelector('#frame');
   const webRtcVideo = document.querySelector('#webrtc-video');
   const streamState = document.querySelector('#stream-state');
+  const streamStateMessage = document.querySelector('#stream-state-message');
+  const streamWaitTime = document.querySelector('#stream-wait-time');
   const localNetworkPanel = document.querySelector('#local-network-panel');
   const localNetworkMessage = document.querySelector('#local-network-message');
   const localNetworkAllow = document.querySelector('#local-network-allow');
@@ -353,6 +371,7 @@
   const fullscreenButton = document.querySelector('#fullscreen');
   const fullscreenState = document.querySelector('#fullscreen-state');
   const fullscreenHint = document.querySelector('#fullscreen-hint');
+  const expandedViewportProbe = document.querySelector('#expanded-viewport-probe');
   const premiumPrompt = document.querySelector('#premium-prompt');
   const premiumPromptDismiss = document.querySelector('#premium-prompt-dismiss');
   const premiumPromptConfirm = document.querySelector('#premium-prompt-confirm');
@@ -372,6 +391,9 @@
   let frameAbortController = null;
   let frameVersion = 0;
   let frameObjectUrl = '';
+  let streamStateKey = 'androidAutoWaiting';
+  let videoWaitingStartedAt = null;
+  let videoWaitingTimer = 0;
   let pairingInFlight = false;
   let repairPairingTimer = 0;
   let freshCloudRelayRouteRequired = loadFreshCloudRelayRouteRequirement();
@@ -393,6 +415,7 @@
   let projectionProfileRevision = 0;
   let webRtcPeer = null;
   let webRtcControlTransport = null;
+  let localControlCutover = false;
   const webRtcAudioChannels = new Map();
   const webRtcAudioOpenTimers = new Map();
   let webRtcSessionId = '';
@@ -405,6 +428,9 @@
   let webRtcRecoveryAttempts = 0;
   let webRtcRecoveryInFlight = false;
   let webRtcIcePairPublishedGeneration = 0;
+  let webRtcVideoStatsTimer = 0;
+  let webRtcVideoStatsGeneration = 0;
+  let webRtcVideoStatsPrevious = null;
   let localNetworkPermissionState = CLOUD_RELAY_MODE ? 'checking' : 'not_applicable';
   let localNetworkPermissionStatus = null;
   let localNetworkPermissionQuery = null;
@@ -413,6 +439,9 @@
   let androidAutoTouchReady = false;
   let pageActive = true;
   let theaterMode = false;
+  let screenWakeLock = null;
+  let screenWakeLockRequest = null;
+  let screenWakeLockGeneration = 0;
   let expandedViewRequestGeneration = 0;
   let fullscreenEntryPendingGeneration = 0;
   let expandedViewWasActive = false;
@@ -457,6 +486,7 @@
   let viewportLayoutFrame = 0;
   let viewportResizeObserver = null;
   let activeViewportValue = null;
+  let expandedViewportTarget = null;
   let developmentViewportMode = '';
   let developmentTeslaDriving = false;
   let developmentTeslaCycleTimer = 0;
@@ -478,6 +508,11 @@
       if (base === 'ko' || base === 'en') return base;
     }
     return 'en';
+  }
+
+  function resolvePathLocale(pathname) {
+    const match = /^\/(ko|en)(?:\/|$)/i.exec(String(pathname || ''));
+    return match ? match[1].toLowerCase() : '';
   }
 
   function resolveNoticeLocaleCandidates(
@@ -594,6 +629,9 @@
       ACTIVE_LOCALE
     );
     applyDocumentLocale(previousLocale);
+    if (typeof streamStateKey !== 'undefined' && streamStateKey === 'videoWaiting') {
+      renderVideoWaitingElapsed();
+    }
     cancelNoticeRequestForRetry();
     void ensureNoticesLoaded();
     return ACTIVE_LOCALE;
@@ -933,6 +971,28 @@
     pairStatus.style.color = error ? '#fda4af' : '';
   }
 
+  function diagnosticClockMillis() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+  }
+
+  function recordConnectionTiming(scope, stage, startedAt, status = '') {
+    const safeScope = /^(Pairing|Route|Signal|WebRtc)$/.test(scope) ? scope : 'Pairing';
+    const safeStage = String(stage || 'unknown').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) ||
+      'unknown';
+    const safeStatus = String(status || '').replace(/[^a-z0-9_.-]/gi, '').slice(0, 40);
+    const elapsedMillis = Math.max(0, Math.round(diagnosticClockMillis() - startedAt));
+    pad.dataset[`navonweb${safeScope}Stage`] = safeStage;
+    pad.dataset[`navonweb${safeScope}ElapsedMs`] = String(elapsedMillis);
+    if (safeStatus) pad.dataset[`navonweb${safeScope}Status`] = safeStatus;
+    else delete pad.dataset[`navonweb${safeScope}Status`];
+    console.info(
+      `NAVONWEB_TIMING scope=${safeScope.toLowerCase()} stage=${safeStage} ` +
+        `elapsedMs=${elapsedMillis}${safeStatus ? ` status=${safeStatus}` : ''}`
+    );
+  }
+
   function loadFreshCloudRelayRouteRequirement() {
     if (!CLOUD_RELAY_MODE || CLOUD_RELAY_CONFIG.roomId) return false;
     try {
@@ -1018,37 +1078,49 @@
     };
   }
 
-  function measureProjectionViewport() {
+  function expandedViewportInsets() {
+    if (!expandedViewportProbe) {
+      return Object.freeze({left: 12, right: 12, top: 12, bottom: 12});
+    }
+    const style = window.getComputedStyle(expandedViewportProbe);
+    return Object.freeze({
+      left: finiteCssPixels(style.paddingLeft),
+      right: finiteCssPixels(style.paddingRight),
+      top: finiteCssPixels(style.paddingTop),
+      bottom: finiteCssPixels(style.paddingBottom)
+    });
+  }
+
+  function calculateExpandedProjectionViewport() {
     if (viewer.hidden) return null;
     const viewport = layoutViewportDimensions();
-    if (!viewerOwnsFullscreen() && !theaterMode) {
-      const padRect = pad.getBoundingClientRect();
-      if (padRect.width <= 0 || padRect.height <= 0) return null;
-      const roundedWidth = Math.round(padRect.width * 100) / 100;
-      const roundedHeight = Math.round(padRect.height * 100) / 100;
-      return Object.freeze({
-        width: roundedWidth,
-        height: roundedHeight,
-        aspectRatio: roundedWidth / roundedHeight,
-        devicePixelRatio: browserDevicePixelRatio(),
-        viewportScale: viewport.scale,
-        source: 'projectionSurface'
-      });
+    let width = viewport.width;
+    let height = viewport.height;
+    let source = 'theaterPreview';
+    const nativeFullscreenAvailable = !theaterMode &&
+      typeof viewer.requestFullscreen === 'function' && document.fullscreenEnabled !== false;
+    const screenWidth = Number(window.screen && window.screen.width);
+    const screenHeight = Number(window.screen && window.screen.height);
+    if (nativeFullscreenAvailable && Number.isFinite(screenWidth) && screenWidth > 0 &&
+        Number.isFinite(screenHeight) && screenHeight > 0) {
+      const orientationType = String(
+        window.screen && window.screen.orientation && window.screen.orientation.type || ''
+      );
+      const orientationLandscape = orientationType.startsWith('landscape') ? true :
+        orientationType.startsWith('portrait') ? false : null;
+      const dimensionsLandscape = screenWidth >= screenHeight;
+      const swapDimensions = orientationLandscape !== null &&
+        orientationLandscape !== dimensionsLandscape;
+      width = swapDimensions ? screenHeight : screenWidth;
+      height = swapDimensions ? screenWidth : screenHeight;
+      source = 'fullscreenPreview';
     }
-    const viewerRect = viewer.getBoundingClientRect();
-    if (viewerRect.width <= 0 || viewport.height <= 0) return null;
-    const viewerStyle = window.getComputedStyle(viewer);
-    const mainStyle = window.getComputedStyle(main);
-    const controlsRect = viewerControls.getBoundingClientRect();
-    const horizontalPadding = finiteCssPixels(viewerStyle.paddingLeft) +
-      finiteCssPixels(viewerStyle.paddingRight);
-    const mainVerticalPadding = viewerOwnsFullscreen() || theaterMode ? 0 :
-      finiteCssPixels(mainStyle.paddingTop) + finiteCssPixels(mainStyle.paddingBottom);
-    const verticalPadding = finiteCssPixels(viewerStyle.paddingTop) +
-      finiteCssPixels(viewerStyle.paddingBottom) + mainVerticalPadding;
-    const gap = finiteCssPixels(viewerStyle.rowGap || viewerStyle.gap);
-    const width = Math.min(viewport.width, viewerRect.width) - horizontalPadding;
-    const height = viewport.height - verticalPadding - controlsRect.height - gap;
+    if (developmentTeslaDriving) {
+      width = Math.min(width, width * DEVELOPMENT_TESLA_WIDTH_SCALE);
+    }
+    const insets = expandedViewportInsets();
+    width -= insets.left + insets.right;
+    height -= insets.top + insets.bottom;
     if (width <= 0 || height <= 0) return null;
     const roundedWidth = Math.round(width * 100) / 100;
     const roundedHeight = Math.round(height * 100) / 100;
@@ -1058,8 +1130,32 @@
       aspectRatio: roundedWidth / roundedHeight,
       devicePixelRatio: browserDevicePixelRatio(),
       viewportScale: viewport.scale,
-      source: viewport.source
+      source
     });
+  }
+
+  function expectedExpandedProjectionViewport() {
+    return expandedViewportTarget || calculateExpandedProjectionViewport();
+  }
+
+  function lockExpandedProjectionViewport() {
+    if (!expandedViewportTarget) {
+      expandedViewportTarget = calculateExpandedProjectionViewport();
+    }
+    return expandedViewportTarget;
+  }
+
+  function releaseExpandedProjectionViewport() {
+    expandedViewportTarget = null;
+  }
+
+  function measureProjectionViewport() {
+    if (viewer.hidden) return null;
+    // Negotiate the display-shaped content viewport while the standard view is still visible.
+    // Fullscreen uses screen CSS pixels (address-bar independent); theater mode uses the current
+    // viewport. Reusing this exact calculation after entry keeps the report key and quantized AA
+    // layout stable across both CSS transitions.
+    return expectedExpandedProjectionViewport();
   }
 
   function viewportValueChanged(previous, next) {
@@ -1151,12 +1247,12 @@
       );
       if (response.status === 401) {
         invalidateCredential(t('connectionExpiredPhone'));
-        return;
+        return false;
       }
       if (response.status === 200 || response.status === 202) {
         lastViewportReportKey = key;
         setDevelopmentViewportDiagnostic('viewport-report', `accepted:${response.status}:${key}`);
-        return;
+        return true;
       }
       if (response.status === 409 || response.status >= 500) {
         const conflict = response.status === 409 ? await response.json().catch(() => ({})) : {};
@@ -1176,6 +1272,7 @@
       if (response.status !== 409 && response.status < 500) {
         setDevelopmentViewportDiagnostic('viewport-report', `rejected:${response.status}:${key}`);
       }
+      return false;
     } catch (error) {
       if (error.name !== 'AbortError') {
         setDevelopmentViewportDiagnostic('viewport-report', `retry:network:${key}`);
@@ -1187,10 +1284,27 @@
       } else {
         setDevelopmentViewportDiagnostic('viewport-report', `aborted:${key}`);
       }
+      return false;
     } finally {
       window.clearTimeout(timeout);
       if (viewportReportAbortController === controller) viewportReportAbortController = null;
     }
+  }
+
+  function preapplyExpandedProjectionViewport() {
+    const value = expectedExpandedProjectionViewport();
+    if (!value || !browserCredential || !pageActive || document.hidden ||
+        !document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS) ||
+        Math.abs(value.viewportScale - 1) > 0.01) return null;
+    const key = viewportReportKey(value);
+    if (key === lastViewportReportKey) return null;
+    if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
+    viewportReportTimer = 0;
+    pendingViewportReport = value;
+    // Start the same-origin report before requestFullscreen/theater mode. The standard view has
+    // normally completed this report already; this last flush remains fire-and-forget so the
+    // Fullscreen API is still called inside the browser's transient user-activation window.
+    return reportProjectionViewport();
   }
 
   function stopViewportReporting() {
@@ -1351,16 +1465,6 @@
     return 'unsupported';
   }
 
-  function localNetworkPermissionAllowsWebRtc(_userInitiated) {
-    if (!CLOUD_RELAY_MODE) return true;
-    // A prompt is not a denial. Starting ICE lets the browser surface its native
-    // one-time permission when required; blocking here would require our button
-    // again after every page or service resume and prevent automatic recovery.
-    return localNetworkPermissionState === 'granted' ||
-      localNetworkPermissionState === 'unsupported' ||
-      localNetworkPermissionState === 'prompt';
-  }
-
   function syncLocalNetworkPermissionPanel() {
     if (!localNetworkPanel || !localNetworkMessage || !localNetworkAllow) return;
     const actionable = CLOUD_RELAY_MODE && Boolean(browserCredential) && androidAutoInteractive &&
@@ -1402,11 +1506,9 @@
       localNetworkPermissionStatus && localNetworkPermissionStatus.state
     );
     setLocalNetworkPermissionState(nextState);
-    if (!localNetworkPermissionAllowsWebRtc(false)) {
-      cancelWebRtcRecovery();
-      if (webRtcPeer || webRtcStarting) resetWebRtc(true);
-      return;
-    }
+    // Permissions API results are advisory. Some Chromium embedders can report
+    // "denied" even when the visible site setting is allowed, so only the ICE
+    // connection result may stop or replace an established media session.
     if (browserCredential && androidAutoInteractive && !document.hidden) {
       cancelWebRtcRecovery(true);
       scheduleWebRtcRecovery();
@@ -1461,7 +1563,6 @@
     syncLocalNetworkPermissionPanel();
     try {
       await refreshLocalNetworkPermission();
-      if (localNetworkPermissionState === 'denied') return;
       cancelWebRtcRecovery(true);
       await startWebRtc(true);
       await refreshLocalNetworkPermission();
@@ -1484,6 +1585,8 @@
       hidePremiumPrompt();
     }
     syncLocalNetworkPermissionPanel();
+    if (authenticated) syncScreenWakeLock();
+    else releaseScreenWakeLock();
   }
 
   function projectionSourceAspectRatio() {
@@ -1508,7 +1611,7 @@
         value.height < 1 || value.height > 8192 ||
         value.androidAutoFramesPerSecond < 1 || value.androidAutoFramesPerSecond > 240 ||
         value.webRtcFramesPerSecond < 1 || value.webRtcFramesPerSecond > 240 ||
-        value.densityDpi < 72 || value.densityDpi > 140 ||
+        value.densityDpi < 72 || value.densityDpi > 320 ||
         value.sourceAspectWidth < 1 || value.sourceAspectWidth > 8192 ||
         value.sourceAspectHeight < 1 || value.sourceAspectHeight > 8192) return null;
     return {
@@ -1523,13 +1626,16 @@
     };
   }
 
-  function sameProjectionProfile(left, right) {
+  function sameProjectionMediaIdentity(left, right) {
     return left.id === right.id && left.width === right.width && left.height === right.height &&
       left.androidAutoFramesPerSecond === right.androidAutoFramesPerSecond &&
       left.webRtcFramesPerSecond === right.webRtcFramesPerSecond &&
-      left.densityDpi === right.densityDpi &&
       left.sourceAspectWidth === right.sourceAspectWidth &&
       left.sourceAspectHeight === right.sourceAspectHeight;
+  }
+
+  function sameProjectionProfile(left, right) {
+    return sameProjectionMediaIdentity(left, right) && left.densityDpi === right.densityDpi;
   }
 
   function normalizeProjectionViewport(value) {
@@ -1555,7 +1661,7 @@
         value.contentWidth !== value.encodedWidth - value.totalMarginWidth ||
         value.contentHeight !== value.encodedHeight - value.totalMarginHeight ||
         value.contentWidth < 1 || value.contentHeight < 1 ||
-        value.densityDpi < 72 || value.densityDpi > 140) return null;
+        value.densityDpi < 72 || value.densityDpi > 320) return null;
     return Object.freeze({
       encodedWidth: value.encodedWidth,
       encodedHeight: value.encodedHeight,
@@ -1644,7 +1750,24 @@
   function applyProjectionGeometry(value) {
     const next = normalizeProjectionProfile(value) || LEGACY_PROJECTION_PROFILE;
     if (sameProjectionProfile(next, activeProjectionProfile)) return false;
+    const mediaIdentityChanged = !sameProjectionMediaIdentity(next, activeProjectionProfile);
     activeProjectionProfile = next;
+    if (!mediaIdentityChanged) {
+      // DPI is Android Auto UI metadata, not WebRTC media identity. Preserve the established
+      // peer, frame and live portrait crop while AA performs its metadata-only reconnect.
+      activeProjectionViewport = Object.freeze({
+        ...activeProjectionViewport,
+        densityDpi: next.densityDpi
+      });
+      setDevelopmentViewportDiagnostic(
+        'viewport-active',
+        `${activeProjectionViewport.contentWidth}x${activeProjectionViewport.contentHeight}` +
+          `+${activeProjectionViewport.contentLeft}+${activeProjectionViewport.contentTop}` +
+          `@${next.densityDpi}dpi`
+      );
+      scheduleViewportLayoutSync();
+      return true;
+    }
     activeProjectionViewport = zeroProjectionViewport(next);
     projectionProfileRevision += 1;
     pad.style.setProperty(
@@ -1662,13 +1785,74 @@
     return true;
   }
 
+  function formatVideoWaitingDuration(elapsedSeconds) {
+    const totalSeconds = Number.isFinite(elapsedSeconds)
+      ? Math.max(0, Math.floor(elapsedSeconds))
+      : 0;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const paddedSeconds = String(seconds).padStart(2, '0');
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${paddedSeconds}`
+      : `${minutes}:${paddedSeconds}`;
+  }
+
+  function videoWaitingClockNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+  }
+
+  function renderVideoWaitingElapsed(now = videoWaitingClockNow()) {
+    if (videoWaitingStartedAt === null) return;
+    const elapsedSeconds = Math.max(0, Math.floor((now - videoWaitingStartedAt) / 1000));
+    const duration = formatVideoWaitingDuration(elapsedSeconds);
+    streamWaitTime.textContent = t('videoWaitingElapsed').replace('{time}', duration);
+    streamWaitTime.setAttribute('datetime', `PT${elapsedSeconds}S`);
+  }
+
+  function stopVideoWaitingTimer() {
+    if (videoWaitingTimer) window.clearInterval(videoWaitingTimer);
+    videoWaitingTimer = 0;
+    videoWaitingStartedAt = null;
+    streamState.classList.remove('video-waiting');
+    streamWaitTime.hidden = true;
+    streamWaitTime.textContent = '';
+    streamWaitTime.removeAttribute('datetime');
+  }
+
+  function startVideoWaitingTimer() {
+    streamState.classList.add('video-waiting');
+    streamWaitTime.hidden = false;
+    if (videoWaitingStartedAt === null) videoWaitingStartedAt = videoWaitingClockNow();
+    renderVideoWaitingElapsed();
+    if (!videoWaitingTimer) {
+      videoWaitingTimer = window.setInterval(renderVideoWaitingElapsed, 1000);
+    }
+  }
+
+  function setStreamState(key) {
+    const normalizedKey = typeof key === 'string' ? key : '';
+    streamStateKey = normalizedKey;
+    if (normalizedKey) {
+      streamStateMessage.textContent = t(normalizedKey);
+      streamStateMessage.setAttribute('data-i18n', normalizedKey);
+    } else {
+      streamStateMessage.textContent = '';
+      streamStateMessage.removeAttribute('data-i18n');
+    }
+    if (normalizedKey === 'videoWaiting') startVideoWaitingTimer();
+    else stopVideoWaitingTimer();
+  }
+
   function clearFrame() {
     if (frameObjectUrl) URL.revokeObjectURL(frameObjectUrl);
     frameObjectUrl = '';
     frameVersion = 0;
     frame.removeAttribute('src');
     pad.classList.remove('frame-ready');
-    if (!pad.classList.contains('webrtc-ready')) streamState.textContent = t('androidAutoWaiting');
+    if (!pad.classList.contains('webrtc-ready')) setStreamState('androidAutoWaiting');
   }
 
   function stopFramePolling(clear = false) {
@@ -1730,14 +1914,14 @@
       frame.onload = () => {
         if (frameObjectUrl === nextObjectUrl) {
           pad.classList.add('frame-ready');
-          streamState.textContent = '';
+          setStreamState('');
         }
       };
       frame.src = nextObjectUrl;
       if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
     } catch (error) {
       if (error.name !== 'AbortError' && browserCredential === requestedCredential) {
-        if (!pad.classList.contains('frame-ready')) streamState.textContent = t('videoWaiting');
+        if (!pad.classList.contains('frame-ready')) setStreamState('videoWaiting');
         retryDelay = 1000;
       }
     } finally {
@@ -1752,6 +1936,61 @@
 
   function expandedViewActive() {
     return viewerOwnsFullscreen() || theaterMode;
+  }
+
+  function screenWakeLockEligible() {
+    return Boolean(browserCredential) && pageActive && !document.hidden && expandedViewActive();
+  }
+
+  function safelyReleaseScreenWakeLock(lock) {
+    if (!lock || lock.released || typeof lock.release !== 'function') return;
+    try {
+      Promise.resolve(lock.release()).catch(() => null);
+    } catch (_) {
+      // Wake Lock is optional and must never interrupt projection controls.
+    }
+  }
+
+  function releaseScreenWakeLock() {
+    if (!screenWakeLock && !screenWakeLockRequest) return;
+    screenWakeLockGeneration += 1;
+    screenWakeLockRequest = null;
+    const lock = screenWakeLock;
+    screenWakeLock = null;
+    safelyReleaseScreenWakeLock(lock);
+  }
+
+  function requestScreenWakeLock() {
+    if (!screenWakeLockEligible() || screenWakeLock || screenWakeLockRequest) return;
+    if (!navigator.wakeLock || typeof navigator.wakeLock.request !== 'function') return;
+    const generation = ++screenWakeLockGeneration;
+    let request;
+    try {
+      request = navigator.wakeLock.request('screen');
+    } catch (_) {
+      return;
+    }
+    screenWakeLockRequest = request;
+    Promise.resolve(request).then(lock => {
+      if (screenWakeLockRequest === request) screenWakeLockRequest = null;
+      if (generation !== screenWakeLockGeneration || !screenWakeLockEligible()) {
+        safelyReleaseScreenWakeLock(lock);
+        return;
+      }
+      screenWakeLock = lock;
+      if (lock && typeof lock.addEventListener === 'function') {
+        lock.addEventListener('release', () => {
+          if (screenWakeLock === lock) screenWakeLock = null;
+        }, {once: true});
+      }
+    }).catch(() => {
+      if (screenWakeLockRequest === request) screenWakeLockRequest = null;
+    });
+  }
+
+  function syncScreenWakeLock() {
+    if (screenWakeLockEligible()) requestScreenWakeLock();
+    else releaseScreenWakeLock();
   }
 
   function hideFullscreenHint() {
@@ -1789,6 +2028,7 @@
     if (expanded && !expandedViewWasActive) showFullscreenHint();
     if (!expanded) hideFullscreenHint();
     expandedViewWasActive = expanded;
+    syncScreenWakeLock();
     scheduleViewportLayoutSync();
   }
 
@@ -1803,18 +2043,28 @@
     const generation = ++expandedViewRequestGeneration;
     cancelActivePointer();
     if (!enabled) {
-      if (theaterMode) setTheaterMode(false);
+      if (theaterMode) {
+        theaterMode = false;
+        document.body.classList.remove('theater-mode');
+      }
       if (viewerOwnsFullscreen()) await document.exitFullscreen().catch(() => null);
-      if (generation === expandedViewRequestGeneration) syncFullscreenState();
+      if (generation === expandedViewRequestGeneration) {
+        if (!expandedViewActive()) releaseExpandedProjectionViewport();
+        syncFullscreenState();
+      }
       return;
     }
     if (expandedViewActive()) return;
+    lockExpandedProjectionViewport();
+    const preparation = preapplyExpandedProjectionViewport();
+    if (preparation) preparation.catch(() => null);
     if (typeof viewer.requestFullscreen === 'function' && document.fullscreenEnabled !== false) {
       fullscreenEntryPendingGeneration = generation;
       try {
         await viewer.requestFullscreen();
         if (generation !== expandedViewRequestGeneration) {
           if (viewerOwnsFullscreen()) await document.exitFullscreen().catch(() => null);
+          if (!expandedViewActive()) releaseExpandedProjectionViewport();
           return;
         }
         if (viewerOwnsFullscreen()) {
@@ -1918,12 +2168,15 @@
 
     openSocket() {
       return new Promise((resolve, reject) => {
+        const startedAt = diagnosticClockMillis();
+        recordConnectionTiming('Signal', 'websocket_start', startedAt);
         const socket = new WebSocket(this.config.webSocketUrl);
         this.socket = socket;
         let settled = false;
         const timeout = window.setTimeout(() => {
           if (settled) return;
           settled = true;
+          recordConnectionTiming('Signal', 'websocket_timeout', startedAt, 'timeout');
           socket.close(1000, 'connect_timeout');
           this.clearSocket(socket, new Error('Cloud relay connection timed out'));
           reject(new Error('Cloud relay connection timed out'));
@@ -1935,6 +2188,7 @@
           action();
         };
         socket.addEventListener('open', () => settle(() => {
+          recordConnectionTiming('Signal', 'websocket_open', startedAt, 'open');
           this.reconnectAttempt = 0;
           this.nextConnectAt = 0;
           resolve();
@@ -1942,11 +2196,13 @@
         socket.addEventListener('message', event => this.receive(socket, event.data));
         socket.addEventListener('error', () => {
           const error = new Error('Cloud relay connection failed');
+          recordConnectionTiming('Signal', 'websocket_error', startedAt, 'error');
           this.clearSocket(socket, error);
           settle(() => reject(error));
         });
         socket.addEventListener('close', event => {
           const error = new Error(`Cloud relay closed (${event.code})`);
+          recordConnectionTiming('Signal', 'websocket_close', startedAt, String(event.code));
           settle(() => reject(error));
           this.clearSocket(socket, error);
         });
@@ -2012,7 +2268,12 @@
       this.pending = new Map();
       this.closed = false;
       channel.addEventListener('open', () => {
-        if (this.isCurrent()) pad.dataset.navonwebControlTransport = 'direct';
+        if (!this.isCurrent()) return;
+        localControlCutover = true;
+        pad.dataset.navonwebControlTransport = 'direct';
+        if (streamStateKey === 'localControlRecovering') setStreamState('videoWaiting');
+        cancelNoticeRequestForRetry();
+        ensureNoticesLoaded();
       });
       channel.addEventListener('message', event => this.receive(event.data));
       channel.addEventListener('error', () => this.fail(new Error('WebRTC control channel failed')));
@@ -2031,8 +2292,7 @@
     request(path, options) {
       if (!this.isOpen()) return null;
       if (this.pending.size >= CONTROL_WEBRTC_MAX_IN_FLIGHT_REQUESTS) {
-        // No bytes were handed to send(), so the caller may safely use cloud relay.
-        return null;
+        return Promise.reject(markLocalControlUnavailable('in_flight_saturated', this.generation));
       }
       const signal = options.signal;
       if (signal && signal.aborted) return Promise.reject(abortError());
@@ -2053,8 +2313,7 @@
         return Promise.reject(new Error('WebRTC control request is too large'));
       }
       if (this.channel.bufferedAmount > CONTROL_WEBRTC_MAX_MESSAGE_BYTES) {
-        // No bytes were handed to send(), so the caller may safely use cloud relay.
-        return null;
+        return Promise.reject(markLocalControlUnavailable('buffer_congested', this.generation));
       }
 
       return new Promise((resolve, reject) => {
@@ -2120,7 +2379,7 @@
       this.closed = true;
       if (webRtcControlTransport === this) {
         webRtcControlTransport = null;
-        pad.dataset.navonwebControlTransport = 'cloud_fallback';
+        markLocalControlUnavailable('channel_failed', this.generation);
       }
       for (const pending of this.pending.values()) pending.reject(error);
     }
@@ -2179,6 +2438,15 @@
     return new DOMException('The operation was aborted', 'AbortError');
   }
 
+  function markLocalControlUnavailable(reason, generation = webRtcGeneration) {
+    pad.dataset.navonwebControlTransport = `local_unavailable_${reason}`;
+    setStreamState('localControlRecovering');
+    window.setTimeout(() => {
+      if (generation === webRtcGeneration && (webRtcPeer || webRtcStarting)) failWebRtc();
+    }, 0);
+    return new Error(`Local WebRTC control channel unavailable (${reason})`);
+  }
+
   function raceAbort(promise, signal) {
     if (!signal) return promise;
     if (signal.aborted) return Promise.reject(abortError());
@@ -2203,6 +2471,32 @@
     ));
   }
 
+  function isLocalOnlyWebRtcControlRequest(path, options) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const pathname = String(path || '').split('?')[0];
+    return (method === 'GET' && pathname === '/api/notices') ||
+      (method === 'POST' && pathname === '/api/touch') ||
+      (localControlCutover && method === 'POST' && pathname === '/api/projection/viewport');
+  }
+
+  function isCloudRelaySignalingRequest(path, options) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const pathname = String(path || '').split('?')[0];
+    if ((method === 'GET' && (
+      pathname === '/health' ||
+      pathname === '/api/status' ||
+      pathname === '/api/projection/profile' ||
+      pathname === '/api/projection/viewport' ||
+      pathname === '/api/webrtc/capabilities'
+    )) || (method === 'POST' && (
+      pathname === '/api/pair' ||
+      pathname === '/api/projection/viewport' ||
+      pathname === '/api/webrtc/session'
+    ))) return true;
+    return (method === 'GET' || method === 'DELETE') &&
+      /^\/api\/webrtc\/session\/[A-Za-z0-9_-]{16,64}$/u.test(pathname);
+  }
+
   async function api(path, options = {}, credential = browserCredential) {
     const headers = Object.assign({
       'X-Browser-Credential': credential,
@@ -2214,6 +2508,15 @@
       if (directTransport && isDirectWebRtcControlRequest(path, requestOptions)) {
         const directRequest = directTransport.request(path, requestOptions);
         if (directRequest) return directRequest;
+      }
+      // Touch is always local-only. Initial viewport geometry may cross signaling before the
+      // DataChannel opens, but becomes local-only after cutover. Read-only status/profile/viewport
+      // metadata remains eligible for signaling during recovery and never carries media or input.
+      if (isLocalOnlyWebRtcControlRequest(path, requestOptions)) {
+        return Promise.reject(markLocalControlUnavailable('channel_not_open'));
+      }
+      if (!isCloudRelaySignalingRequest(path, requestOptions)) {
+        return Promise.reject(new Error('Cloud relay is restricted to connection signaling'));
       }
       if (!cloudRelayTransport) cloudRelayTransport = new CloudRelayTransport(CLOUD_RELAY_CONFIG);
       return cloudRelayTransport.request(path, requestOptions);
@@ -3186,7 +3489,6 @@
 
   function scheduleWebRtcRecovery() {
     if (!pageActive || !browserCredential || !androidAutoInteractive || document.hidden ||
-        !localNetworkPermissionAllowsWebRtc(false) ||
         webRtcRecoveryTimer || webRtcRecoveryInFlight || webRtcStarting ||
         webRtcPeer && isWebRtcConnected(webRtcPeer)) return;
     const requestedCredential = browserCredential;
@@ -3198,8 +3500,7 @@
     webRtcRecoveryTimer = setTimeout(async () => {
       webRtcRecoveryTimer = 0;
       if (!pageActive || browserCredential !== requestedCredential || !androidAutoInteractive ||
-          document.hidden || !localNetworkPermissionAllowsWebRtc(false) ||
-          webRtcStarting || webRtcRecoveryInFlight) return;
+          document.hidden || webRtcStarting || webRtcRecoveryInFlight) return;
       webRtcRecoveryAttempts += 1;
       webRtcRecoveryInFlight = true;
       try {
@@ -3270,8 +3571,7 @@
           ? 'available'
           : 'unavailable';
         const compatible = webRtcServerCapabilities.codecs.some(name => browserCodecCapabilities.has(name));
-        if (webRtcServerCapabilities.available && compatible &&
-            localNetworkPermissionAllowsWebRtc(false) && !webRtcPeer && !webRtcStarting &&
+        if (webRtcServerCapabilities.available && compatible && !webRtcPeer && !webRtcStarting &&
             !webRtcRecoveryTimer && !webRtcRecoveryInFlight) {
           queueMicrotask(() => startWebRtc());
         }
@@ -3302,8 +3602,8 @@
       if (channel) {
         try { channel.close(); } catch (_) { /* setup did not complete */ }
       }
-      pad.dataset.navonwebControlTransport = 'cloud_fallback';
-      console.warn('WebRTC control channel is unavailable; using cloud fallback.', error);
+      pad.dataset.navonwebControlTransport = 'local_unavailable_setup';
+      console.warn('WebRTC control channel is unavailable; cloud control fallback is disabled.', error);
       return null;
     }
   }
@@ -3312,7 +3612,75 @@
     const transport = webRtcControlTransport;
     webRtcControlTransport = null;
     if (transport) transport.close();
-    if (CLOUD_RELAY_MODE) pad.dataset.navonwebControlTransport = 'cloud_fallback';
+    if (CLOUD_RELAY_MODE) pad.dataset.navonwebControlTransport = 'local_unavailable';
+  }
+
+  function stopWebRtcVideoStats() {
+    if (webRtcVideoStatsTimer) window.clearInterval(webRtcVideoStatsTimer);
+    webRtcVideoStatsTimer = 0;
+    webRtcVideoStatsGeneration = 0;
+    webRtcVideoStatsPrevious = null;
+    delete pad.dataset.navonwebVideoBitrateKbps;
+    delete pad.dataset.navonwebVideoFrameSize;
+    delete pad.dataset.navonwebVideoFramesPerSecond;
+    delete pad.dataset.navonwebVideoAverageQp;
+  }
+
+  async function publishWebRtcVideoStats(peer, generation) {
+    if (!peer || generation !== webRtcGeneration || peer !== webRtcPeer ||
+        typeof peer.getStats !== 'function') return;
+    try {
+      const report = await peer.getStats();
+      let inbound = null;
+      report.forEach(entry => {
+        if (!inbound && entry.type === 'inbound-rtp' &&
+            (entry.kind === 'video' || entry.mediaType === 'video')) inbound = entry;
+      });
+      if (!inbound || generation !== webRtcGeneration || peer !== webRtcPeer) return;
+      const timestampMillis = Number(inbound.timestamp) || performance.now();
+      const bytesReceived = Math.max(0, Number(inbound.bytesReceived) || 0);
+      const framesDecoded = Math.max(0, Number(inbound.framesDecoded) || 0);
+      const qpSum = Number.isFinite(Number(inbound.qpSum)) ? Number(inbound.qpSum) : null;
+      const previous = webRtcVideoStatsPrevious;
+      let bitrateKbps = null;
+      let averageQp = null;
+      if (previous && timestampMillis > previous.timestampMillis) {
+        const elapsedSeconds = (timestampMillis - previous.timestampMillis) / 1000;
+        bitrateKbps = Math.max(0, bytesReceived - previous.bytesReceived) * 8 /
+          elapsedSeconds / 1000;
+        const decodedDelta = Math.max(0, framesDecoded - previous.framesDecoded);
+        if (qpSum !== null && previous.qpSum !== null && decodedDelta > 0) {
+          averageQp = Math.max(0, qpSum - previous.qpSum) / decodedDelta;
+        }
+      }
+      webRtcVideoStatsPrevious = {timestampMillis, bytesReceived, framesDecoded, qpSum};
+      const width = Math.max(0, Number(inbound.frameWidth) || webRtcVideo.videoWidth || 0);
+      const height = Math.max(0, Number(inbound.frameHeight) || webRtcVideo.videoHeight || 0);
+      const framesPerSecond = Math.max(0, Number(inbound.framesPerSecond) || 0);
+      pad.dataset.navonwebVideoFrameSize = width && height ? `${width}x${height}` : 'unknown';
+      pad.dataset.navonwebVideoFramesPerSecond = framesPerSecond.toFixed(1);
+      if (bitrateKbps !== null) pad.dataset.navonwebVideoBitrateKbps = bitrateKbps.toFixed(0);
+      if (averageQp !== null) pad.dataset.navonwebVideoAverageQp = averageQp.toFixed(1);
+      console.info(
+        `NAVONWEB_VIDEO_STATS size=${pad.dataset.navonwebVideoFrameSize} ` +
+          `fps=${framesPerSecond.toFixed(1)} bitrateKbps=${bitrateKbps === null ? 'warming' : bitrateKbps.toFixed(0)} ` +
+          `avgQp=${averageQp === null ? 'unknown' : averageQp.toFixed(1)} ` +
+          `lost=${Math.max(0, Number(inbound.packetsLost) || 0)}`
+      );
+    } catch (_) {
+      // Video stats are diagnostic only and must never affect the media session.
+    }
+  }
+
+  function startWebRtcVideoStats(peer, generation) {
+    if (webRtcVideoStatsTimer && webRtcVideoStatsGeneration === generation) return;
+    stopWebRtcVideoStats();
+    webRtcVideoStatsGeneration = generation;
+    publishWebRtcVideoStats(peer, generation);
+    webRtcVideoStatsTimer = window.setInterval(
+      () => publishWebRtcVideoStats(peer, generation),
+      WEBRTC_VIDEO_STATS_INTERVAL_MILLIS
+    );
   }
 
   function resetWebRtc(notifyServer = true) {
@@ -3322,6 +3690,7 @@
     const closingCredential = browserCredential;
     const closingPeer = webRtcPeer;
     webRtcGeneration += 1;
+    stopWebRtcVideoStats();
     disposeControlWebRtcChannel();
     disposeMicrophoneWebRtcChannel();
     disposeOutputAudioWebRtcChannels();
@@ -3353,38 +3722,6 @@
     webRtcCapabilitiesPromise = null;
     webRtcServerCapabilities = null;
     scheduleWebRtcRecovery();
-  }
-
-  function applyCodecPreference(transceiver) {
-    if (!transceiver.setCodecPreferences || typeof RTCRtpReceiver === 'undefined') return;
-    const receiverCapabilities = RTCRtpReceiver.getCapabilities('video');
-    const available = (receiverCapabilities && receiverCapabilities.codecs) || [];
-    const preferred = [];
-    for (const codecName of (webRtcServerCapabilities && webRtcServerCapabilities.codecs) || []) {
-      for (const entry of available) {
-        if (String(entry.mimeType || '').toLowerCase() === `video/${codecName}` &&
-            !preferred.includes(entry)) preferred.push(entry);
-      }
-    }
-    const primaryPayloadTypes = new Set(preferred
-      .map(entry => Number(entry.preferredPayloadType))
-      .filter(Number.isInteger));
-    const recoveryMimeTypes = new Set([
-      'video/red',
-      'video/ulpfec',
-      'video/flexfec-03'
-    ]);
-    for (const entry of available) {
-      const mimeType = String(entry.mimeType || '').toLowerCase();
-      if (mimeType === 'video/rtx') {
-        const aptMatch = /(?:^|;)\s*apt=(\d+)(?:;|$)/i.exec(String(entry.sdpFmtpLine || ''));
-        const apt = aptMatch ? Number(aptMatch[1]) : NaN;
-        if (Number.isInteger(apt) && primaryPayloadTypes.has(apt) &&
-            !preferred.includes(entry)) preferred.push(entry);
-      } else if (recoveryMimeTypes.has(mimeType) &&
-          !preferred.includes(entry)) preferred.push(entry);
-    }
-    if (preferred.length) transceiver.setCodecPreferences(preferred);
   }
 
   function delay(milliseconds) {
@@ -3599,22 +3936,29 @@
 
   async function startWebRtc(userInitiated = false) {
     if (!pageActive || document.hidden || !browserCredential || !androidAutoInteractive ||
-        webRtcStarting || webRtcPeer || !localNetworkPermissionAllowsWebRtc(userInitiated)) {
+        webRtcStarting || webRtcPeer) {
       syncLocalNetworkPermissionPanel();
       return;
     }
+    const webRtcStartedAt = diagnosticClockMillis();
     let startupStage = 'capabilities';
+    recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
     const capabilities = await ensureWebRtcCapabilities();
     if (!pageActive || document.hidden || !capabilities || !capabilities.available ||
-        !androidAutoInteractive || webRtcStarting || webRtcPeer ||
-        !localNetworkPermissionAllowsWebRtc(userInitiated)) {
+        !androidAutoInteractive || webRtcStarting || webRtcPeer) {
       if (!capabilities) pad.dataset.navonwebWebRtcFailureStage = 'capabilities';
       else if (!capabilities.available) pad.dataset.navonwebWebRtcFailureStage = 'unavailable';
+      recordConnectionTiming(
+        'WebRtc',
+        capabilities && !capabilities.available ? 'unavailable' : 'capabilities_failed',
+        webRtcStartedAt
+      );
       return;
     }
     const compatible = capabilities.codecs.some(name => browserCodecCapabilities.has(name));
     if (!compatible) {
       pad.dataset.navonwebWebRtcFailureStage = 'no_compatible_codec';
+      recordConnectionTiming('WebRtc', 'no_compatible_codec', webRtcStartedAt);
       return;
     }
     webRtcStarting = true;
@@ -3623,6 +3967,7 @@
     clearIceFailureDiagnostics();
     try {
       startupStage = 'peer';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       peer = new RTCPeerConnection({iceServers: capabilities.iceServers});
       webRtcPeer = peer;
       peer.addEventListener('icecandidateerror', event => {
@@ -3635,7 +3980,13 @@
         console.warn(`NAVONWEB_ICE_CANDIDATE_ERROR code=${code} scheme=${scheme}`);
       });
       let peerFailureHandling = false;
-      if (capabilities.controlDataChannelV1) createControlWebRtcChannel(peer, generation);
+      let connectedTimingPublished = false;
+      const controlTransport = capabilities.controlDataChannelV1
+        ? createControlWebRtcChannel(peer, generation)
+        : null;
+      if (CLOUD_RELAY_MODE && !controlTransport) {
+        throw new Error('WebRTC control data channel is required in cloud mode');
+      }
       const microphoneChannel = createMicrophoneWebRtcChannel(peer, generation);
       if (CLOUD_RELAY_MODE && !microphoneChannel) {
         throw new Error('WebRTC microphone data channel is required in cloud mode');
@@ -3646,7 +3997,6 @@
         throw new Error('WebRTC output audio data channels are required in cloud mode');
       }
       const transceiver = peer.addTransceiver('video', {direction: 'recvonly'});
-      applyCodecPreference(transceiver);
       peer.addEventListener('track', event => {
         if (generation !== webRtcGeneration || peer !== webRtcPeer || event.track.kind !== 'video') return;
         webRtcVideo.srcObject = event.streams[0] || new MediaStream([event.track]);
@@ -3656,12 +4006,18 @@
         if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
         const state = webRtcConnectionState(peer);
         if (state === 'connected' || state === 'completed') {
+          if (!connectedTimingPublished) {
+            connectedTimingPublished = true;
+            recordConnectionTiming('WebRtc', 'connected', webRtcStartedAt, state);
+          }
           cancelWebRtcRecovery(true);
           armOutputAudioWebRtcOpenTimers(generation);
           pad.classList.add('webrtc-ready');
+          setStreamState('');
           stopFramePolling(false);
           webRtcStarting = false;
           publishSelectedIcePair(peer, generation);
+          startWebRtcVideoStats(peer, generation);
         } else if (state === 'failed' || state === 'closed') {
           if (webRtcStarting || peerFailureHandling) return;
           peerFailureHandling = true;
@@ -3675,12 +4031,15 @@
       peer.addEventListener('connectionstatechange', updateConnectionState);
       peer.addEventListener('iceconnectionstatechange', updateConnectionState);
       startupStage = 'offer';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       startupStage = 'ice_gathering';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       await waitForIceGatheringComplete(peer);
       if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
       startupStage = 'session_open';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       const response = await api('/api/webrtc/session?codec=auto', {
         method: 'POST',
         headers: {'Content-Type': 'application/sdp', 'Accept': 'application/json'},
@@ -3697,11 +4056,13 @@
       }
       webRtcSessionId = opened.sessionId;
       startupStage = 'answer';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       const answer = await waitForWebRtcAnswer(opened, generation);
       if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
       await peer.setRemoteDescription({type: 'answer', sdp: answer.answerSdp});
       if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
       startupStage = 'connection';
+      recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       await waitForWebRtcConnection(peer, generation);
       if (generation === webRtcGeneration && peer === webRtcPeer) {
         delete pad.dataset.navonwebWebRtcFailureStage;
@@ -3710,6 +4071,7 @@
     } catch (error) {
       if (generation === webRtcGeneration) {
         const failureReason = webRtcFailureReason(error);
+        recordConnectionTiming('WebRtc', 'failed', webRtcStartedAt, startupStage);
         await publishIceFailure(peer, generation, startupStage, failureReason);
         pad.dataset.navonwebWebRtcFailureStage = startupStage;
         console.warn(
@@ -3746,14 +4108,14 @@
       // preserve the active WebRTC session while Android Auto renegotiates.
       if (!transportReconnectInProgress && (webRtcPeer || webRtcStarting)) resetWebRtc(true);
       cancelPointerInteraction();
-      streamState.textContent = state === 'RECONNECTING'
-        ? t('androidAutoReconnecting')
-        : t('androidAutoWaiting');
+      setStreamState(state === 'RECONNECTING'
+        ? 'androidAutoReconnecting'
+        : 'androidAutoWaiting');
       syncLocalNetworkPermissionPanel();
       return;
     }
     if (!pad.classList.contains('frame-ready') && !pad.classList.contains('webrtc-ready')) {
-      streamState.textContent = t('videoWaiting');
+      setStreamState('videoWaiting');
     }
     if (!wasInteractive) cancelWebRtcRecovery(true);
     if (!webRtcPeer && !webRtcStarting) scheduleWebRtcRecovery();
@@ -3934,7 +4296,7 @@
       // Keep the established media pipeline through one transient request
       // failure. Two consecutive failures expose the disconnected state.
       if (statusFailureCount >= 2) renderAndroidAutoStatus(null);
-      streamState.textContent = t('serverWaiting');
+      setStreamState('serverWaiting');
       return false;
     } finally {
       window.clearTimeout(timeout);
@@ -3951,6 +4313,7 @@
     outputAudioWebRtcUnsupported = false;
     cancelOutputAudioWebRtcRecovery(true);
     browserCredential = '';
+    localControlCutover = false;
     webRtcCapabilitiesPromise = null;
     webRtcServerCapabilities = null;
     forgetCredential();
@@ -4012,8 +4375,54 @@
     }
   }
 
+  async function checkRememberedCloudRelayRoute() {
+    if (!CLOUD_RELAY_MODE || CLOUD_RELAY_CONFIG.roomId) return 'not_applicable';
+    const startedAt = diagnosticClockMillis();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      CLOUD_ROUTE_STATUS_TIMEOUT_MILLIS
+    );
+    recordConnectionTiming('Route', 'check_start', startedAt);
+    try {
+      const response = await fetch(CLOUD_RELAY_CONFIG.routeStatusUrl, {
+        method: 'GET',
+        mode: 'same-origin',
+        credentials: 'include',
+        cache: 'no-store',
+        redirect: 'error',
+        signal: controller.signal
+      });
+      if (response.status === 204) {
+        recordConnectionTiming('Route', 'valid', startedAt, '204');
+        return 'valid';
+      }
+      if (response.status === 401) {
+        recordConnectionTiming('Route', 'invalid', startedAt, '401');
+        return 'invalid';
+      }
+      recordConnectionTiming('Route', 'transient', startedAt, String(response.status));
+      return 'transient';
+    } catch (error) {
+      const reason = error && error.name === 'AbortError' ? 'timeout' : 'network';
+      recordConnectionTiming('Route', 'transient', startedAt, reason);
+      return 'transient';
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function normalizePairingCode(candidate) {
+    return String(candidate || '').replace(/\s+/g, '');
+  }
+
+  function formatPairingCodeInput(candidate) {
+    const digits = normalizePairingCode(candidate).replace(/\D+/g, '').slice(0, 8);
+    return digits.length > 4 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : digits;
+  }
+
   async function pairWithCode(candidate) {
-    const pairingCode = candidate.trim();
+    const pairingCode = normalizePairingCode(candidate);
     if (!/^\d{8}$/.test(pairingCode)) {
       setPairStatus(t('eightDigitRequired'), true);
       code.focus();
@@ -4023,14 +4432,22 @@
     pairingInFlight = true;
     pair.disabled = true;
     setPairStatus(t('connecting'));
+    const pairingStartedAt = diagnosticClockMillis();
+    recordConnectionTiming('Pairing', 'bootstrap_start', pairingStartedAt);
     let bootstrapRouteMissing = false;
     let bootstrapRouteExpired = false;
     let pairingFailureStage = 'bootstrap';
     try {
       const bootstrapResponse = await bootstrapCloudRelayRoute(pairingCode);
+      recordConnectionTiming(
+        'Pairing',
+        'bootstrap_complete',
+        pairingStartedAt,
+        bootstrapResponse ? String(bootstrapResponse.status) : 'local'
+      );
       if (bootstrapResponse && bootstrapResponse.status === 404) {
-        // A route cookie may already have been issued before a transient failure between
-        // bootstrap and /api/pair. Try that HttpOnly route before rejecting the code.
+        // Do not spend another bootstrap attempt. An existing HttpOnly route may still reach
+        // /api/pair; otherwise explain that the phone has not published this code yet.
         bootstrapRouteMissing = true;
         console.warn('NAVONWEB_PAIR_ROUTE_MISSING status=404');
       }
@@ -4040,7 +4457,7 @@
       }
       if (bootstrapResponse && freshCloudRelayRouteRequired &&
           (bootstrapRouteMissing || bootstrapRouteExpired)) {
-        setPairStatus(bootstrapRouteExpired ? t('expiredCode') : t('invalidCode'), true);
+        setPairStatus(bootstrapRouteExpired ? t('expiredCode') : t('codeNotRegistered'), true);
         return;
       }
       if (bootstrapResponse && bootstrapResponse.status === 429) {
@@ -4053,11 +4470,13 @@
         throw new Error(`bootstrap HTTP ${bootstrapResponse.status}`);
       }
       pairingFailureStage = 'pair';
+      recordConnectionTiming('Pairing', 'pair_start', pairingStartedAt);
       const response = await api('/api/pair', {
         method: 'POST',
         headers: {'X-Pairing-Code': pairingCode},
         cache: 'no-store'
       }, '');
+      recordConnectionTiming('Pairing', 'pair_complete', pairingStartedAt, String(response.status));
       if (response.status === 401) {
         console.warn('NAVONWEB_PAIR_FAILED stage=pair status=401');
         setPairStatus(t('invalidCode'), true);
@@ -4083,21 +4502,24 @@
       resetPremiumPromptSession();
       resetNoticeSession();
       browserCredential = issuedCredential;
+      localControlCutover = false;
       cancelWebRtcRecovery(true);
       webRtcCapabilitiesPromise = null;
       webRtcServerCapabilities = null;
       rememberCredential(issuedCredential);
+      recordConnectionTiming('Pairing', 'connected', pairingStartedAt, 'ok');
       code.value = '';
       showAuthenticatedView(true);
       startStatusPolling();
       await pollStatus();
     } catch (error) {
       const errorName = error && typeof error.name === 'string' ? error.name : 'Error';
+      recordConnectionTiming('Pairing', 'failed', pairingStartedAt, errorName);
       console.warn(`NAVONWEB_PAIR_FAILED stage=${pairingFailureStage} error=${errorName}`);
       setPairStatus(
         bootstrapRouteExpired
           ? t('expiredCode')
-          : bootstrapRouteMissing ? t('invalidCode') : t('unableToConnect'),
+          : bootstrapRouteMissing ? t('codeNotRegistered') : t('unableToConnect'),
         true
       );
     } finally {
@@ -4110,7 +4532,16 @@
     resetPremiumPromptSession();
     resetNoticeSession();
     browserCredential = credential;
+    localControlCutover = false;
     showAuthenticatedView(true);
+    const routeState = await checkRememberedCloudRelayRoute();
+    if (browserCredential !== credential) return;
+    if (routeState === 'invalid') {
+      resetCloudRelayRouteStateForRepair();
+      invalidateCredential(t('savedConnectionExpired'));
+      return;
+    }
+    if (routeState === 'valid') setFreshCloudRelayRouteRequirement(false);
     if (!statusPollingEligible()) return;
     startStatusPolling();
     await pollStatus({automatic: true});
@@ -4344,6 +4775,11 @@
     return consumed;
   }
 
+  code.addEventListener('input', () => {
+    const formatted = formatPairingCodeInput(code.value);
+    if (code.value !== formatted) code.value = formatted;
+  });
+
   pairingForm.addEventListener('submit', event => {
     event.preventDefault();
     unlockAudio();
@@ -4452,6 +4888,9 @@
       theaterMode = false;
       document.body.classList.remove('theater-mode');
     }
+    if (!expandedViewActive() && fullscreenEntryPendingGeneration === 0) {
+      releaseExpandedProjectionViewport();
+    }
     syncFullscreenState();
   });
   document.addEventListener('fullscreenerror', () => {
@@ -4464,10 +4903,11 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && theaterMode) {
       event.preventDefault();
-      setTheaterMode(false);
+      setExpandedView(false).catch(() => null);
     }
   });
   document.addEventListener('visibilitychange', () => {
+    syncScreenWakeLock();
     if (document.hidden) {
       cancelRepairPairingCountdown();
       stopStatusPolling();
@@ -4525,7 +4965,7 @@
     cancelWebRtcRecovery();
     cancelOutputAudioWebRtcRecovery(false);
     renderAndroidAutoStatus(null);
-    streamState.textContent = t('serverWaiting');
+    setStreamState('serverWaiting');
     scheduleRepairPairingAction();
   }
 
@@ -4543,6 +4983,7 @@
   });
   window.addEventListener('pagehide', () => {
     pageActive = false;
+    releaseScreenWakeLock();
     cancelRepairPairingCountdown();
     hidePremiumPrompt();
     cancelNoticeRequestForRetry();

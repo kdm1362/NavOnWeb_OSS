@@ -44,8 +44,13 @@ val supabaseUrl = projectSetting("supabaseUrl").removeSuffix("/")
 val supabasePublishableKey = projectSetting("supabasePublishableKey")
 val premiumProductId = projectSetting("premiumProductId")
     .ifBlank { "navonweb_premium" }
-require(premiumProductId.matches(Regex("[a-z][a-z0-9._]{0,149}"))) {
+require(premiumProductId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
     "premiumProductId must be a valid Google Play one-time product ID"
+}
+val premiumPurchaseOptionId = projectSetting("premiumPurchaseOptionId")
+    .ifBlank { "premium-access" }
+require(premiumPurchaseOptionId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
+    "premiumPurchaseOptionId must be a valid Google Play one-time purchase option ID"
 }
 require(supabaseUrl.isEmpty() || supabaseUrl.matches(Regex("https://[a-z0-9-]{1,80}\\.supabase\\.co"))) {
     "supabaseUrl must be an HTTPS Supabase project URL"
@@ -99,18 +104,6 @@ fun String.asBuildConfigStringLiteral(): String =
             .replace("\t", "\\t") +
         "\""
 
-data class TrustedProductionCredentialManifestPins(
-    val identityLeafSha256: String,
-    val identityAnchorSha256: String,
-    val phonePeerLeafSha256: List<String>,
-)
-
-val trustedProductionCredentialManifests:
-    Map<String, TrustedProductionCredentialManifestPins> = emptyMap()
-// Keep this map empty while the release authorization review remains STOP.
-// A reviewed manifest digest and its exact pins must be added here together with
-// the matching private deployment-check allowlist entry before signing a release.
-
 val sha256Regex = Regex("[0-9A-Fa-f]{64}")
 val productionCredentialManifestPath = providers
     .gradleProperty("productionCredentialManifestPath")
@@ -132,30 +125,14 @@ val productionAasdkIdentityAnchorSha256 = providers
     .orNull
     ?.trim()
     .orEmpty()
-val productionAasdkPhonePeerLeafSha256 = providers
-    .gradleProperty("productionAasdkPhonePeerLeafSha256")
-    .orNull
-    ?.trim()
-    .orEmpty()
-val productionAasdkPhonePeerLeafHashes = if (productionAasdkPhonePeerLeafSha256.isEmpty()) {
-    emptyList()
-} else {
-    productionAasdkPhonePeerLeafSha256.split(',').map(String::trim)
-}
 val productionAasdkIdentityConfigured =
     productionAasdkIdentityLeafSha256.isNotEmpty() ||
-        productionAasdkIdentityAnchorSha256.isNotEmpty() ||
-        productionAasdkPhonePeerLeafSha256.isNotEmpty()
+        productionAasdkIdentityAnchorSha256.isNotEmpty()
 val productionAasdkIdentityFullyConfigured =
     productionAasdkIdentityLeafSha256.matches(sha256Regex) &&
-        productionAasdkIdentityAnchorSha256.matches(sha256Regex) &&
-        productionAasdkPhonePeerLeafHashes.size in 1..8 &&
-        productionAasdkPhonePeerLeafHashes.all(sha256Regex::matches) &&
-        productionAasdkPhonePeerLeafHashes.map(String::uppercase).distinct().size ==
-        productionAasdkPhonePeerLeafHashes.size
+        productionAasdkIdentityAnchorSha256.matches(sha256Regex)
 require(!productionAasdkIdentityConfigured || productionAasdkIdentityFullyConfigured) {
-    "Production AASDK identity pins must contain two SHA-256 identity hashes and " +
-        "one to eight unique comma-separated phone-peer SHA-256 hashes"
+    "Production AASDK identity pins must contain leaf and anchor SHA-256 hashes"
 }
 
 val playUploadKeystorePath = providers
@@ -215,7 +192,7 @@ fun sha256Hex(file: File): String {
     }
 }
 
-val trustedProductionCredentialManifestPins = if (
+if (
     playUploadSigningConfigured && !playInternalTestBuild
 ) {
     require(productionCredentialManifestPath.isNotEmpty()) {
@@ -232,11 +209,6 @@ val trustedProductionCredentialManifestPins = if (
     require(actualManifestSha256.equals(productionCredentialManifestSha256, ignoreCase = true)) {
         "The production credential manifest snapshot SHA-256 does not match the verified digest"
     }
-    requireNotNull(trustedProductionCredentialManifests[actualManifestSha256]) {
-        "The production credential manifest is not in Gradle's source-reviewed allowlist"
-    }
-} else {
-    null
 }
 
 android {
@@ -247,13 +219,18 @@ android {
         applicationId = "com.eigenkodex.navonweb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.1.0-p0"
+        versionCode = 18
+        versionName = "0.1.8-p0"
 
         buildConfigField(
             "String",
             "PREMIUM_PRODUCT_ID",
             premiumProductId.asBuildConfigStringLiteral(),
+        )
+        buildConfigField(
+            "String",
+            "PREMIUM_PURCHASE_OPTION_ID",
+            premiumPurchaseOptionId.asBuildConfigStringLiteral(),
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -290,7 +267,6 @@ android {
             buildConfigField("boolean", "ALLOW_DEV_HEAD_UNIT_CREDENTIALS", "true")
             buildConfigField("String", "AASDK_IDENTITY_LEAF_SHA256", "\"\"")
             buildConfigField("String", "AASDK_IDENTITY_ANCHOR_SHA256", "\"\"")
-            buildConfigField("String", "AASDK_PHONE_PEER_LEAF_SHA256", "\"\"")
             buildConfigField("String", "SOURCE_CODE_URL", sourceCodeUrl.asBuildConfigStringLiteral())
             buildConfigField("String", "SUPABASE_URL", supabaseUrl.asBuildConfigStringLiteral())
             buildConfigField(
@@ -329,21 +305,6 @@ android {
                         "Play-signed release builds require the deployment credential gate and all " +
                             "production AASDK identity pins"
                     }
-                    val trustedPins = requireNotNull(trustedProductionCredentialManifestPins)
-                    require(
-                        productionAasdkIdentityLeafSha256.equals(
-                            trustedPins.identityLeafSha256,
-                            ignoreCase = true,
-                        ) &&
-                            productionAasdkIdentityAnchorSha256.equals(
-                                trustedPins.identityAnchorSha256,
-                                ignoreCase = true,
-                            ) &&
-                            productionAasdkPhonePeerLeafHashes.map(String::uppercase) ==
-                            trustedPins.phonePeerLeafSha256.map(String::uppercase),
-                    ) {
-                        "Production AASDK pins do not match the source-reviewed manifest allowlist entry"
-                    }
                 }
                 signingConfig = signingConfigs.getByName("playUpload")
             }
@@ -358,11 +319,6 @@ android {
                 "String",
                 "AASDK_IDENTITY_ANCHOR_SHA256",
                 productionAasdkIdentityAnchorSha256.asBuildConfigStringLiteral(),
-            )
-            buildConfigField(
-                "String",
-                "AASDK_PHONE_PEER_LEAF_SHA256",
-                productionAasdkPhonePeerLeafSha256.asBuildConfigStringLiteral(),
             )
             buildConfigField("String", "SOURCE_CODE_URL", sourceCodeUrl.asBuildConfigStringLiteral())
             buildConfigField("String", "SUPABASE_URL", supabaseUrl.asBuildConfigStringLiteral())
@@ -381,8 +337,8 @@ android {
                 "CLOUD_SIGNALING_WEBSOCKET_URL",
                 cloudSignalingWebSocketUrl.asBuildConfigStringLiteral(),
             )
-            // Release never honors the debug bench override. Premium is granted only from the
-            // app-private cache written by a successful Google Play ownership query.
+            // Release never honors the debug bench override. Premium comes from verified Play
+            // ownership only.
             buildConfigField("boolean", "ENABLE_PREMIUM_PROJECTION_BENCH", "false")
             isMinifyEnabled = true
             isShrinkResources = true

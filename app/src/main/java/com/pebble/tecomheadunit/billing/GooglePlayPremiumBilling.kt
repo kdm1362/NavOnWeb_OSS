@@ -34,11 +34,13 @@ import kotlinx.coroutines.flow.asStateFlow
 class GooglePlayPremiumBilling internal constructor(
     context: Context,
     val productId: String,
+    private val purchaseOptionId: String,
     private val entitlementStore: PremiumEntitlementStore,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : PurchasesUpdatedListener {
     init {
         require(isValidProductId(productId)) { "invalid Google Play product ID" }
+        require(isValidProductId(purchaseOptionId)) { "invalid Google Play purchase option ID" }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -97,6 +99,7 @@ class GooglePlayPremiumBilling internal constructor(
     fun refreshPurchases(
         callback: (PremiumPurchaseCheckResult) -> Unit = {},
     ) {
+        clearPurchaseResultMarker()
         withReady(
             onFailure = { responseCode ->
                 markUnavailable(responseCode)
@@ -111,6 +114,7 @@ class GooglePlayPremiumBilling internal constructor(
         activity: Activity,
         callback: (PremiumBillingActionResult) -> Unit = {},
     ) {
+        clearPurchaseResultMarker()
         withReady(
             onFailure = { responseCode ->
                 callbackOnMain(PremiumBillingActionResult.Failed(responseCode), callback)
@@ -176,9 +180,11 @@ class GooglePlayPremiumBilling internal constructor(
                 BillingClient.BillingResponseCode.USER_CANCELED ->
                     mutableState.value = mutableState.value.copy(
                         lastResponseCode = billingResult.responseCode,
+                        lastPurchaseFailureResponseCode = null,
                     )
                 else -> mutableState.value = mutableState.value.copy(
                     lastResponseCode = billingResult.responseCode,
+                    lastPurchaseFailureResponseCode = billingResult.responseCode,
                 )
             }
         }
@@ -237,6 +243,7 @@ class GooglePlayPremiumBilling internal constructor(
                     entitlement = PremiumEntitlementStatus.PREMIUM,
                     entitlementSource = PremiumEntitlementSource.LIVE_PLAY_QUERY,
                     lastResponseCode = BillingClient.BillingResponseCode.OK,
+                    lastPurchaseFailureResponseCode = null,
                 )
                 if (!purchase.acknowledged) acknowledge(purchase.purchaseToken)
                 // A commit failure does not hide an entitlement returned by the live Play query,
@@ -250,6 +257,7 @@ class GooglePlayPremiumBilling internal constructor(
                     entitlement = PremiumEntitlementStatus.PENDING,
                     entitlementSource = PremiumEntitlementSource.LIVE_PLAY_QUERY,
                     lastResponseCode = BillingClient.BillingResponseCode.OK,
+                    lastPurchaseFailureResponseCode = null,
                 )
             }
             PremiumPurchaseEvaluation.Free -> {
@@ -260,6 +268,7 @@ class GooglePlayPremiumBilling internal constructor(
                     entitlement = PremiumEntitlementStatus.FREE,
                     entitlementSource = PremiumEntitlementSource.LIVE_PLAY_QUERY,
                     lastResponseCode = BillingClient.BillingResponseCode.OK,
+                    lastPurchaseFailureResponseCode = null,
                 )
             }
         }
@@ -365,7 +374,9 @@ class GooglePlayPremiumBilling internal constructor(
                 val offers = details?.oneTimePurchaseOfferDetailsList.orEmpty()
                 val permanentOffer = offers
                     .filter { offer ->
-                        offer.rentalDetails == null && !offer.offerToken.isNullOrBlank()
+                        offer.purchaseOptionId == purchaseOptionId &&
+                            offer.rentalDetails == null &&
+                            !offer.offerToken.isNullOrBlank()
                     }
                     .sortedWith(
                         compareBy<ProductDetails.OneTimePurchaseOfferDetails> { offer ->
@@ -375,7 +386,9 @@ class GooglePlayPremiumBilling internal constructor(
                     .firstOrNull()
                     ?: details?.oneTimePurchaseOfferDetails
                         ?.takeIf { offer ->
-                            offer.rentalDetails == null && !offer.offerToken.isNullOrBlank()
+                            offer.purchaseOptionId == purchaseOptionId &&
+                                offer.rentalDetails == null &&
+                                !offer.offerToken.isNullOrBlank()
                         }
                 callback(billingResult, details, permanentOffer)
             }
@@ -445,6 +458,15 @@ class GooglePlayPremiumBilling internal constructor(
         }
     }
 
+    private fun clearPurchaseResultMarker() {
+        runOnMain {
+            mutableState.value = mutableState.value.copy(
+                lastResponseCode = null,
+                lastPurchaseFailureResponseCode = null,
+            )
+        }
+    }
+
     private fun runOnMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
     }
@@ -468,6 +490,7 @@ object PremiumBillingProvider {
             instance?.takeUnless(GooglePlayPremiumBilling::isClosed) ?: GooglePlayPremiumBilling(
                 context = context.applicationContext,
                 productId = BuildConfig.PREMIUM_PRODUCT_ID,
+                purchaseOptionId = BuildConfig.PREMIUM_PURCHASE_OPTION_ID,
                 entitlementStore = PremiumEntitlementStore(context.applicationContext),
             ).also { created -> instance = created }
         }

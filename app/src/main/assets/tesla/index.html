@@ -100,6 +100,9 @@
       background: #000;
       touch-action: none;
     }
+    body.navonweb-dynamic-aspect #pad {
+      aspect-ratio: var(--navonweb-available-aspect-ratio, var(--projection-aspect-ratio, 5 / 3));
+    }
     body.navonweb-authenticated main { align-content: start; }
     #projection-content {
       position: absolute;
@@ -136,6 +139,43 @@
       font-weight: 700;
       text-align: center;
       pointer-events: none;
+    }
+    #stream-state-content {
+      display: grid;
+      grid-template-columns: auto minmax(0, auto);
+      align-items: center;
+      justify-content: center;
+      gap: 6px 10px;
+      max-width: min(88%, 520px);
+      padding: 10px 14px;
+      border: 1px solid #ffffff1f;
+      border-radius: 14px;
+      background: #071019e6;
+      box-shadow: 0 8px 28px #0008;
+    }
+    #stream-state-spinner {
+      display: none;
+      width: 18px;
+      height: 18px;
+      border: 3px solid #33475b;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: navonweb-stream-wait-spin .9s linear infinite;
+    }
+    #stream-state.video-waiting #stream-state-spinner { display: block; }
+    #stream-state-message { min-width: 0; }
+    #stream-wait-time {
+      grid-column: 1 / -1;
+      color: #b7c6d5;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+    @keyframes navonweb-stream-wait-spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #stream-state-spinner { animation: none; }
     }
     #pad.frame-ready #stream-state,
     #pad.webrtc-ready #stream-state { display: none; }
@@ -201,6 +241,16 @@
       box-shadow: 0 8px 28px #000a;
       font-weight: 700;
       text-align: center;
+      pointer-events: none;
+    }
+    #expanded-viewport-probe {
+      position: fixed;
+      inset: 0;
+      padding: max(12px, env(safe-area-inset-top))
+        max(12px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom))
+        max(12px, env(safe-area-inset-left));
+      visibility: hidden;
       pointer-events: none;
     }
     #premium-prompt {
@@ -325,8 +375,10 @@
       aspect-ratio: auto;
     }
     #viewer:fullscreen #local-network-panel,
+    body.theater-mode #local-network-panel {
+      display: none !important;
+    }
     #viewer:fullscreen #media-permission-panel,
-    body.theater-mode #local-network-panel,
     body.theater-mode #media-permission-panel {
       position: absolute;
       z-index: 5;
@@ -380,7 +432,7 @@
   <section id="pairing-panel" aria-label="Browser pairing" data-i18n-aria-label="browserPairing">
     <form id="pairing-form" novalidate>
       <label for="code" data-i18n="pairingCodeLabel">8-digit pairing code shown on your phone</label>
-      <input id="code" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="00000000">
+      <input id="code" inputmode="numeric" maxlength="9" autocomplete="one-time-code" placeholder="0000 0000">
       <button id="pair" type="submit" data-i18n="connect">Connect</button>
       <p id="pair-status" role="status" aria-live="polite" data-i18n="pairingRememberedHint">Enter the code once and this browser will be remembered.</p>
     </form>
@@ -391,7 +443,13 @@
       <div id="projection-content">
         <video id="webrtc-video" autoplay muted playsinline></video>
         <img id="frame" alt="Android Auto projection video" data-i18n-alt="projectionFrameAlt" draggable="false">
-        <div id="stream-state" role="status" aria-live="polite" data-i18n="androidAutoWaiting">Waiting for Android Auto</div>
+        <div id="stream-state">
+          <div id="stream-state-content">
+            <span id="stream-state-spinner" aria-hidden="true"></span>
+            <span id="stream-state-message" role="status" aria-live="polite" aria-atomic="true" data-i18n="androidAutoWaiting">Waiting for Android Auto</span>
+            <time id="stream-wait-time" aria-live="off" hidden></time>
+          </div>
+        </div>
       </div>
     </div>
     <section id="local-network-panel" role="group" aria-labelledby="local-network-message" hidden>
@@ -430,6 +488,7 @@
     <div id="notice-list"></div>
   </details>
 </main>
+<div id="expanded-viewport-probe" aria-hidden="true"></div>
 <script src="/app.js"></script>
 </body>
 </html>

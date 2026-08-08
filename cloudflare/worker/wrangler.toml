@@ -1,0 +1,36 @@
+name = "navonweb-signaling-staging"
+main = "src/index.mjs"
+compatibility_date = "2026-08-03"
+# Production traffic uses only the two custom-domain routes below. Keeping the
+# public workers.dev alias disabled removes an unnecessary second abuse surface.
+workers_dev = false
+routes = [
+  { pattern = "signal.navonweb.com", custom_domain = true },
+  { pattern = "navonweb.com/_nw/*", zone_name = "navonweb.com" }
+]
+
+[observability]
+enabled = true
+
+[durable_objects]
+bindings = [
+  { name = "SIGNAL_ROOMS", class_name = "SignalRoom" },
+  { name = "PAIRING_BOOTSTRAP", class_name = "PairingBootstrap" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SignalRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PairingBootstrap"]
+
+[vars]
+# Fail closed until the deployed Pages origin is configured. Values must be
+# exact origins separated by commas; wildcard origins are intentionally rejected.
+ALLOWED_BROWSER_ORIGINS = "https://navonweb-web-staging.pages.dev,https://navonweb.com"
+
+# BOOTSTRAP_HMAC_KEY is deliberately not stored in this file. Configure a
+# random value of at least 32 bytes with `wrangler secret put BOOTSTRAP_HMAC_KEY`.
+# Bare-URL pairing fails closed when the secret is absent.

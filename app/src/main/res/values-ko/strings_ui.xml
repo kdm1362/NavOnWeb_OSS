@@ -13,6 +13,7 @@
     <string name="ui_confirm">확인</string>
     <string name="ui_delete">삭제</string>
 
+
     <string name="ui_diagnostic_title">진단 로그</string>
     <string name="ui_diagnostic_empty">아직 저장된 진단 로그가 없습니다.</string>
     <string name="ui_diagnostic_summary">%1$s · %2$s · %3$s</string>
@@ -54,6 +55,8 @@
     <string name="ui_diagnostic_failure_unknown">알 수 없는 오류</string>
 
     <string name="ui_open_source_title">오픈소스 라이선스</string>
+    <string name="ui_open_source_settings_summary">라이선스, 제3자 고지 및 대응 소스 코드</string>
+    <string name="ui_open_source_open_details">보기</string>
     <string name="ui_open_source_summary">NavOnWeb %1$s (%2$d)는 GPL-3.0-or-later로 제공되며 OpenAuto와 AASDK 기반 수정물을 포함합니다.</string>
     <string name="ui_open_source_view_third_party">제3자 고지 보기</string>
     <string name="ui_open_source_view_gpl">GNU GPL v3 전문 보기</string>
@@ -66,6 +69,16 @@
 
     <string name="ui_projection_profile_title">영상 프로필</string>
     <string name="ui_projection_profile_loading">서비스에서 사용 가능한 프로필을 확인하는 중입니다.</string>
+    <string name="ui_projection_dpi_input_label">UI 밀도</string>
+    <string name="ui_projection_dpi_unit">DPI</string>
+    <string name="ui_projection_dpi_apply">적용</string>
+    <string name="ui_projection_dpi_reset">추천값 사용</string>
+    <string name="ui_projection_dpi_range">범위 %1$d–%2$d · 추천값 %3$d</string>
+    <string name="ui_projection_dpi_basic_applied">실제 적용: 가로 %1$d DPI · 세로 %2$d DPI</string>
+    <string name="ui_projection_dpi_help">DPI는 영상 프로필별로 따로 저장됩니다. 값을 적용하거나 입력을 마치면 활성 프로필의 Android Auto만 다시 연결합니다.</string>
+    <string name="ui_projection_dpi_error_required">%1$d~%2$d 사이의 DPI를 입력해 주세요.</string>
+    <string name="ui_projection_dpi_error_integer">%1$d~%2$d 사이의 정수 DPI를 입력해 주세요.</string>
+    <string name="ui_projection_dpi_error_range">DPI는 %1$d~%2$d 사이여야 합니다.</string>
     <string name="ui_webrtc_codec_title">WebRTC 코덱</string>
     <string name="ui_active">활성</string>
 

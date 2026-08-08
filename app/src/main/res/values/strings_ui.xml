@@ -13,6 +13,7 @@
     <string name="ui_confirm">Confirm</string>
     <string name="ui_delete">Delete</string>
 
+
     <string name="ui_diagnostic_title">Diagnostic logs</string>
     <string name="ui_diagnostic_empty">No diagnostic logs have been saved yet.</string>
     <string name="ui_diagnostic_summary">%1$s · %2$s · %3$s</string>
@@ -57,6 +58,8 @@
     <string name="ui_diagnostic_failure_unknown">Unknown error</string>
 
     <string name="ui_open_source_title">Open-source licenses</string>
+    <string name="ui_open_source_settings_summary">Licenses, third-party notices, and corresponding source code</string>
+    <string name="ui_open_source_open_details">View</string>
     <string name="ui_open_source_summary">NavOnWeb %1$s (%2$d) is provided under GPL-3.0-or-later and includes modified work based on OpenAuto and AASDK.</string>
     <string name="ui_open_source_view_third_party">View third-party notices</string>
     <string name="ui_open_source_view_gpl">View the full GNU GPL v3 license</string>
@@ -69,6 +72,16 @@
 
     <string name="ui_projection_profile_title">Video profile</string>
     <string name="ui_projection_profile_loading">Checking the profiles available from the service.</string>
+    <string name="ui_projection_dpi_input_label">UI density</string>
+    <string name="ui_projection_dpi_unit">DPI</string>
+    <string name="ui_projection_dpi_apply">Apply</string>
+    <string name="ui_projection_dpi_reset">Use recommended</string>
+    <string name="ui_projection_dpi_range">Range %1$d–%2$d · Recommended %3$d</string>
+    <string name="ui_projection_dpi_basic_applied">Applied: landscape %1$d DPI · portrait %2$d DPI</string>
+    <string name="ui_projection_dpi_help">DPI is saved separately for each video profile. Apply the value or finish editing it. Changes to the active profile reconnect only Android Auto.</string>
+    <string name="ui_projection_dpi_error_required">Enter a DPI from %1$d to %2$d.</string>
+    <string name="ui_projection_dpi_error_integer">Enter a whole-number DPI from %1$d to %2$d.</string>
+    <string name="ui_projection_dpi_error_range">DPI must be from %1$d to %2$d.</string>
     <string name="ui_webrtc_codec_title">WebRTC codec</string>
     <string name="ui_active">Active</string>
 

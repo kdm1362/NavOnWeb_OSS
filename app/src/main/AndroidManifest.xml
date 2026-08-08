@@ -5,6 +5,11 @@
     <uses-feature
         android:name="android.hardware.usb.host"
         android:required="false" />
+    <!-- The mobile/tablet UI requires a real touch display. This also filters non-touch
+         desktop/XR form factors without excluding Wi-Fi-only tablets. -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="true" />
     <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="false" />

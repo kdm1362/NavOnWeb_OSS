@@ -4,6 +4,7 @@
 package com.pebble.tecomheadunit.browser.webrtc
 
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
+import com.pebble.tecomheadunit.core.VideoViewport
 
 /** Network and encoder limits for the browser projection sender. */
 data class WebRtcProjectionConfig(
@@ -32,9 +33,22 @@ data class WebRtcProjectionConfig(
 
     companion object {
         fun forProjectionProfile(profile: ProjectionVideoProfile): WebRtcProjectionConfig =
+            forProjectionViewport(
+                profile = profile,
+                viewport = VideoViewport(profile.width, profile.height),
+            )
+
+        /**
+         * Keeps the selected profile's transport limits while sizing the immutable WebRTC source
+         * to the exact Android Auto frame negotiated for the current browser orientation.
+         */
+        fun forProjectionViewport(
+            profile: ProjectionVideoProfile,
+            viewport: VideoViewport,
+        ): WebRtcProjectionConfig =
             WebRtcProjectionConfig(
-                width = profile.width,
-                height = profile.height,
+                width = viewport.width,
+                height = viewport.height,
                 framesPerSecond = profile.webRtcFramesPerSecond,
                 minBitrateBps = profile.webRtcMinBitrateBps,
                 startBitrateBps = profile.webRtcStartBitrateBps,

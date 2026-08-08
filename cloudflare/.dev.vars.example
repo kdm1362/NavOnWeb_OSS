@@ -1,0 +1,5 @@
+# Local development only. Copy this file to .dev.vars; never commit .dev.vars.
+# This is an exact, comma-separated origin allowlist. Wildcards are not supported.
+ALLOWED_BROWSER_ORIGINS="http://localhost:8788,http://127.0.0.1:8788"
+# Local placeholder only. Replace it in .dev.vars with at least 32 random bytes.
+BOOTSTRAP_HMAC_KEY="LOCAL_DEV_ONLY_REPLACE_WITH_RANDOM_32_BYTE_SECRET"

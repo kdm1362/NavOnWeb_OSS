@@ -58,6 +58,51 @@ class BrowserWebRtcSignalingTest {
     }
 
     @Test
+    fun cloudOfferInfersOnePrivateSrflxAddressFromMatchingMdnsPorts() {
+        val offer =
+            "a=candidate:host-video 1 udp 2122260223 video.local 54400 typ host generation 0\r\n" +
+                "a=candidate:srflx-video 1 udp 1686052607 192.168.31.220 54400 typ srflx " +
+                "raddr 0.0.0.0 rport 0\r\n" +
+                "a=candidate:host-data 1 udp 2122260223 data.local 54401 typ host generation 0\r\n" +
+                "a=candidate:srflx-data 1 udp 1686052607 192.168.31.220 54401 typ srflx " +
+                "raddr 0.0.0.0 rport 0\r\n" +
+                "a=candidate:host-bundled 1 udp 2122260223 bundled.local 54402 typ host generation 0\r\n"
+
+        val inferred = BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(offer)
+
+        assertEquals("192.168.31.220", inferred)
+        val rewritten = BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, inferred)
+        assertFalse(rewritten.contains("video.local"))
+        assertFalse(rewritten.contains("data.local"))
+        assertFalse(rewritten.contains("bundled.local"))
+        assertEquals(5, Regex("192\\.168\\.31\\.220").findAll(rewritten).count())
+    }
+
+    @Test
+    fun cloudOfferDoesNotInferAddressFromAmbiguousOrPortMismatchedSrflxCandidates() {
+        val missingPortMatch =
+            "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n" +
+                "a=candidate:srflx 1 udp 1686052607 192.168.31.220 54401 typ srflx\r\n"
+        val conflictingAddresses =
+            "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n" +
+                "a=candidate:srflx-a 1 udp 1686052607 192.168.31.220 54400 typ srflx\r\n" +
+                "a=candidate:srflx-b 1 udp 1686052606 10.0.0.8 54400 typ srflx\r\n"
+
+        assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(missingPortMatch))
+        assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(conflictingAddresses))
+    }
+
+    @Test
+    fun cloudOfferDoesNotInferPublicLoopbackOrMalformedSrflxAddress() {
+        val host = "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n"
+        listOf("203.0.113.10", "127.0.0.1", "192.168.031.220").forEach { address ->
+            val offer = host +
+                "a=candidate:srflx 1 udp 1686052607 $address 54400 typ srflx\r\n"
+            assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(offer))
+        }
+    }
+
+    @Test
     fun adbLoopbackAndUnsafePeerAddressesFailSafeWithoutSdpChanges() {
         val offer = "a=candidate:1 1 udp 2122260223 browser.local 54400 typ host ufrag keep-me\r\n"
         val unsafePeers = listOf(

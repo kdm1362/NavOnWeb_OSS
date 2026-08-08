@@ -8,8 +8,8 @@ import com.pebble.tecomheadunit.BuildConfig
 
 /**
  * Synchronous gate for code paths that cannot wait for BillingClient, such as system event
- * receivers. The debug override exists only in debug builds; release accepts only an ownership
- * result previously returned by Google Play and stored in app-private preferences.
+ * receivers. The debug override exists only in debug builds. Release accepts only an ownership
+ * result returned by Google Play.
  */
 internal object PremiumAccessGate {
     fun isPremium(context: Context): Boolean = resolvePremiumAccess(
@@ -24,4 +24,5 @@ internal fun resolvePremiumAccess(
     debugBenchOverride: Boolean,
     cachedPlayOwnership: Boolean,
     livePlayOwnership: Boolean,
-): Boolean = debugBenchOverride || cachedPlayOwnership || livePlayOwnership
+): Boolean =
+    debugBenchOverride || cachedPlayOwnership || livePlayOwnership

@@ -30,6 +30,12 @@
     <string name="billing_product_unavailable">프리미엄 상품을 아직 사용할 수 없습니다. Play Console 상품과 테스트 트랙을 확인하세요.</string>
     <string name="billing_purchase_failed">Google Play에서 구매를 완료하지 못했습니다.</string>
     <string name="billing_check_failed">Google Play에서 구매 기록을 확인하지 못했습니다.</string>
+    <string name="billing_confirmation_title">결제 확인</string>
+    <string name="billing_confirmation_verifying">결제를 확인하고 있습니다.</string>
+    <string name="billing_confirmation_delayed">결제 확인이 지연되고 있습니다.\n\n팝업을 닫을 경우 설정 &gt; 결제 확인을 눌러 수동으로 확인할 수 있습니다.</string>
+    <string name="billing_confirmation_failed">결제에 실패했습니다. 결제 수단을 확인해 주세요.\n\n정상 결제가 되었다면 설정 &gt; 결제 확인을 눌러 다시 확인할 수 있습니다.</string>
+    <string name="billing_license_confirmed_title">프리미엄 활성화</string>
+    <string name="billing_license_confirmed_message">라이선스가 확인되었습니다.</string>
     <string name="billing_debug_bench_active">프리미엄 개발 벤치 권한이 활성화되었습니다. Google Play 구매 권한은 아닙니다.</string>
     <string name="service_automation_premium_required">서비스 자동 실행 및 종료는 프리미엄에서 사용할 수 있습니다.</string>
     <string name="automation_notification_channel">서비스 자동 시작</string>
@@ -46,8 +52,9 @@
     <string name="service_automation_bluetooth">선택한 블루투스 장치</string>
     <string name="service_automation_selected_device">%1$s · %2$s</string>
     <string name="service_automation_select_device_first">먼저 페어링된 장치 하나를 선택하세요</string>
-    <string name="service_automation_choose_device">장치 선택</string>
-    <string name="service_automation_change_device">장치 변경</string>
+    <string name="service_automation_clear_device">선택 해제</string>
+    <string name="service_automation_device_cleared">선택한 블루투스 장치를 해제했습니다.</string>
+    <string name="service_automation_device_cleared_and_disabled">선택한 블루투스 장치를 해제하고 자동 실행 및 종료를 껐습니다.</string>
     <string name="service_automation_hotspot">Wi-Fi 핫스팟</string>
     <string name="service_automation_hotspot_detail">Android 16 이벤트 콜백 유지를 위해 지속 알림이 표시됩니다</string>
     <string name="service_automation_hotspot_unsupported">Android 16 이상에서 사용할 수 있습니다</string>
@@ -76,6 +83,11 @@
     <string name="browser_open_title">브라우저에서 열기</string>
     <string name="browser_pairing_code_title">8자리 브라우저 등록 코드</string>
     <string name="browser_pairing_code_hint">이 일회용 코드는 10분 후 만료되며, 사용된 코드는 다시 게시되지 않습니다.</string>
+    <string name="browser_pairing_preparing_title">페어링 준비 중</string>
+    <string name="browser_pairing_preparing_hint">클라우드 등록이 완료되면 안전한 일회용 코드가 자동으로 표시됩니다.</string>
+    <string name="browser_pairing_retry_hint">페어링 등록을 다시 시도하고 있습니다. 앱을 열어 두고 네트워크 연결을 확인해 주세요.</string>
+    <string name="browser_pairing_throttled_hint">페어링 등록이 일시적으로 지연되고 있으며 자동으로 다시 시도합니다.</string>
+    <string name="browser_pairing_refreshing_hint">전체 유효 시간을 사용할 수 있도록 코드를 새로 준비하고 있습니다.</string>
     <string name="browser_pairing_remembered_hint">이전에 등록한 브라우저는 자동으로 다시 연결됩니다. 새 브라우저를 추가하거나 복구할 때만 임시 코드를 발급하세요.</string>
     <string name="browser_pairing_new_button">새 브라우저 페어링</string>
     <string name="browser_pairing_refresh_button">페어링 코드 새로 발급</string>

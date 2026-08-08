@@ -34,10 +34,6 @@ node_modules/
 .dev.vars
 .dev.vars.*
 credentials/
-/cloudflare/*
-!/cloudflare/pages/
-/cloudflare/pages/*
-!/cloudflare/pages/_headers.template
 /supabase/
 keystore.properties
 signing-config.json
@@ -52,6 +48,13 @@ signing-config.json
 *.der
 *.crt
 *.cer
+
+# Public Worker/Pages sources are tracked, while local deployment values remain private.
+cloudflare/.dev.vars
+cloudflare/.dev.vars.*
+!cloudflare/.dev.vars.example
+cloudflare/.env
+cloudflare/.env.*
 
 # Logs, local databases, and editor files
 *.log

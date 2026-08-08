@@ -1,6 +1,6 @@
 # NavOnWeb
 
-NavOnWeb is an Android application that presents an Android Auto projection session in a local-network web browser. This repository contains the Android application, the browser client bundled in the APK, and automated tests.
+NavOnWeb is an Android application that presents an Android Auto projection session in a local-network web browser. This repository contains the Android application, the browser client bundled in the APK, the Cloudflare Worker/Pages source used by the public web endpoint, and automated tests.
 
 This repository is the public source distribution for NavOnWeb. It intentionally does not contain Android Auto identity certificates or private keys, Android/Play signing keys, deployed service secrets, user diagnostic data, device identifiers, or private development records.
 
@@ -16,7 +16,7 @@ Android, Android Auto, Google Play, Cloudflare, Supabase, WebRTC, and Tesla are 
 
 ## Build
 
-See [docs/BUILDING.md](docs/BUILDING.md) for Android build and test instructions. Runtime identity credentials, signing credentials, and independently operated network services are external deployment inputs and are not part of this Android program's Corresponding Source.
+See [docs/BUILDING.md](docs/BUILDING.md) for Android and web-service build and test instructions. Runtime identity credentials, signing credentials, deployed account state, and service secrets remain external deployment inputs.
 
 ## Source correspondence
 

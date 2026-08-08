@@ -1,8 +1,10 @@
 package com.pebble.tecomheadunit.openauto
 
 import com.pebble.tecomheadunit.browser.webrtc.WebRtcProjectionConfig
+import com.pebble.tecomheadunit.core.VideoViewport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -200,6 +202,19 @@ class ProjectionProfilesTest {
     }
 
     @Test
+    fun projectionProfilesRecommendComparableLogicalWorkspacesAcrossResolutions() {
+        assertEquals(140, ProjectionVideoProfile.FREE_800X480.dpi)
+        assertEquals(220, ProjectionVideoProfile.PREMIUM_720P.dpi)
+        assertEquals(320, ProjectionVideoProfile.PREMIUM_1080P.dpi)
+
+        val logicalWidths = ProjectionVideoProfile.entries.map { profile ->
+            profile.width * OpenAutoConfig.REFERENCE_DENSITY_DPI.toDouble() / profile.dpi
+        }
+        assertTrue(logicalWidths[1] > logicalWidths[0])
+        assertTrue(logicalWidths[2] > logicalWidths[1])
+    }
+
+    @Test
     fun safeProfilesExposeDynamicSourceAspectAndThirtyFpsWebRtcCeiling() {
         assertEquals(5, ProjectionVideoProfile.FREE_800X480.sourceAspectWidth)
         assertEquals(3, ProjectionVideoProfile.FREE_800X480.sourceAspectHeight)
@@ -216,6 +231,40 @@ class ProjectionProfilesTest {
             assertEquals(profile.width, openAuto.viewport.width)
             assertEquals(profile.height, webRtc.height)
             assertTrue(webRtc.maxBitrateBps <= 20_000_000)
+        }
+    }
+
+    @Test
+    fun browserOrientationSelectsOnlyAuditedEncodedViewportsWithResolutionAwareDpi() {
+        val expectedPortrait = mapOf(
+            ProjectionVideoProfile.FREE_800X480 to (VideoViewport(720, 1280) to 220),
+            ProjectionVideoProfile.PREMIUM_720P to (VideoViewport(720, 1280) to 220),
+            ProjectionVideoProfile.PREMIUM_1080P to (VideoViewport(1080, 1920) to 320),
+        )
+
+        expectedPortrait.forEach { (profile, expected) ->
+            val (portrait, expectedDpi) = expected
+            assertEquals(portrait, profile.encodedViewportForBrowser(800, 1280))
+            assertEquals(profile.landscapeViewport, profile.encodedViewportForBrowser(1280, 800))
+            assertTrue(profile.supportsEncodedViewport(portrait))
+            assertEquals(expectedDpi, profile.toOpenAutoConfig(portrait).dpi)
+        }
+        assertEquals(
+            123,
+            ProjectionVideoProfile.FREE_800X480.effectiveDensityDpi(
+                configuredDensityDpi = 78,
+                viewport = ProjectionVideoProfile.FREE_800X480.portraitViewport,
+            ),
+        )
+        assertEquals(
+            320,
+            ProjectionVideoProfile.FREE_800X480.effectiveDensityDpi(
+                configuredDensityDpi = 320,
+                viewport = ProjectionVideoProfile.FREE_800X480.portraitViewport,
+            ),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectionVideoProfile.PREMIUM_1080P.toOpenAutoConfig(VideoViewport(1024, 768))
         }
     }
 

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05080c">
+  <meta name="description" content="NavOnWeb 개인정보 처리방침 및 Privacy Policy">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://navonweb.com/privacy">
+  <link rel="stylesheet" href="/landing.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <title>NavOnWeb 개인정보 처리방침 · Privacy Policy</title>
+</head>
+<body class="privacy-page">
+  <main class="privacy-shell">
+    <a class="privacy-home" href="/" aria-label="NavOnWeb 홈으로 돌아가기">← NavOnWeb</a>
+    <header class="privacy-header">
+      <h1>개인정보 처리방침</h1>
+      <p>NavOnWeb 앱과 navonweb.com에서 어떤 정보가 처리되고, 왜 필요한지 설명합니다.</p>
+      <p>This page explains how the NavOnWeb app and navonweb.com process information.</p>
+      <nav class="privacy-language-links" aria-label="Language">
+        <a href="#ko">한국어</a>
+        <a href="#en" lang="en">English</a>
+      </nav>
+    </header>
+
+    <article id="ko" class="privacy-document">
+      <h2>NavOnWeb 개인정보 처리방침</h2>
+      <p class="privacy-effective-date">시행일: 2026년 8월 7일 · 최종 업데이트: 2026년 8월 7일</p>
+      <p>NavOnWeb 개발자(이하 “개발자”)는 NavOnWeb 앱과 웹 서비스 제공에 필요한 최소한의 정보만 처리합니다. 광고 추적, 개인정보 판매 또는 맞춤형 광고를 하지 않습니다.</p>
+
+      <h3>1. 처리하는 정보와 목적</h3>
+      <table>
+        <thead><tr><th>정보</th><th>목적과 처리 방식</th><th>보관</th></tr></thead>
+        <tbody>
+          <tr><td>대략적 위치</td><td>일출·일몰을 기준으로 화면의 주간/야간 모드를 정하기 위해 휴대전화에서만 사용합니다. 정확한 좌표를 요구하지 않으며 서버로 전송하지 않습니다.</td><td>메모리에서 일시 처리하며 좌표를 파일로 저장하지 않습니다.</td></tr>
+          <tr><td>Bluetooth 기기 정보와 자동화 설정</td><td>사용자가 선택한 차량 또는 주변 기기 연결에 따라 NavOnWeb 서비스를 시작하거나 중지하기 위해 사용합니다.</td><td>앱 전용 저장소에 보관하며 앱 데이터 삭제 또는 설정 해제로 삭제됩니다.</td></tr>
+          <tr><td>브라우저 페어링 및 연결 정보</td><td>8자리 일회용 코드, 무작위 기기·브라우저 식별자, 연결 설정용 SDP/ICE와 네트워크 메타데이터를 브라우저 연결 인증과 WebRTC 설정에 사용합니다.</td><td>일회용 코드는 최대 10분입니다. 브라우저의 서명된 연결 쿠키는 최대 180일이며 브라우저 사이트 데이터 삭제로 제거할 수 있습니다.</td></tr>
+          <tr><td>영상, 오디오, 마이크 및 터치 입력</td><td>사용자가 승인한 브라우저와 휴대전화 사이에서 프로젝션 기능을 제공하기 위해 실시간 처리합니다. 브라우저 마이크는 브라우저의 명시적 권한 허용 후에만 사용됩니다.</td><td>개발자 서버에 콘텐츠를 저장하지 않습니다. 활성 세션이 끝나면 실시간 처리가 종료됩니다.</td></tr>
+          <tr><td>로컬 진단 로그</td><td>앱 상태, 연결 상태, 성능 집계와 민감정보가 제거된 오류 정보를 문제 해결에 사용합니다. 페어링 코드, 토큰, 쿠키, 비밀키, 정확한 위치, SSID/BSSID, Android ID, 일련번호, SDP/ICE 원문, 영상·음성·스크린샷은 기록하지 않도록 설계했습니다.</td><td>휴대전화의 앱 전용 저장소에서 최대 7일간 순환 보관합니다.</td></tr>
+          <tr><td>사용자가 선택 전송한 오류 보고서</td><td>사용자가 작성한 상황 설명, 민감정보 제거 진단 로그, 앱·빌드·기기 성능 정보, 언어, 익명 인증 식별자 및 접속 IP의 단방향 솔트 해시를 지원과 오류 수정에 사용합니다.</td><td>보고서는 전송일로부터 30일 후 삭제됩니다. 연락처 없는 익명 인증 식별자는 지원 기능 운영 또는 삭제 요청 처리에 필요한 기간 보관될 수 있습니다.</td></tr>
+          <tr><td>구매 정보</td><td>Google Play Billing을 통해 Premium 소유 여부와 가격을 확인하고 구매를 처리합니다. NavOnWeb은 원본 구매 토큰을 자체 서버로 전송하지 않으며, 오프라인 권한 확인을 위해 토큰의 SHA-256 요약값만 앱 전용 저장소에 보관합니다.</td><td>Google의 정책 및 사용자의 Google 계정 설정을 따릅니다. 로컬 요약값은 구매 확인 결과가 취소되거나 앱 데이터가 삭제되면 제거됩니다.</td></tr>
+          <tr><td>웹 접속 정보</td><td>Cloudflare가 보안, 전송 및 남용 방지를 위해 IP 주소, 요청 시각, 브라우저·네트워크 정보를 처리할 수 있습니다. NavOnWeb은 별도 광고·행동 분석기를 사용하지 않습니다.</td><td>Cloudflare의 적용 정책과 서비스 설정에 따릅니다.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>2. 제3자 서비스</h3>
+      <ul>
+        <li><strong>Cloudflare</strong>: navonweb.com 제공, 연결 인증, WebSocket 신호 중계 및 보안. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">개인정보 보호정책</a></li>
+        <li><strong>Supabase</strong>: 공지 제공, 익명 인증 및 사용자가 동의해 전송한 진단 보고서 보관. <a href="https://supabase.com/privacy" rel="external noreferrer">개인정보 보호정책</a></li>
+        <li><strong>Google Play</strong>: 앱 배포, 결제 및 구매 확인. <a href="https://policies.google.com/privacy" rel="external noreferrer">Google 개인정보처리방침</a></li>
+      </ul>
+      <p>서비스 제공자의 글로벌 인프라 사용으로 정보가 사용자의 국가 밖에서 처리될 수 있습니다. 각 제공자는 위 목적에 필요한 범위에서 자체 정책과 계약에 따라 정보를 처리합니다.</p>
+
+      <h3>3. 이용자의 선택과 삭제</h3>
+      <ul>
+        <li>Android 설정에서 위치, Bluetooth 및 알림 권한을 철회할 수 있습니다. 일부 기능은 제한될 수 있습니다.</li>
+        <li>브라우저 설정에서 navonweb.com의 쿠키와 사이트 데이터를 삭제하면 기억된 브라우저 연결 정보가 제거됩니다.</li>
+        <li>앱의 진단 로그 화면에서 대기 중인 오류 보고서를 취소·삭제할 수 있습니다.</li>
+        <li>앱 데이터 삭제 또는 앱 제거로 휴대전화에 저장된 설정, 진단 로그와 로컬 구매 권한 캐시를 삭제할 수 있습니다.</li>
+        <li>이미 전송된 진단 보고서 또는 익명 지원 식별자의 조기 삭제를 요청하려면 아래 문의 경로를 이용해 보고서 식별자와 함께 요청할 수 있습니다.</li>
+      </ul>
+
+      <h3>4. 안전성 확보 조치</h3>
+      <p>전송 구간 암호화, 일회용 페어링 코드, 서명된 보안 쿠키, Android 앱 전용 저장소, Android Keystore 기반 인증 토큰 암호화, 진단 로그 민감정보 제거와 접근 제한을 적용합니다. 인터넷 전송 또는 저장 방식이 절대적으로 안전하다고 보장할 수는 없습니다.</p>
+
+      <h3>5. 아동의 개인정보</h3>
+      <p>NavOnWeb은 아동을 대상으로 설계된 서비스가 아니며, 개발자는 아동의 개인정보를 의도적으로 수집하지 않습니다. 오류 보고서 설명에 본인 또는 타인의 이름, 주소, 이메일, 전화번호를 입력하지 마십시오.</p>
+
+      <h3>6. 방침 변경</h3>
+      <p>기능 또는 법적 요구사항이 변경되면 이 페이지의 최종 업데이트 날짜와 내용을 갱신합니다. 중요한 변경은 앱 또는 웹사이트에서 별도로 알릴 수 있습니다.</p>
+
+      <h3>7. 문의</h3>
+      <p>개인정보 관련 문의, 열람 또는 삭제 요청은 <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb 공개 문의 창구</a>를 이용해 주십시오. 공개 이슈에는 개인정보, 진단 로그, 구매 정보 또는 페어링 코드를 게시하지 말고, 비공개 연락이 필요한 요청임을 먼저 알려주십시오.</p>
+    </article>
+
+    <article id="en" class="privacy-document" lang="en">
+      <h2>NavOnWeb Privacy Policy</h2>
+      <p class="privacy-effective-date">Effective: August 7, 2026 · Last updated: August 7, 2026</p>
+      <p>The NavOnWeb developer (“we”) processes only the information needed to provide the NavOnWeb app and web service. We do not sell personal information, use advertising trackers, or provide personalized advertising.</p>
+
+      <h3>1. Information we process</h3>
+      <table>
+        <thead><tr><th>Information</th><th>Purpose and processing</th><th>Retention</th></tr></thead>
+        <tbody>
+          <tr><td>Approximate location</td><td>Used only on the phone to select day or night display mode from sunrise and sunset. Precise location is not requested and coordinates are not sent to our servers.</td><td>Processed temporarily in memory; coordinates are not written to files.</td></tr>
+          <tr><td>Bluetooth device and automation settings</td><td>Used to start or stop NavOnWeb when the vehicle or nearby device selected by the user connects or disconnects.</td><td>Stored in app-private storage until the setting or app data is cleared.</td></tr>
+          <tr><td>Browser pairing and connection data</td><td>An eight-digit one-time code, random device and browser identifiers, SDP/ICE connection setup data, and network metadata authenticate the browser and establish WebRTC.</td><td>The one-time code lasts up to 10 minutes. Signed browser route cookies last up to 180 days and can be removed by clearing site data.</td></tr>
+          <tr><td>Video, audio, microphone, and touch input</td><td>Processed in real time between the phone and an approved browser to provide projection. The browser microphone is used only after the browser grants explicit permission.</td><td>We do not store this content on developer servers. Real-time processing ends with the active session.</td></tr>
+          <tr><td>Local diagnostic logs</td><td>App state, connection state, performance aggregates, and redacted errors support troubleshooting. Logs are designed to exclude pairing codes, tokens, cookies, private keys, precise location, SSID/BSSID, Android ID, serial numbers, raw SDP/ICE, video, audio, and screenshots.</td><td>Rotated in app-private storage for up to 7 days.</td></tr>
+          <tr><td>Diagnostic reports submitted by the user</td><td>A user-written description, redacted diagnostic log, app/build/device performance information, language, anonymous authentication identifier, and a salted one-way hash of the connection IP are used for support and bug fixing.</td><td>Reports are deleted 30 days after submission. A no-contact anonymous authentication identifier may remain while the support feature operates or until a deletion request is processed.</td></tr>
+          <tr><td>Purchase information</td><td>Google Play Billing provides Premium ownership and pricing and processes purchases. NavOnWeb does not send the raw purchase token to its own server; only a SHA-256 digest is kept in app-private storage for offline entitlement.</td><td>Google's policy and the user's Google account settings apply. The local digest is removed when ownership is revoked or app data is cleared.</td></tr>
+          <tr><td>Website request information</td><td>Cloudflare may process IP address, request time, browser, and network information for delivery, security, and abuse prevention. NavOnWeb does not add advertising or behavioral analytics.</td><td>Subject to the applicable Cloudflare policy and service configuration.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>2. Service providers</h3>
+      <ul>
+        <li><strong>Cloudflare</strong>: navonweb.com delivery, connection authentication, WebSocket signaling relay, and security. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">Privacy Policy</a></li>
+        <li><strong>Supabase</strong>: notices, anonymous authentication, and diagnostic reports submitted with user consent. <a href="https://supabase.com/privacy" rel="external noreferrer">Privacy Policy</a></li>
+        <li><strong>Google Play</strong>: app distribution, billing, and purchase verification. <a href="https://policies.google.com/privacy" rel="external noreferrer">Google Privacy Policy</a></li>
+      </ul>
+      <p>Use of global service-provider infrastructure may cause information to be processed outside the user's country. Each provider processes information needed for the purposes above under its own policy and applicable agreements.</p>
+
+      <h3>3. Your choices and deletion</h3>
+      <ul>
+        <li>You can revoke location, Bluetooth, and notification permissions in Android settings. Some features may then be unavailable.</li>
+        <li>Clearing navonweb.com cookies and site data removes remembered browser connection information.</li>
+        <li>The app's diagnostic-log screen can cancel and delete reports waiting to be sent.</li>
+        <li>Clearing app data or uninstalling removes phone settings, local diagnostic logs, and the local purchase entitlement cache.</li>
+        <li>To request early deletion of a submitted report or anonymous support identifier, use the contact method below and provide the report identifier.</li>
+      </ul>
+
+      <h3>4. Security</h3>
+      <p>We use encrypted transport, one-time pairing codes, signed secure cookies, Android app-private storage, Android Keystore encryption for authentication tokens, diagnostic redaction, and access controls. No Internet transmission or storage method can be guaranteed absolutely secure.</p>
+
+      <h3>5. Children's privacy</h3>
+      <p>NavOnWeb is not designed for children, and we do not knowingly collect personal information from children. Do not enter your own or another person's name, address, email address, or phone number in a diagnostic-report description.</p>
+
+      <h3>6. Changes</h3>
+      <p>We will update this page and its “Last updated” date when features or legal requirements change. Material changes may also be announced in the app or on the website.</p>
+
+      <h3>7. Contact</h3>
+      <p>For privacy questions, access, or deletion requests, use the <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb public contact channel</a>. Do not post personal information, diagnostic logs, purchase information, or pairing codes in a public issue; first state that your request requires private follow-up.</p>
+    </article>
+  </main>
+</body>
+</html>

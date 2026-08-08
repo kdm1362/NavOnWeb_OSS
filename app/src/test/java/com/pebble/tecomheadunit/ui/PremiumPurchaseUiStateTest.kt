@@ -48,4 +48,23 @@ class PremiumPurchaseUiStateTest {
             PremiumPurchaseUiState(purchaseRefreshInProgress = true).canRefreshPurchases,
         )
     }
+
+    @Test
+    fun `only delayed and failed confirmation dialogs can be dismissed`() {
+        assertFalse(
+            PremiumPurchaseUiState(
+                confirmationDialog = PremiumPurchaseConfirmationDialog.VERIFYING,
+            ).confirmationCanBeDismissed,
+        )
+        assertTrue(
+            PremiumPurchaseUiState(
+                confirmationDialog = PremiumPurchaseConfirmationDialog.DELAYED,
+            ).confirmationCanBeDismissed,
+        )
+        assertTrue(
+            PremiumPurchaseUiState(
+                confirmationDialog = PremiumPurchaseConfirmationDialog.FAILED,
+            ).confirmationCanBeDismissed,
+        )
+    }
 }

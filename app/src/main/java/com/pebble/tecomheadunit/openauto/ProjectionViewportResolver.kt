@@ -5,7 +5,6 @@ package com.pebble.tecomheadunit.openauto
 
 import com.pebble.tecomheadunit.core.VideoViewport
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /** A centred content rectangle inside the fixed Android Auto encoded frame. */
@@ -48,10 +47,7 @@ data class ProjectionViewportLayout(
         require(totalMarginWidth % 2 == 0 && totalMarginHeight % 2 == 0) {
             "centred viewport margins must be even"
         }
-        require(
-            densityDpi in ProjectionViewportResolver.MIN_DYNAMIC_DENSITY_DPI..
-                ProjectionViewportResolver.MAX_BASE_DENSITY_DPI,
-        ) {
+        require(ProjectionVideoProfile.isSupportedDensityDpi(densityDpi)) {
             "projection density is outside the supported range"
         }
     }
@@ -66,8 +62,8 @@ data class ProjectionViewportLayout(
 
     fun applyTo(config: OpenAutoConfig): OpenAutoConfig {
         require(config.viewport == encodedViewport) { "layout and projection viewport differ" }
-        require(densityDpi <= config.dpi) {
-            "dynamic projection density must not enlarge UI above the profile baseline"
+        require(densityDpi == config.dpi) {
+            "layout and selected projection density differ"
         }
         return config.copy(
             totalMarginWidth = totalMarginWidth,
@@ -87,10 +83,6 @@ object ProjectionViewportResolver {
     const val MARGIN_QUANTUM_PIXELS = 8
     const val DEFAULT_HYSTERESIS_PIXELS = MARGIN_QUANTUM_PIXELS * 2
     const val DEFAULT_BASE_DENSITY_DPI = 140
-    const val MIN_DYNAMIC_DENSITY_DPI = 72
-    const val MAX_BASE_DENSITY_DPI = DEFAULT_BASE_DENSITY_DPI
-    const val DENSITY_QUANTUM_DPI = 4
-    const val DENSITY_HYSTERESIS_DPI = DENSITY_QUANTUM_DPI * 2
     const val MIN_LOGICAL_CONTENT_WIDTH_DP = 480
     const val MIN_DEVICE_PIXEL_RATIO = 0.5
     const val MAX_DEVICE_PIXEL_RATIO = 8.0
@@ -117,7 +109,7 @@ object ProjectionViewportResolver {
         require(browserHeight in 1..MAX_VIEWPORT_EDGE_PIXELS) {
             "browser height is outside the supported range"
         }
-        require(baseDensityDpi in MIN_DYNAMIC_DENSITY_DPI..MAX_BASE_DENSITY_DPI) {
+        require(ProjectionVideoProfile.isSupportedDensityDpi(baseDensityDpi)) {
             "base projection density is outside the supported range"
         }
         require(
@@ -152,12 +144,13 @@ object ProjectionViewportResolver {
 
         val totalMarginWidth = quantizeMargin(rawMarginWidth)
         val totalMarginHeight = quantizeMargin(rawMarginHeight)
-        val contentWidth = encodedViewport.width - totalMarginWidth
         val layout = ProjectionViewportLayout(
             encodedViewport = encodedViewport,
             totalMarginWidth = totalMarginWidth,
             totalMarginHeight = totalMarginHeight,
-            densityDpi = resolveDensityDpi(contentWidth, baseDensityDpi),
+            // Density is part of the selected profile, not browser geometry. Portrait-specific
+            // encoded frames provide enough source width without shrinking Android Auto's UI.
+            densityDpi = baseDensityDpi,
         )
         val content = layout.contentRect
         require(
@@ -179,9 +172,9 @@ object ProjectionViewportResolver {
             "hysteresis must cover at least one margin quantum"
         }
         if (current.encodedViewport != candidate.encodedViewport) return true
+        if (current.densityDpi != candidate.densityDpi) return true
         return abs(current.totalMarginWidth - candidate.totalMarginWidth) >= hysteresisPixels ||
-            abs(current.totalMarginHeight - candidate.totalMarginHeight) >= hysteresisPixels ||
-            abs(current.densityDpi - candidate.densityDpi) >= DENSITY_HYSTERESIS_DPI
+            abs(current.totalMarginHeight - candidate.totalMarginHeight) >= hysteresisPixels
     }
 
     /** Keeps [current] until [candidate] crosses the configured hysteresis threshold. */
@@ -193,30 +186,6 @@ object ProjectionViewportResolver {
         candidate
     } else {
         current
-    }
-
-    /**
-     * Android Auto lays out its UI in dp using the encoded content width and advertised density.
-     * A narrow margin-shaped content rectangle can otherwise collapse below a phone-class 480 dp
-     * width, making fixed-size controls overlap. Density only decreases, in four-dpi steps.
-     *
-     * CSS pixels are already reference pixels. Multiplying both the browser surface and its
-     * reference-pixel scale by devicePixelRatio cancels out, so DPR is validated by [resolve] but
-     * deliberately does not change this logical-width calculation.
-     */
-    internal fun resolveDensityDpi(contentWidth: Int, baseDensityDpi: Int): Int {
-        require(contentWidth > 0) { "content width must be positive" }
-        require(baseDensityDpi in MIN_DYNAMIC_DENSITY_DPI..MAX_BASE_DENSITY_DPI) {
-            "base projection density is outside the supported range"
-        }
-        val logicalWidthAtBaseline =
-            contentWidth.toDouble() * OpenAutoConfig.REFERENCE_DENSITY_DPI / baseDensityDpi
-        if (logicalWidthAtBaseline >= MIN_LOGICAL_CONTENT_WIDTH_DP) return baseDensityDpi
-
-        val upperBound = contentWidth.toDouble() * OpenAutoConfig.REFERENCE_DENSITY_DPI /
-            MIN_LOGICAL_CONTENT_WIDTH_DP
-        val quantized = floor(upperBound / DENSITY_QUANTUM_DPI).toInt() * DENSITY_QUANTUM_DPI
-        return quantized.coerceIn(MIN_DYNAMIC_DENSITY_DPI, baseDensityDpi)
     }
 
     private fun quantizeMargin(rawMargin: Double): Int =

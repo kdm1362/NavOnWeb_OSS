@@ -18,6 +18,11 @@ data class BondedBluetoothDeviceOption(
     val addressHint: String,
 )
 
+internal data class BondedBluetoothDeviceRecord(
+    val address: String?,
+    val displayName: String?,
+)
+
 sealed interface BondedBluetoothDeviceCatalogResult {
     data class Available(val devices: List<BondedBluetoothDeviceOption>) :
         BondedBluetoothDeviceCatalogResult
@@ -55,23 +60,17 @@ class AndroidBondedBluetoothDeviceCatalog(context: Context) {
             ?: return BondedBluetoothDeviceCatalogResult.BluetoothUnavailable
         return try {
             if (!adapter.isEnabled) return BondedBluetoothDeviceCatalogResult.BluetoothDisabled
-            val devices = adapter.bondedDevices.orEmpty()
-                .mapNotNull { device ->
-                    val address = normalizeBluetoothAddress(device.address) ?: return@mapNotNull null
-                    val name = sanitizeBluetoothDeviceName(device.name.orEmpty())
-                        .ifBlank { applicationContext.getString(R.string.bluetooth_unnamed_device) }
-                    BondedBluetoothDeviceOption(
-                        address = address,
-                        displayName = name,
-                        addressHint = address.takeLast(8).padStart(17, '•'),
+            // bondedDevices is the user's complete Android pairing list; it is deliberately not
+            // reduced to devices that happen to have an active ACL connection right now.
+            val devices = buildBondedBluetoothDeviceOptions(
+                records = adapter.bondedDevices.orEmpty().map { device ->
+                    BondedBluetoothDeviceRecord(
+                        address = device.address,
+                        displayName = device.name,
                     )
-                }
-                .distinctBy(BondedBluetoothDeviceOption::address)
-                .sortedWith(
-                    compareBy<BondedBluetoothDeviceOption, String>(String.CASE_INSENSITIVE_ORDER) {
-                        it.displayName
-                    }.thenBy { it.address },
-                )
+                },
+                unnamedDeviceName = applicationContext.getString(R.string.bluetooth_unnamed_device),
+            )
             BondedBluetoothDeviceCatalogResult.Available(devices)
         } catch (_: SecurityException) {
             BondedBluetoothDeviceCatalogResult.PermissionRequired
@@ -80,3 +79,24 @@ class AndroidBondedBluetoothDeviceCatalog(context: Context) {
         }
     }
 }
+
+internal fun buildBondedBluetoothDeviceOptions(
+    records: Iterable<BondedBluetoothDeviceRecord>,
+    unnamedDeviceName: String,
+): List<BondedBluetoothDeviceOption> = records
+    .mapNotNull { record ->
+        val address = record.address?.let(::normalizeBluetoothAddress) ?: return@mapNotNull null
+        val name = sanitizeBluetoothDeviceName(record.displayName.orEmpty())
+            .ifBlank { unnamedDeviceName }
+        BondedBluetoothDeviceOption(
+            address = address,
+            displayName = name,
+            addressHint = address.takeLast(8).padStart(17, '•'),
+        )
+    }
+    .distinctBy(BondedBluetoothDeviceOption::address)
+    .sortedWith(
+        compareBy<BondedBluetoothDeviceOption, String>(String.CASE_INSENSITIVE_ORDER) {
+            it.displayName
+        }.thenBy { it.address },
+    )

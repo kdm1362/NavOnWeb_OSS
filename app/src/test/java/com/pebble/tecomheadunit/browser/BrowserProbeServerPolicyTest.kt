@@ -462,11 +462,14 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("VIEWPORT_CONTROLLER_BUSY_RETRY_MILLIS"))
         assertTrue(script.contains("api('/health', {cache: 'no-store'}, '')"))
         assertTrue(script.contains("const DEVELOPMENT_TESLA_CYCLE_INTERVAL_MILLIS = 12000"))
-        assertTrue(script.contains("viewerOwnsFullscreen() || theaterMode ? 0"))
+        assertTrue(script.contains("function expectedExpandedProjectionViewport()"))
+        assertTrue(script.contains("return expectedExpandedProjectionViewport();"))
         assertTrue(script.contains("/api/projection/viewport?${'$'}{query}"))
         assertTrue(script.contains("function browserDevicePixelRatio()"))
         assertTrue(script.contains("devicePixelRatio: String(value.devicePixelRatio)"))
-        assertTrue(script.contains("value.densityDpi < 72 || value.densityDpi > 140"))
+        // Profile-specific app settings use the trusted 72..320 range; browsers only consume
+        // the resulting metadata and cannot submit a DPI value themselves.
+        assertTrue(script.contains("value.densityDpi < 72 || value.densityDpi > 320"))
         assertTrue(script.contains("`@${'$'}{next.densityDpi}dpi`"))
         assertTrue(script.contains("{method: 'POST', signal: controller.signal}"))
         assertTrue(script.contains("normalizeProjectionViewport(data.projection.viewport.activeLayout)"))
@@ -480,10 +483,11 @@ class BrowserProbeServerPolicyTest {
         assertFalse(script.contains("const enabled = Boolean(projection && projection.entitlement === 'premium')"))
         assertTrue(script.contains("projection.entitlement !== 'free'"))
         assertTrue(index.contains("body.navonweb-authenticated main { align-content: start; }"))
-        assertFalse(index.contains("body.navonweb-dynamic-aspect #pad"))
+        assertTrue(index.contains("body.navonweb-dynamic-aspect #pad"))
         assertTrue(index.contains("top: 0;"))
         assertTrue(index.contains("transform: translateX(-50%)"))
-        assertTrue(script.contains("source: 'projectionSurface'"))
+        assertTrue(script.contains("source = 'fullscreenPreview'"))
+        assertTrue(script.contains("source = 'theaterPreview'"))
         assertTrue(script.contains("activeProjectionProfile.sourceAspectWidth"))
         assertTrue(script.contains("androidAutoTouchReady = androidAutoInteractive"))
         assertTrue(script.contains("status poll from turning that temporary mismatch into an endless reconnect loop"))
@@ -563,14 +567,15 @@ class BrowserProbeServerPolicyTest {
         }
 
         val englishKeys = localeKeys("en", "    ko: Object.freeze({")
-        val koreanKeys = localeKeys("ko", "  });\n  let ACTIVE_LOCALE")
+        val koreanKeys = localeKeys("ko", "  });\n  const PATH_LOCALE")
         assertEquals(englishKeys, koreanKeys)
         assertTrue(englishKeys.size >= 25)
 
         assertTrue(index.contains("<html lang=\"en\""))
         assertTrue(index.contains("data-i18n-pending"))
         assertTrue(index.contains("data-i18n=\"pairingCodeLabel\""))
-        assertTrue(index.contains("inputmode=\"numeric\" maxlength=\"8\""))
+        // Eight digits are rendered as "0000 0000", so the visible separator also needs a slot.
+        assertTrue(index.contains("inputmode=\"numeric\" maxlength=\"9\""))
         assertTrue(index.contains("data-i18n=\"connect\""))
         assertTrue(index.contains("data-i18n=\"pairingRememberedHint\""))
         assertTrue(index.contains("data-i18n=\"androidAutoWaiting\""))
@@ -582,6 +587,8 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("if (typeof navigator.language === 'string')"))
         assertTrue(script.contains("if (base === 'ko' || base === 'en') return base"))
         assertTrue(script.contains("return 'en';"))
+        assertTrue(script.contains("const PATH_LOCALE = resolvePathLocale(window.location.pathname)"))
+        assertTrue(script.contains("let ACTIVE_LOCALE = PATH_LOCALE || resolveSystemLocale()"))
         assertTrue(script.contains("document.documentElement.lang = ACTIVE_LOCALE"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n]')"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n-aria-label]')"))
@@ -594,11 +601,11 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("accepts only \"ko\" or \"en\""))
         assertTrue(script.contains("applyDocumentLocale(previousLocale)"))
 
-        assertTrue(script.contains("streamState.textContent = t('androidAutoWaiting')"))
-        assertTrue(script.contains("streamState.textContent = t('videoWaiting')"))
-        assertTrue(script.contains("streamState.textContent = t('serverWaiting')"))
+        assertTrue(script.contains("setStreamState('androidAutoWaiting')"))
+        assertTrue(script.contains("setStreamState('videoWaiting')"))
+        assertTrue(script.contains("setStreamState('serverWaiting')"))
         assertTrue(script.contains("setPairStatus(t('eightDigitRequired'), true)"))
-        assertTrue(script.contains("bootstrapRouteMissing ? t('invalidCode') : t('unableToConnect')"))
+        assertTrue(script.contains("bootstrapRouteMissing ? t('codeNotRegistered') : t('unableToConnect')"))
         assertTrue(script.contains("invalidateCredential(t('connectionExpiredPhone'))"))
     }
 
@@ -625,7 +632,12 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("totalBytes > MAX_NOTICE_RESPONSE_BYTES"))
         assertTrue(script.contains("await reader.cancel().catch(() => null)"))
         assertTrue(script.contains("payload.notices.slice(0, MAX_NOTICE_COUNT)"))
-        assertTrue(script.contains("let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates()"))
+        assertTrue(script.contains("let NOTICE_LOCALE_CANDIDATES = resolveNoticeLocaleCandidates("))
+        assertTrue(
+            script.contains(
+                "PATH_LOCALE ? [PATH_LOCALE, ...browserLanguageCandidates] : browserLanguageCandidates",
+            ),
+        )
         assertTrue(script.contains(".map(language => normalizedNested.get(language))"))
         assertTrue(script.contains("const selectedSuffix = ACTIVE_LOCALE === 'ko' ? 'Ko' : 'En'"))
         assertTrue(script.contains("const fallbackSuffix = ACTIVE_LOCALE === 'ko' ? 'En' : 'Ko'"))
@@ -757,13 +769,13 @@ class BrowserProbeServerPolicyTest {
     }
 
     @Test
-    fun browserWebRtcAllowlistIncludesH264AndRejectsOrphanRtx() {
+    fun browserWebRtcKeepsNativeCodecNegotiationAndRtxDependencies() {
         val script = readAsset("app.js")
 
         assertTrue(script.contains("const CODEC_NAMES = ['h264', 'vp8', 'vp9', 'av1'];"))
-        assertTrue(script.contains("const primaryPayloadTypes = new Set("))
-        assertTrue(script.contains("mimeType === 'video/rtx'"))
-        assertTrue(script.contains("primaryPayloadTypes.has(apt)"))
+        assertTrue(script.contains("addTransceiver('video', {direction: 'recvonly'})"))
+        assertFalse(script.contains("setCodecPreferences"))
+        assertFalse(script.contains("preferredPayloadType"))
     }
 
     @Test
@@ -792,7 +804,7 @@ class BrowserProbeServerPolicyTest {
     }
 
     @Test
-    fun cloudWebRtcStartsAutomaticallyUnlessLocalNetworkPermissionWasDenied() {
+    fun cloudWebRtcTreatsLocalNetworkPermissionAsAdvisory() {
         val index = readAsset("index.html")
         val script = readAsset("app.js")
 
@@ -801,6 +813,14 @@ class BrowserProbeServerPolicyTest {
         assertTrue(index.contains("id=\"local-network-allow\" type=\"button\""))
         assertTrue(index.contains("data-i18n=\"localNetworkPrompt\""))
         assertTrue(index.contains("data-i18n=\"localNetworkAllow\""))
+        assertTrue(
+            index.contains(
+                """#viewer:fullscreen #local-network-panel,
+    body.theater-mode #local-network-panel {
+      display: none !important;
+    }""",
+            ),
+        )
 
         listOf(
             "localNetworkPrompt:",
@@ -813,27 +833,40 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("navigator.permissions.query({name: 'local-network'})"))
         assertTrue(script.contains("navigator.permissions.query({name: 'local-network-access'})"))
         assertTrue(script.contains("pad.dataset.navonwebLocalNetworkPermission"))
-        assertTrue(script.contains("localNetworkPermissionAllowsWebRtc(false)"))
         assertTrue(script.contains("startWebRtc(true)"))
 
-        val permissionStart = script.indexOf("function localNetworkPermissionAllowsWebRtc")
-        val permissionEnd = script.indexOf("function syncLocalNetworkPermissionPanel", permissionStart)
-        assertTrue(permissionStart >= 0 && permissionEnd > permissionStart)
-        val permissionScript = script.substring(permissionStart, permissionEnd)
-        assertTrue(permissionScript.contains("localNetworkPermissionState === 'prompt'"))
-        assertFalse(permissionScript.contains("userInitiated === true"))
+        assertFalse(script.contains("localNetworkPermissionAllowsWebRtc"))
 
-        val panelStart = permissionEnd
+        val panelStart = script.indexOf("function syncLocalNetworkPermissionPanel")
         val panelEnd = script.indexOf("function syncMediaPermissionPanel", panelStart)
-        assertTrue(panelEnd > panelStart)
+        assertTrue(panelStart >= 0 && panelEnd > panelStart)
         val panelScript = script.substring(panelStart, panelEnd)
         assertTrue(panelScript.contains("localNetworkPermissionState === 'denied'"))
         assertFalse(panelScript.contains("localNetworkPermissionState === 'prompt' ||"))
 
+        val changeStart = script.indexOf("function handleLocalNetworkPermissionChange")
+        val changeEnd = script.indexOf("function refreshLocalNetworkPermission", changeStart)
+        assertTrue(changeStart >= 0 && changeEnd > changeStart)
+        val changeScript = script.substring(changeStart, changeEnd)
+        assertFalse(changeScript.contains("resetWebRtc"))
+        assertTrue(changeScript.contains("scheduleWebRtcRecovery"))
+
+        val requestStart = script.indexOf("async function requestLocalNetworkAccess")
+        val requestEnd = script.indexOf("function showAuthenticatedView", requestStart)
+        assertTrue(requestStart >= 0 && requestEnd > requestStart)
+        val requestScript = script.substring(requestStart, requestEnd)
+        assertTrue(requestScript.contains("startWebRtc(true)"))
+        assertFalse(requestScript.contains("localNetworkPermissionState === 'denied'"))
+
+        val recoveryStart = script.indexOf("function scheduleWebRtcRecovery")
+        val recoveryEnd = script.indexOf("async function ensureWebRtcCapabilities", recoveryStart)
+        assertTrue(recoveryStart >= 0 && recoveryEnd > recoveryStart)
+        assertFalse(script.substring(recoveryStart, recoveryEnd).contains("localNetworkPermissionState"))
+
         val start = script.indexOf("async function startWebRtc")
         val end = script.indexOf("function renderAndroidAutoStatus", start)
         assertTrue(start >= 0 && end > start)
-        assertTrue(script.substring(start, end).contains("localNetworkPermissionAllowsWebRtc"))
+        assertFalse(script.substring(start, end).contains("localNetworkPermissionState"))
 
         assertTrue(script.contains("addEventListener('icecandidateerror'"))
         assertTrue(script.contains("NAVONWEB_ICE_CANDIDATE_ERROR"))

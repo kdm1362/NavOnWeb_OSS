@@ -7,6 +7,7 @@ import com.pebble.tecomheadunit.session.PairingCodeLease
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -97,6 +98,68 @@ class CloudPairingPublicationStateTest {
         assertEquals(1_000L, publication.registrationTtlMillis(79_000L))
         assertEquals(0L, publication.registrationTtlMillis(80_000L))
         assertEquals(0L, publication.registrationTtlMillis(90_000L))
+    }
+
+    @Test
+    fun registrationStatusRejectsStaleEpochTransitions() {
+        var epoch = 0L
+        val state = CloudPairingPublicationState(pairingLease("11111111", 601_000L)) { ++epoch }
+        val stale = requireNotNull(state.current())
+        assertEquals(
+            CloudPairingRegistrationStatus.REGISTERING,
+            requireNotNull(state.currentUpdate()).status,
+        )
+        assertEquals(
+            CloudPairingRegistrationStatus.RETRY,
+            requireNotNull(
+                state.transition(stale, CloudPairingRegistrationStatus.RETRY),
+            ).status,
+        )
+
+        val current = state.publish(pairingLease("22222222", 602_000L))
+
+        assertNull(state.transition(stale, CloudPairingRegistrationStatus.READY))
+        assertFalse(state.isCurrentEpoch(stale.epoch))
+        assertTrue(state.isCurrentEpoch(current.epoch))
+        assertEquals(
+            CloudPairingRegistrationStatus.REGISTERING,
+            requireNotNull(state.currentUpdate()).status,
+        )
+    }
+
+    @Test
+    fun readyCodeRefreshesBeforeTheConservativeWorkerDeadline() {
+        val publication = CloudPairingPublication(
+            pairingCode = "12345678",
+            epoch = 1L,
+            expiresAtMonotonicMillis = 100_000L,
+        )
+
+        assertEquals(1_000L, publication.readyRefreshDelayMillis(78_000L))
+        assertEquals(0L, publication.readyRefreshDelayMillis(79_000L))
+    }
+
+    @Test
+    fun readyAndExpiredAreTerminalWithinOnePublicationEpoch() {
+        var epoch = 0L
+        val state = CloudPairingPublicationState(pairingLease("12345678", 601_000L)) { ++epoch }
+        val publication = requireNotNull(state.current())
+
+        assertTrue(state.markRegistrationComplete(publication))
+        assertEquals(
+            CloudPairingRegistrationStatus.READY,
+            requireNotNull(
+                state.transition(publication, CloudPairingRegistrationStatus.READY),
+            ).status,
+        )
+        assertNull(state.transition(publication, CloudPairingRegistrationStatus.RETRY))
+        assertEquals(
+            CloudPairingRegistrationStatus.EXPIRED,
+            requireNotNull(
+                state.transition(publication, CloudPairingRegistrationStatus.EXPIRED),
+            ).status,
+        )
+        assertNull(state.transition(publication, CloudPairingRegistrationStatus.READY))
     }
 
     private fun pairingLease(code: String, deadline: Long) = PairingCodeLease(

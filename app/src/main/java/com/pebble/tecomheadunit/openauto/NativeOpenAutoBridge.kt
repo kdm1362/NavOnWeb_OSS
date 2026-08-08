@@ -32,7 +32,6 @@ internal data class OpenAutoPreflight(
     ): AasdkProjectionRuntimeConfig? {
         val identity = credential ?: return null
         if (endpointHost.isBlank()) return null
-        if (peerTrustPolicy == AasdkTlsPeerTrustPolicy.NotConfigured) return null
         return AasdkProjectionRuntimeConfig(
             host = endpointHost,
             port = endpointPort,
@@ -82,10 +81,8 @@ object NativeOpenAutoBridge {
         }
         val peerTrustPolicy = AasdkTlsPeerTrustPolicyFactory.create()
         val peerTrustStatus = when (peerTrustPolicy) {
-            AasdkTlsPeerTrustPolicy.NotConfigured -> "NOT_CONFIGURED"
             AasdkTlsPeerTrustPolicy.PlatformTrust -> "PLATFORM"
-            is AasdkTlsPeerTrustPolicy.PinnedLeafSha256 -> "PINNED"
-            AasdkTlsPeerTrustPolicy.DebugOnlyUnverifiedPeer -> "DEBUG_UNVERIFIED"
+            AasdkTlsPeerTrustPolicy.UnverifiedPeer -> "UNVERIFIED"
         }
         val endpointStatus = if (endpoint.isEnabled) {
             "${endpoint.mode.name}_CONFIGURED"

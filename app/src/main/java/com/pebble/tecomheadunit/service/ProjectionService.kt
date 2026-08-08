@@ -22,6 +22,7 @@ import com.pebble.tecomheadunit.MainActivity
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.automation.ProjectionStartCancellationSignal
 import com.pebble.tecomheadunit.browser.BrowserFrameStore
+import com.pebble.tecomheadunit.browser.BrowserJpegFallbackPolicy
 import com.pebble.tecomheadunit.browser.BrowserProbeServer
 import com.pebble.tecomheadunit.browser.BrowserSurfaceFrameCapture
 import com.pebble.tecomheadunit.browser.BrowserWebRtcCodec
@@ -35,6 +36,12 @@ import com.pebble.tecomheadunit.browser.audio.BrowserAudioTrackSnapshot
 import com.pebble.tecomheadunit.browser.audio.BrowserMicrophonePcmSource
 import com.pebble.tecomheadunit.browser.cloud.CloudBrowserRelayClient
 import com.pebble.tecomheadunit.browser.cloud.CloudBrowserRelayConfig
+import com.pebble.tecomheadunit.browser.cloud.BrowserAddressPolicy
+import com.pebble.tecomheadunit.browser.cloud.CloudBrowserPageAvailability
+import com.pebble.tecomheadunit.browser.cloud.CloudBrowserPageAvailabilityTracker
+import com.pebble.tecomheadunit.notification.NavOnWebNotificationAssets
+import com.pebble.tecomheadunit.browser.cloud.CloudBrowserPageProbe
+import com.pebble.tecomheadunit.browser.cloud.CloudPairingRegistrationStatus
 import com.pebble.tecomheadunit.browser.cloud.CloudRelayIdentityStore
 import com.pebble.tecomheadunit.browser.stun.LanStunServer
 import com.pebble.tecomheadunit.browser.webrtc.WebRtcProjectionController
@@ -44,6 +51,7 @@ import com.pebble.tecomheadunit.core.OpenAutoCoordinator
 import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import com.pebble.tecomheadunit.core.SafetyGate
 import com.pebble.tecomheadunit.core.VehicleState
+import com.pebble.tecomheadunit.core.VideoViewport
 import com.pebble.tecomheadunit.diagnostics.AppDiagnostics
 import com.pebble.tecomheadunit.diagnostics.DiagnosticEventCode
 import com.pebble.tecomheadunit.diagnostics.DiagnosticLevel
@@ -55,12 +63,14 @@ import com.pebble.tecomheadunit.openauto.BenchOpenAutoEngine
 import com.pebble.tecomheadunit.openauto.MediaCodecVideoSink
 import com.pebble.tecomheadunit.openauto.NativeOpenAutoBridge
 import com.pebble.tecomheadunit.openauto.AndroidProjectionProfilePreferenceStore
+import com.pebble.tecomheadunit.openauto.AndroidProjectionDpiPreferenceStore
 import com.pebble.tecomheadunit.openauto.OpenAutoConfig
 import com.pebble.tecomheadunit.openauto.OpenAutoInputSink
 import com.pebble.tecomheadunit.openauto.OpenAutoPreflight
 import com.pebble.tecomheadunit.openauto.ProjectionEntitlementProviderFactory
 import com.pebble.tecomheadunit.openauto.ProjectionEndpointMode
 import com.pebble.tecomheadunit.openauto.ProjectionAccessTier
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingsManager
 import com.pebble.tecomheadunit.openauto.ProjectionProfileApplyScheduler
 import com.pebble.tecomheadunit.openauto.ProjectionProfileManager
 import com.pebble.tecomheadunit.openauto.ProjectionProfileRequestResult
@@ -69,6 +79,7 @@ import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 import com.pebble.tecomheadunit.openauto.ProjectionViewportApplyScheduler
 import com.pebble.tecomheadunit.openauto.ProjectionViewportLayout
 import com.pebble.tecomheadunit.openauto.ProjectionViewportManager
+import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
 import com.pebble.tecomheadunit.openauto.requestProjectionProfileWithCurrentEntitlement
 import com.pebble.tecomheadunit.openauto.protocol.AasdkProtocolException
 import com.pebble.tecomheadunit.openauto.protocol.AasdkTlsEngineException
@@ -107,6 +118,7 @@ import kotlinx.coroutines.sync.withLock
 class ProjectionService : Service() {
     private var server: BrowserProbeServer? = null
     private var cloudRelayClient: CloudBrowserRelayClient? = null
+    private var cloudBrowserPageProbe: CloudBrowserPageProbe? = null
     private var lanStunServer: LanStunServer? = null
     private var browserFrameStore: BrowserFrameStore? = null
     private var browserFrameCapture: BrowserSurfaceFrameCapture? = null
@@ -130,8 +142,10 @@ class ProjectionService : Service() {
     private var startJob: Job? = null
     private var stopJob: Job? = null
     private var projectionJob: Job? = null
+    private var portraitMediaAcceptanceWatchdogJob: Job? = null
     private var profileApplyJob: Job? = null
     private var viewportApplyJob: Job? = null
+    private var browserAddressMonitorJob: Job? = null
     private var diagnosticHeartbeatJob: Job? = null
     private var noticeRefreshJob: Job? = null
     private var pendingProjectionProfile: ProjectionVideoProfile? = null
@@ -142,6 +156,9 @@ class ProjectionService : Service() {
     private val nightModeStateProvider by lazy { AndroidNightModeStateProvider(applicationContext) }
     private val nightModeLocationSource by lazy { AndroidNightModeLocationSource(applicationContext) }
     private val projectionStartupStore by lazy { ProjectionStartupStore(applicationContext) }
+    private val projectionDpiSettings by lazy {
+        ProjectionDpiSettingsManager(AndroidProjectionDpiPreferenceStore(applicationContext))
+    }
     private val noticeRepository by lazy { SupabaseNoticeRepository(applicationContext) }
     private var nightModeLocationCancellation: CancellationSignal? = null
     @Volatile
@@ -178,6 +195,26 @@ class ProjectionService : Service() {
                 currentEntitlementControl = freshStandbyProfileControl(),
                 profileId = profileId,
             )
+
+        /** The Activity persists the preference first; only the active profile is renegotiated. */
+        fun notifyProjectionDpiPreferenceChanged(profileId: String?, densityDpi: Int): Boolean {
+            val profile = ProjectionVideoProfile.fromProfileId(profileId) ?: return false
+            if (!ProjectionVideoProfile.isSupportedDensityDpi(densityDpi)) return false
+            if (projectionDpiSettings.densityDpi(profile) != densityDpi) return false
+            val current = profileControl?.snapshot() ?: return false
+            if (
+                current.activationState !=
+                com.pebble.tecomheadunit.openauto.ProjectionProfileActivationState.ACTIVE ||
+                current.activeProfile != profile
+            ) {
+                return false
+            }
+            return when (val result = viewportControl?.requestDensityDpi(profile, densityDpi)) {
+                is com.pebble.tecomheadunit.openauto.ProjectionViewportRequestResult.Accepted ->
+                    result.changed
+                else -> false
+            }
+        }
 
         /** Read-only, caller must discard ICE server fields before placing this in UI state. */
         fun webRtcCapabilities() =
@@ -348,6 +385,7 @@ class ProjectionService : Service() {
             applyScheduler = ProjectionViewportApplyScheduler { layout ->
                 scheduleProjectionViewportApply(layout, epoch)
             },
+            densityDpiForProfile = projectionDpiSettings::densityDpi,
         )
         val newAudioPipeline = BrowserAudioPcmPipeline(
             accessTier = when (initialProfileSnapshot.entitlementTier) {
@@ -356,7 +394,9 @@ class ProjectionService : Service() {
             },
         )
         val newMicrophoneSource = BrowserMicrophonePcmSource()
-        val projectionConfig = activeProfile.toOpenAutoConfig()
+        val projectionConfig = activeProfile.toOpenAutoConfig(
+            densityDpi = projectionDpiSettings.densityDpi(activeProfile),
+        )
         val engine = BenchOpenAutoEngine()
         val runtimeInput = object : OpenAutoInputSink {
             override fun sendTouch(event: OpenAutoTouchEvent): Boolean =
@@ -385,13 +425,10 @@ class ProjectionService : Service() {
         }
 
         val pairingCode = PairingToken.create()
-        val newFrameStore = BrowserFrameStore()
-        // JPEG is a low-rate debug fallback copied from the fixed 800x480 app preview Surface.
-        // Keeping its bitmap bounded avoids 8 MiB 1080p allocations and JPEG work competing
-        // with the real high-resolution WebRTC texture path.
-        val newFrameCapture = BrowserSurfaceFrameCapture(
-            frameStore = newFrameStore,
+        val newFrameStore = BrowserFrameStore(
+            maxFrameBytes = BrowserJpegFallbackPolicy.FRAME_STORE_MAX_BYTES,
         )
+        val newFrameCapture = createBrowserFrameCapture(newFrameStore, activeProfile)
         lateinit var newServer: BrowserProbeServer
         val webRtcConfig = WebRtcProjectionConfig.forProjectionProfile(activeProfile)
         val newWebRtcController = WebRtcProjectionController(
@@ -399,7 +436,7 @@ class ProjectionService : Service() {
             config = webRtcConfig,
             microphoneSource = newMicrophoneSource,
             audioStreams = newAudioPipeline.streamHub,
-            controlRequestHandler = { request -> newServer.dispatchRelay(request) },
+            controlRequestHandler = { request -> newServer.dispatchWebRtcControl(request) },
         ).let { candidate ->
             candidate.start().fold(
                 onSuccess = { candidate },
@@ -458,12 +495,30 @@ class ProjectionService : Service() {
             onPairingCodePublicationChanged = { publication ->
                 serviceScope.launch {
                     if (epoch == sessionEpoch && server === newServer) {
-                        SessionController.updatePairingCode(publication?.code)
-                        cloudRelayClient?.let { relay ->
+                        val relay = cloudRelayClient
+                        SessionController.updatePairingCode(
+                            pairingCode = publication?.code,
+                            cloudPairingRegistrationStatus =
+                                CloudPairingRegistrationStatus.REGISTERING
+                                    .takeIf { publication != null && relay != null },
+                        )
+                        relay?.let {
                             if (publication == null) {
-                                relay.stopPublishingPairingCode()
+                                it.stopPublishingPairingCode()
                             } else {
-                                relay.publishPairingCode(publication)
+                                runCatching { it.publishPairingCode(publication) }
+                                    .onFailure { error ->
+                                        Log.w(
+                                            CLOUD_RELAY_STATE_LOG_TAG,
+                                            "CLOUD_PAIRING_PUBLISH_FAILED " +
+                                                error.javaClass.simpleName,
+                                        )
+                                        SessionController.updatePairingCode(
+                                            pairingCode = publication.code,
+                                            cloudPairingRegistrationStatus =
+                                                CloudPairingRegistrationStatus.RETRY,
+                                        )
+                                    }
                             }
                         }
                     }
@@ -472,6 +527,8 @@ class ProjectionService : Service() {
         )
 
         var newCloudRelayClient: CloudBrowserRelayClient? = null
+        var newCloudBrowserPageProbe: CloudBrowserPageProbe? = null
+        var latestCloudPairingPublicationEpoch = 0L
         runCatching {
             val port = newServer.start()
             val address = LocalAddressResolver.resolveOrLoopback()
@@ -498,45 +555,83 @@ class ProjectionService : Service() {
                     null
                 }
             }
-            newCloudRelayClient = cloudRelayConfig?.let { cloudConfig ->
-                val identityStore = CloudRelayIdentityStore(applicationContext)
-                val identity = identityStore.getOrCreate()
-                lateinit var relay: CloudBrowserRelayClient
-                relay = CloudBrowserRelayClient(
-                    config = cloudConfig,
-                    identity = identity,
-                    initialPairingCode = newServer.publishedPairingCodeLease(),
-                    nextPairingPublicationEpoch = identityStore::nextPairingPublicationEpoch,
-                    gateway = newServer,
-                    onConnectionChanged = { connected ->
-                        serviceScope.launch {
-                            if (epoch == sessionEpoch && cloudRelayClient === relay) {
-                                val displayedUrl = if (connected) relay.browserUrl else localUrl
-                                SessionController.updateBrowserUrl(displayedUrl)
-                                updateNotification(
-                                    getString(R.string.browser_ready_notification, displayedUrl),
-                                )
+            cloudRelayConfig?.let { cloudConfig ->
+                var pageProbe: CloudBrowserPageProbe? = null
+                runCatching {
+                    pageProbe = CloudBrowserPageProbe()
+                    val identityStore = CloudRelayIdentityStore(applicationContext)
+                    val identity = identityStore.getOrCreate()
+                    lateinit var relay: CloudBrowserRelayClient
+                    relay = CloudBrowserRelayClient(
+                        config = cloudConfig,
+                        identity = identity,
+                        initialPairingCode = newServer.publishedPairingCodeLease(),
+                        nextPairingPublicationEpoch = identityStore::nextPairingPublicationEpoch,
+                        gateway = newServer,
+                        onConnectionChanged = { connected ->
+                            // Relay reconnects independently. Address fallback is based only on a
+                            // real request to the public page, not on a transient WSS reconnect.
+                            Log.i(
+                                CLOUD_RELAY_STATE_LOG_TAG,
+                                "CLOUD_RELAY_STATE connected=$connected",
+                            )
+                        },
+                        onPairingRegistrationConflictForPublication = {
+                                publicationEpoch,
+                                expectedPublication,
+                            ->
+                            serviceScope.launch {
+                                if (
+                                    epoch == sessionEpoch &&
+                                    server === newServer &&
+                                    cloudRelayClient === relay &&
+                                    relay.isCurrentPairingPublication(publicationEpoch)
+                                ) {
+                                    newServer.rotatePairingCodeAfterBootstrapConflict(
+                                        expectedPublication,
+                                    )
+                                }
                             }
-                        }
-                    },
-                    onPairingRegistrationConflict = {
-                        serviceScope.launch {
-                            if (
-                                epoch == sessionEpoch &&
-                                server === newServer &&
-                                cloudRelayClient === relay
-                            ) {
-                                newServer.rotatePairingCodeAfterBootstrapConflict()
+                        },
+                        onPairingRegistrationChanged = { update ->
+                            serviceScope.launch {
+                                if (
+                                    epoch != sessionEpoch ||
+                                    server !== newServer ||
+                                    cloudRelayClient !== relay ||
+                                    !relay.isCurrentPairingPublication(update.publicationEpoch) ||
+                                    update.publicationEpoch < latestCloudPairingPublicationEpoch
+                                ) {
+                                    return@launch
+                                }
+                                latestCloudPairingPublicationEpoch = update.publicationEpoch
+                                SessionController.updateCloudPairingRegistration(update)
+                                if (update.status == CloudPairingRegistrationStatus.EXPIRED) {
+                                    // The Worker slot intentionally expires before the local gate's
+                                    // deadline. Rotate while the publication is still current so the
+                                    // phone never displays a cloud code during that safety margin.
+                                    newServer.requestNewBrowserPairing()
+                                }
                             }
-                        }
-                    },
-                )
-                relay
+                        },
+                    )
+                    relay
+                }.onSuccess { relay ->
+                    newCloudBrowserPageProbe = pageProbe
+                    newCloudRelayClient = relay
+                }.onFailure { error ->
+                    pageProbe?.close()
+                    Log.w(
+                        CLOUD_RELAY_STATE_LOG_TAG,
+                        "CLOUD_RELAY_INIT_FAILED ${error.javaClass.simpleName}",
+                    )
+                }
             }
 
             coordinator = newCoordinator
             server = newServer
             cloudRelayClient = newCloudRelayClient
+            cloudBrowserPageProbe = newCloudBrowserPageProbe
             lanStunServer = newLanStunServer
             browserFrameStore = newFrameStore
             browserFrameCapture = newFrameCapture
@@ -550,9 +645,46 @@ class ProjectionService : Service() {
             sessionBenchConfirmed = benchConfirmed
             activeProjectionConfig = projectionConfig
             attachWebRtcPreviewToCurrentSurface()
-            SessionController.ready(localUrl, newServer.publishedPairingCode(), preflight.summary)
-            updateNotification(getString(R.string.browser_ready_notification, localUrl))
-            newCloudRelayClient?.start()
+            newCloudRelayClient?.let { relay ->
+                runCatching { relay.start() }
+                    .onFailure { error ->
+                        Log.w(
+                            CLOUD_RELAY_STATE_LOG_TAG,
+                            "CLOUD_RELAY_START_FAILED ${error.javaClass.simpleName}",
+                        )
+                        relay.close()
+                        if (cloudRelayClient === relay) cloudRelayClient = null
+                        newCloudRelayClient = null
+                        newCloudBrowserPageProbe?.close()
+                        if (cloudBrowserPageProbe === newCloudBrowserPageProbe) {
+                            cloudBrowserPageProbe = null
+                        }
+                        newCloudBrowserPageProbe = null
+                    }
+            }
+            val initialBrowserUrl = BrowserAddressPolicy.select(
+                cloudUrl = newCloudRelayClient?.browserUrl,
+                localUrl = localUrl,
+                cloudAvailability = CloudBrowserPageAvailability.UNKNOWN,
+            )
+            SessionController.ready(
+                url = initialBrowserUrl,
+                pairingCode = newServer.publishedPairingCode(),
+                nativeStatus = preflight.summary,
+                cloudPairingRegistrationStatus =
+                    CloudPairingRegistrationStatus.REGISTERING.takeIf {
+                        newCloudRelayClient != null && newServer.publishedPairingCode() != null
+                    },
+            )
+            updateNotification(getString(R.string.browser_ready_notification, initialBrowserUrl))
+            if (cloudRelayConfig != null && newCloudBrowserPageProbe != null) {
+                startBrowserAddressMonitor(
+                    cloudUrl = cloudRelayConfig.browserUrl(),
+                    localPort = port,
+                    probe = requireNotNull(newCloudBrowserPageProbe),
+                    epoch = epoch,
+                )
+            }
             AppDiagnostics.record(
                 DiagnosticEventCode.SESSION_READY,
                 fields = mapOf(
@@ -569,6 +701,9 @@ class ProjectionService : Service() {
         }.onFailure { error ->
             if (server === newServer) server = null
             if (cloudRelayClient === newCloudRelayClient) cloudRelayClient = null
+            if (cloudBrowserPageProbe === newCloudBrowserPageProbe) {
+                cloudBrowserPageProbe = null
+            }
             if (lanStunServer === newLanStunServer) lanStunServer = null
             if (browserFrameCapture === newFrameCapture) browserFrameCapture = null
             if (browserFrameStore === newFrameStore) browserFrameStore = null
@@ -581,7 +716,10 @@ class ProjectionService : Service() {
             if (sessionPreflight === preflight) sessionPreflight = null
             sessionBenchConfirmed = false
             activeProjectionConfig = ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig()
+            browserAddressMonitorJob?.cancel()
+            browserAddressMonitorJob = null
             newCloudRelayClient?.close()
+            newCloudBrowserPageProbe?.close()
             newLanStunServer?.close()
             newServer.close()
             newWebRtcController?.close()
@@ -601,6 +739,55 @@ class ProjectionService : Service() {
             )
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+        }
+    }
+
+    private fun startBrowserAddressMonitor(
+        cloudUrl: String,
+        localPort: Int,
+        probe: CloudBrowserPageProbe,
+        epoch: Long,
+    ) {
+        browserAddressMonitorJob?.cancel()
+        browserAddressMonitorJob = serviceScope.launch {
+            val tracker = CloudBrowserPageAvailabilityTracker()
+            var loggedAvailability = CloudBrowserPageAvailability.UNKNOWN
+            while (
+                isActive &&
+                epoch == sessionEpoch &&
+                cloudBrowserPageProbe === probe
+            ) {
+                val availability = tracker.record(probe.isReachable(cloudUrl))
+                if (availability != loggedAvailability) {
+                    loggedAvailability = availability
+                    Log.i(
+                        CLOUD_RELAY_STATE_LOG_TAG,
+                        "CLOUD_BROWSER_PAGE availability=${availability.name}",
+                    )
+                }
+                val localUrl = "http://${LocalAddressResolver.resolveOrLoopback()}:$localPort"
+                val displayedUrl = BrowserAddressPolicy.select(
+                    cloudUrl = cloudUrl,
+                    localUrl = localUrl,
+                    cloudAvailability = availability,
+                )
+                if (SessionController.state.value.browserUrl != displayedUrl) {
+                    SessionController.updateBrowserUrl(displayedUrl)
+                    updateNotification(
+                        getString(R.string.browser_ready_notification, displayedUrl),
+                    )
+                }
+                delay(
+                    when (availability) {
+                        CloudBrowserPageAvailability.UNKNOWN ->
+                            CLOUD_BROWSER_INITIAL_RETRY_MILLIS
+                        CloudBrowserPageAvailability.REACHABLE ->
+                            CLOUD_BROWSER_REACHABLE_CHECK_MILLIS
+                        CloudBrowserPageAvailability.UNREACHABLE ->
+                            CLOUD_BROWSER_FALLBACK_CHECK_MILLIS
+                    },
+                )
+            }
         }
     }
 
@@ -684,17 +871,36 @@ class ProjectionService : Service() {
             message = getString(R.string.projection_profile_applying),
         )
 
+        val replacementLayout =
+            ProjectionViewportTransportReplacementPolicy.replacementLayoutForProfile(
+                profile = profile,
+                currentConfig = activeProjectionConfig,
+                portraitEncodedViewportsEnabled = viewportControl
+                    ?.portraitEncodedViewportsEnabledForSession() == true,
+                configuredDensityDpi = projectionDpiSettings.densityDpi(profile),
+            )
+        val replacementViewport = replacementLayout.encodedViewport
+        val replacementConfig = replacementLayout.applyTo(
+            profile.toOpenAutoConfig(
+                viewport = replacementViewport,
+                densityDpi = replacementLayout.densityDpi,
+            ),
+        )
+
         var candidateForCancellation: WebRtcProjectionController? = null
         val replacementController = try {
             withContext(Dispatchers.IO) {
                 val candidate = WebRtcProjectionController(
                     context = applicationContext,
-                    config = WebRtcProjectionConfig.forProjectionProfile(profile),
+                    config = WebRtcProjectionConfig.forProjectionViewport(
+                        profile,
+                        replacementViewport,
+                    ),
                     microphoneSource = browserMicrophoneSource,
                     audioStreams = browserAudioPipeline?.streamHub,
                     controlRequestHandler = { request ->
                         checkNotNull(server) { "Browser relay gateway is unavailable" }
-                            .dispatchRelay(request)
+                            .dispatchWebRtcControl(request)
                     },
                 )
                 candidateForCancellation = candidate
@@ -709,13 +915,34 @@ class ProjectionService : Service() {
         } catch (error: CancellationException) {
             candidateForCancellation?.close()
             throw error
+        } catch (error: Throwable) {
+            candidateForCancellation?.close()
+            Log.w(
+                WEBRTC_LOG_TAG,
+                "WEBRTC_PROFILE_REPLACEMENT_FAILED ${error.javaClass.simpleName}: " +
+                    error.message,
+            )
+            null
         }
         if (epoch != sessionEpoch) {
             replacementController?.close()
             return false
         }
+        if (
+            !ProjectionViewportTransportReplacementPolicy.canCommit(
+                currentWebRtcAvailable = webRtcController != null,
+                replacementWebRtcAvailable = replacementController != null,
+            )
+        ) {
+            replacementController?.close()
+            Log.w(
+                WEBRTC_LOG_TAG,
+                "PROFILE_APPLY_REJECTED reason=WEBRTC_REPLACEMENT_UNAVAILABLE " +
+                    "size=${replacementViewport.width}x${replacementViewport.height}",
+            )
+            return false
+        }
 
-        val replacementConfig = profile.toOpenAutoConfig()
         val replacementCoordinator = OpenAutoCoordinator(
             engine = BenchOpenAutoEngine(),
             safetyGate = SafetyGate(),
@@ -734,6 +961,14 @@ class ProjectionService : Service() {
             return false
         }
 
+        // Codec probing can outlive a newer profile selection. Do not tear down the healthy
+        // runtime for a candidate that is no longer authoritative.
+        if (epoch != sessionEpoch || manager.snapshot().requestedProfile != profile) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            return epoch == sessionEpoch
+        }
+
         // Commit order: stop AA input/decoder first, install the new geometry and optional WebRTC
         // source, then perform a fresh ServiceDiscovery exchange. The HTTP server and pairing
         // survive. If no non-H.264 encoder exists, AA continues on the app Surface/JPEG fallback.
@@ -742,8 +977,14 @@ class ProjectionService : Service() {
         projectionDecoderController = null
         val previousProjectionJob = projectionJob
         projectionJob = null
-        previousRuntime?.close()
-        previousProjectionJob?.cancelAndJoin()
+        try {
+            previousRuntime?.close()
+            previousProjectionJob?.cancelAndJoin()
+        } catch (error: Throwable) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            throw error
+        }
 
         val previousController = webRtcController
         previousController?.detachPreviewSurface()
@@ -751,13 +992,15 @@ class ProjectionService : Service() {
         webRtcController = replacementController
         activeProjectionConfig = replacementConfig
 
+        replaceBrowserFrameCapture(profile, replacementViewport)
+
         coordinator?.stop()
         coordinator = replacementCoordinator
         attachWebRtcPreviewToCurrentSurface()
         previousController?.close()
 
         manager.confirmActive(profile)
-        viewportControl?.activateProfile(profile)
+        viewportControl?.activateProfile(profile, replacementLayout)
         launchProjection(
             preflight = preflight,
             benchConfirmed = sessionBenchConfirmed,
@@ -770,14 +1013,14 @@ class ProjectionService : Service() {
             message = if (replacementController == null) {
                 getString(
                     R.string.projection_profile_applied_jpeg_fallback,
-                    profile.width,
-                    profile.height,
+                    replacementViewport.width,
+                    replacementViewport.height,
                 )
             } else {
                 getString(
                     R.string.projection_profile_applied_reconnecting,
-                    profile.width,
-                    profile.height,
+                    replacementViewport.width,
+                    replacementViewport.height,
                 )
             },
         )
@@ -840,13 +1083,94 @@ class ProjectionService : Service() {
             return@withLock false
         }
         val activeProfile = profileSnapshot.activeProfile
-        if (
-            layout.encodedViewport.width != activeProfile.width ||
-            layout.encodedViewport.height != activeProfile.height
-        ) {
+        if (!activeProfile.supportsEncodedViewport(layout.encodedViewport)) {
             return@withLock false
         }
-        val replacementConfig = layout.applyTo(activeProfile.toOpenAutoConfig())
+        check(
+            layout.densityDpi == activeProfile.effectiveDensityDpi(
+                projectionDpiSettings.densityDpi(activeProfile),
+                layout.encodedViewport,
+            ),
+        ) {
+            "viewport changes must preserve the effective profile density"
+        }
+        val replacementConfig = layout.applyTo(
+            activeProfile.toOpenAutoConfig(
+                viewport = layout.encodedViewport,
+                densityDpi = layout.densityDpi,
+            ),
+        )
+        val encodedViewportChanged =
+            ProjectionViewportTransportReplacementPolicy.requiresMediaPipelineReplacement(
+                currentViewport = activeProjectionConfig.viewport,
+                requestedViewport = layout.encodedViewport,
+            )
+        var candidateForCancellation: WebRtcProjectionController? = null
+        val replacementController = if (encodedViewportChanged) {
+            try {
+                withContext(Dispatchers.IO) {
+                    val candidate = WebRtcProjectionController(
+                        context = applicationContext,
+                        config = WebRtcProjectionConfig.forProjectionViewport(
+                            activeProfile,
+                            layout.encodedViewport,
+                        ),
+                        microphoneSource = browserMicrophoneSource,
+                        audioStreams = browserAudioPipeline?.streamHub,
+                        controlRequestHandler = { request ->
+                            checkNotNull(server) { "Browser relay gateway is unavailable" }
+                                .dispatchWebRtcControl(request)
+                        },
+                    )
+                    candidateForCancellation = candidate
+                    candidate.start().fold(
+                        onSuccess = { candidate },
+                        onFailure = {
+                            candidate.close()
+                            null
+                        },
+                    )
+                }
+            } catch (error: CancellationException) {
+                candidateForCancellation?.close()
+                throw error
+            } catch (error: Throwable) {
+                candidateForCancellation?.close()
+                Log.w(
+                    WEBRTC_LOG_TAG,
+                    "WEBRTC_VIEWPORT_REPLACEMENT_FAILED ${error.javaClass.simpleName}: " +
+                        error.message,
+                )
+                null
+            }
+        } else {
+            null
+        }
+        // Do not downgrade a healthy WebRTC session to JPEG because the device encoder rejected
+        // a portrait size. In JPEG-only local sessions there is no native sender to preserve, so
+        // the rotated fallback capture remains a valid path.
+        if (
+            encodedViewportChanged &&
+            !ProjectionViewportTransportReplacementPolicy.canCommit(
+                currentWebRtcAvailable = webRtcController != null,
+                replacementWebRtcAvailable = replacementController != null,
+            )
+        ) {
+            Log.w(
+                WEBRTC_LOG_TAG,
+                "VIEWPORT_APPLY_REJECTED reason=WEBRTC_REPLACEMENT_UNAVAILABLE " +
+                    "size=${layout.encodedViewport.width}x${layout.encodedViewport.height}",
+            )
+            return@withLock false
+        }
+        val replacementSignaling = if (encodedViewportChanged) {
+            webRtcSignaling ?: run {
+                replacementController?.close()
+                return@withLock false
+            }
+        } else {
+            null
+        }
         val replacementCoordinator = OpenAutoCoordinator(
             engine = BenchOpenAutoEngine(),
             safetyGate = SafetyGate(),
@@ -857,11 +1181,20 @@ class ProjectionService : Service() {
             },
         )
         if (replacementCoordinator.start(VehicleState.BENCH_STATIONARY).isFailure) {
+            replacementController?.close()
             publishNativeStatus(
                 nativeStatus = "${preflight.summary} — AASDK VIEWPORT_APPLY_FAILED reason=SAFETY_GATE",
                 message = getString(R.string.projection_viewport_safety_cancelled),
             )
             return@withLock false
+        }
+
+        // Encoder probing and coordinator preparation suspend. A newer resize can win meanwhile;
+        // discard this candidate before touching the healthy active runtime.
+        if (epoch != sessionEpoch || manager.snapshot().requestedLayout != layout) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            return@withLock epoch == sessionEpoch
         }
 
         publishNativeStatus(
@@ -876,17 +1209,39 @@ class ProjectionService : Service() {
         projectionDecoderController = null
         val previousProjectionJob = projectionJob
         projectionJob = null
-        previousRuntime?.close()
-        previousProjectionJob?.cancelAndJoin()
-        if (epoch != sessionEpoch || manager.snapshot().requestedLayout != layout) {
+        try {
+            previousRuntime?.close()
+            previousProjectionJob?.cancelAndJoin()
+        } catch (error: Throwable) {
+            // Neither candidate has been installed yet. Cancellation or join failure must not
+            // leak its EGL/codec resources or leave a started coordinator behind.
+            replacementController?.close()
             replacementCoordinator.stop()
-            return@withLock epoch == sessionEpoch
+            throw error
+        }
+        if (epoch != sessionEpoch) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            return@withLock false
         }
 
+        val previousController = if (encodedViewportChanged) webRtcController else null
+        if (encodedViewportChanged) {
+            previousController?.detachPreviewSurface()
+            checkNotNull(replacementSignaling).replace(
+                replacementController ?: BrowserWebRtcSignaling.Unavailable,
+            )
+            webRtcController = replacementController
+            replaceBrowserFrameCapture(activeProfile, layout.encodedViewport)
+        }
         coordinator?.stop()
         coordinator = replacementCoordinator
         activeProjectionConfig = replacementConfig
-        manager.confirmActive(layout)
+        manager.confirmTransportActive(layout)
+        if (encodedViewportChanged) {
+            attachWebRtcPreviewToCurrentSurface()
+            previousController?.close()
+        }
         launchProjection(
             preflight = preflight,
             benchConfirmed = sessionBenchConfirmed,
@@ -897,13 +1252,21 @@ class ProjectionService : Service() {
             LOG_TAG,
             "VIEWPORT_APPLIED marginWidth=${layout.totalMarginWidth} " +
                 "marginHeight=${layout.totalMarginHeight} densityDpi=${layout.densityDpi} " +
-                "WEBRTC_SESSION_PRESERVED",
+                if (encodedViewportChanged) {
+                    "WEBRTC_MEDIA_RENEGOTIATING SIGNALING_SESSION_PRESERVED"
+                } else {
+                    "WEBRTC_SESSION_PRESERVED"
+                },
         )
         publishNativeStatus(
             nativeStatus = "${preflight.summary} — AASDK VIEWPORT_APPLIED " +
                 "marginWidth=${layout.totalMarginWidth} marginHeight=${layout.totalMarginHeight} " +
                 "densityDpi=${layout.densityDpi} " +
-                "RECONNECTING WEBRTC_SESSION=PRESERVED",
+                if (encodedViewportChanged) {
+                    "RECONNECTING WEBRTC_MEDIA=RENEGOTIATING SIGNALING_SESSION=PRESERVED"
+                } else {
+                    "RECONNECTING WEBRTC_SESSION=PRESERVED"
+                },
             message = getString(R.string.projection_viewport_applied),
         )
         true
@@ -915,14 +1278,13 @@ class ProjectionService : Service() {
         projectionConfig: OpenAutoConfig,
         epoch: Long,
     ) {
+        portraitMediaAcceptanceWatchdogJob?.cancel()
+        portraitMediaAcceptanceWatchdogJob = null
         val config = preflight.runtimeConfig(benchConfirmed, projectionConfig)
         if (config == null) {
             val reason = when {
                 preflight.endpointHost.isBlank() -> "DISABLED"
                 preflight.credential == null -> "CREDENTIAL_UNAVAILABLE"
-                preflight.peerTrustPolicy ==
-                    com.pebble.tecomheadunit.openauto.protocol.AasdkTlsPeerTrustPolicy.NotConfigured ->
-                    "PEER_TRUST_NOT_CONFIGURED"
                 else -> "PREFLIGHT_UNAVAILABLE"
             }
             publishNativeStatus("${preflight.summary} • AASDK $reason")
@@ -960,12 +1322,47 @@ class ProjectionService : Service() {
         projectionDecoderController = decoderController
         projectionRuntime = runtime
         attachBrowserCaptureToCurrentSurface()
+        var serviceDiscoveryResponseSent = false
+        var videoMediaAccepted = false
         projectionJob = serviceScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     runtime.runWithReconnect(config) { status ->
                         withContext(Dispatchers.Main.immediate) {
                             if (epoch == sessionEpoch && projectionRuntime === runtime) {
+                                if (status.startsWith(VIDEO_MEDIA_ACCEPTED_STATUS)) {
+                                    videoMediaAccepted = true
+                                    portraitMediaAcceptanceWatchdogJob?.cancel()
+                                    portraitMediaAcceptanceWatchdogJob = null
+                                } else if (
+                                    status.startsWith(SERVICE_DISCOVERY_RESPONSE_SENT_STATUS) &&
+                                    projectionConfig.viewport.height >
+                                    projectionConfig.viewport.width &&
+                                    viewportControl
+                                        ?.portraitEncodedViewportsEnabledForSession() == true &&
+                                    portraitMediaAcceptanceWatchdogJob == null
+                                ) {
+                                    serviceDiscoveryResponseSent = true
+                                    portraitMediaAcceptanceWatchdogJob = serviceScope.launch {
+                                        delay(PORTRAIT_MEDIA_ACCEPTANCE_TIMEOUT_MILLIS)
+                                        if (
+                                            epoch == sessionEpoch &&
+                                            projectionRuntime === runtime &&
+                                            activeProjectionConfig == projectionConfig
+                                        ) {
+                                            portraitMediaAcceptanceWatchdogJob = null
+                                            Log.w(
+                                                LOG_TAG,
+                                                "PORTRAIT_PROTOCOL_FALLBACK " +
+                                                    "reason=VIDEO_MEDIA_ACCEPT_TIMEOUT " +
+                                                    "size=${projectionConfig.viewport.width}x" +
+                                                    projectionConfig.viewport.height,
+                                            )
+                                            viewportControl
+                                                ?.disablePortraitEncodedViewportsForSession()
+                                        }
+                                    }
+                                }
                                 publishNativeStatus(
                                     "${preflight.summary} • AASDK ${endpointAwareStatus(preflight, status)}",
                                 )
@@ -977,6 +1374,20 @@ class ProjectionService : Service() {
                 throw error
             } catch (error: Throwable) {
                 if (epoch == sessionEpoch && projectionRuntime === runtime) {
+                    if (
+                        projectionConfig.viewport.height > projectionConfig.viewport.width &&
+                        serviceDiscoveryResponseSent &&
+                        !videoMediaAccepted
+                    ) {
+                        portraitMediaAcceptanceWatchdogJob?.cancel()
+                        portraitMediaAcceptanceWatchdogJob = null
+                        Log.w(
+                            LOG_TAG,
+                            "PORTRAIT_PROTOCOL_FALLBACK reason=TERMINAL_BEFORE_VIDEO " +
+                                error.javaClass.simpleName,
+                        )
+                        viewportControl?.disablePortraitEncodedViewportsForSession()
+                    }
                     AppDiagnostics.recordFailure(
                         DiagnosticEventCode.SESSION_FAILED,
                         error,
@@ -995,6 +1406,8 @@ class ProjectionService : Service() {
             } finally {
                 runtime.close()
                 if (epoch == sessionEpoch && projectionRuntime === runtime) {
+                    portraitMediaAcceptanceWatchdogJob?.cancel()
+                    portraitMediaAcceptanceWatchdogJob = null
                     projectionRuntime = null
                     projectionDecoderController = null
                     projectionJob = null
@@ -1130,6 +1543,16 @@ class ProjectionService : Service() {
         browserFrameCapture?.attach(target.first, target.second)
     }
 
+    private fun replaceBrowserFrameCapture(
+        profile: ProjectionVideoProfile,
+        viewport: VideoViewport = VideoViewport(profile.width, profile.height),
+    ) {
+        val frameStore = browserFrameStore ?: return
+        browserFrameCapture?.close()
+        browserFrameCapture = createBrowserFrameCapture(frameStore, profile, viewport)
+        attachBrowserCaptureToCurrentSurface()
+    }
+
     private fun attachWebRtcPreviewToCurrentSurface() {
         val target = synchronized(projectionSurfaceLock) {
             projectionSurface?.takeIf(Surface::isValid)
@@ -1152,6 +1575,8 @@ class ProjectionService : Service() {
 
     private fun stopProjectionForSurfaceLoss() {
         val runtime = projectionRuntime ?: return
+        portraitMediaAcceptanceWatchdogJob?.cancel()
+        portraitMediaAcceptanceWatchdogJob = null
         projectionRuntime = null
         projectionDecoderController = null
         val activeJob = projectionJob
@@ -1218,10 +1643,21 @@ class ProjectionService : Service() {
         val activeProjectionJob = projectionJob
         projectionJob = null
         activeProjectionJob?.cancel()
+        val activePortraitWatchdogJob = portraitMediaAcceptanceWatchdogJob
+        portraitMediaAcceptanceWatchdogJob = null
+        activePortraitWatchdogJob?.cancel()
 
         val activeStartJob = startJob
         startJob = null
         activeStartJob?.cancel()
+
+        val activeBrowserAddressMonitorJob = browserAddressMonitorJob
+        browserAddressMonitorJob = null
+        activeBrowserAddressMonitorJob?.cancel()
+
+        val activeCloudBrowserPageProbe = cloudBrowserPageProbe
+        cloudBrowserPageProbe = null
+        activeCloudBrowserPageProbe?.close()
 
         val activeCloudRelayClient = cloudRelayClient
         cloudRelayClient = null
@@ -1348,7 +1784,7 @@ class ProjectionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(NavOnWebNotificationAssets.smallIcon)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setContentIntent(openIntent)
@@ -1446,7 +1882,7 @@ class ProjectionService : Service() {
             AndroidAutoConnectionState.CONNECTED -> getString(R.string.android_auto_state_connected)
         }
         return NotificationCompat.Builder(this, CONNECTION_ALERT_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setSmallIcon(NavOnWebNotificationAssets.smallIcon)
             .setContentTitle(title)
             .setContentText(getString(connection.reason.messageRes))
             .setContentIntent(openIntent)
@@ -1499,10 +1935,18 @@ class ProjectionService : Service() {
         private const val CONNECTION_ALERT_NOTIFICATION_ID = 5278
         private const val LOG_TAG = "TecomAasdk"
         private const val WEBRTC_LOG_TAG = "TecomWebRtc"
+        private const val CLOUD_RELAY_STATE_LOG_TAG = "NavOnWebCloudState"
         private const val NO_SURFACE_GENERATION = 0L
         private const val VIEWPORT_APPLY_SETTLE_MILLIS = 850L
+        private const val PORTRAIT_MEDIA_ACCEPTANCE_TIMEOUT_MILLIS = 15_000L
+        private const val VIDEO_MEDIA_ACCEPTED_STATUS = "VIDEO_MEDIA_ACCEPTED"
+        private const val SERVICE_DISCOVERY_RESPONSE_SENT_STATUS =
+            "SERVICE_DISCOVERY_RESPONSE_SENT"
         private const val DIAGNOSTIC_HEARTBEAT_MILLIS = 60_000L
         private const val NOTICE_REFRESH_INTERVAL_MILLIS = 15L * 60L * 1_000L
+        private const val CLOUD_BROWSER_INITIAL_RETRY_MILLIS = 1_500L
+        private const val CLOUD_BROWSER_REACHABLE_CHECK_MILLIS = 30_000L
+        private const val CLOUD_BROWSER_FALLBACK_CHECK_MILLIS = 10_000L
 
         fun start(
             context: Context,
@@ -1533,4 +1977,19 @@ private fun WebRtcCodecPreferenceOption.toBrowserWebRtcCodec(): BrowserWebRtcCod
     WebRtcCodecPreferenceOption.VP8 -> BrowserWebRtcCodec.VP8
     WebRtcCodecPreferenceOption.VP9 -> BrowserWebRtcCodec.VP9
     WebRtcCodecPreferenceOption.AV1 -> BrowserWebRtcCodec.AV1
+}
+
+private fun createBrowserFrameCapture(
+    frameStore: BrowserFrameStore,
+    profile: ProjectionVideoProfile,
+    viewport: VideoViewport = VideoViewport(profile.width, profile.height),
+): BrowserSurfaceFrameCapture {
+    val config = BrowserJpegFallbackPolicy.forProjectionViewport(profile, viewport)
+    return BrowserSurfaceFrameCapture(
+        frameStore = frameStore,
+        width = config.width,
+        height = config.height,
+        targetFramesPerSecond = config.targetFramesPerSecond,
+        jpegQuality = config.jpegQuality,
+    )
 }

@@ -83,13 +83,15 @@ class OpenAutoCoordinatorTest {
 
     @Test
     fun portraitBrowserContentMapsOnceToExactEncodedPixels() {
-        val viewport = VideoViewport(1920, 1080)
+        val viewport = VideoViewport(1080, 1920)
         val layout = ProjectionViewportResolver.resolve(
             encodedViewport = viewport,
-            browserWidth = 1080,
-            browserHeight = 1920,
+            browserWidth = 800,
+            browserHeight = 1280,
         )
-        val config = layout.applyTo(OpenAutoConfig(viewport = viewport))
+        val config = layout.applyTo(
+            OpenAutoConfig(viewport = viewport, dpi = layout.densityDpi),
+        )
         val coordinator = OpenAutoCoordinator(
             engine = BenchOpenAutoEngine(),
             safetyGate = SafetyGate(),
@@ -107,14 +109,16 @@ class OpenAutoCoordinatorTest {
             NormalizedTouch(TouchPhase.UP, x = 1.0, y = 1.0),
         ).getOrThrow()
 
-        assertEquals(1312, layout.totalMarginWidth)
-        assertEquals(608, config.contentViewport.width)
+        assertEquals(0, layout.totalMarginWidth)
+        assertEquals(192, layout.totalMarginHeight)
+        assertEquals(1080, config.contentViewport.width)
+        assertEquals(1728, config.contentViewport.height)
         assertEquals(0, topLeft.x)
         assertEquals(0, topLeft.y)
-        assertEquals(304, center.x)
-        assertEquals(540, center.y)
-        assertEquals(607, bottomRight.x)
-        assertEquals(1079, bottomRight.y)
+        assertEquals(540, center.x)
+        assertEquals(864, center.y)
+        assertEquals(1079, bottomRight.x)
+        assertEquals(1727, bottomRight.y)
     }
 
     @Test
@@ -128,7 +132,9 @@ class OpenAutoCoordinatorTest {
         val coordinator = OpenAutoCoordinator(
             engine = BenchOpenAutoEngine(),
             safetyGate = SafetyGate(),
-            config = layout.applyTo(OpenAutoConfig(viewport = viewport)),
+            config = layout.applyTo(
+                OpenAutoConfig(viewport = viewport, dpi = layout.densityDpi),
+            ),
         )
         coordinator.start(VehicleState.BENCH_STATIONARY).getOrThrow()
 

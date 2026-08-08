@@ -13,6 +13,7 @@ import com.pebble.tecomheadunit.browser.webrtc.codec.WebRtcOutboundCodecPolicy
 import com.pebble.tecomheadunit.browser.BrowserWebRtcCapabilities
 import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionAccessTier
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingsSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 import com.pebble.tecomheadunit.openauto.sensor.NightModeDecision
 import com.pebble.tecomheadunit.openauto.sensor.NightModeDecisionSource
@@ -58,6 +59,15 @@ data class ProjectionProfileOptionUi(
     /** Locked rows stay interactive so selecting them can open the premium purchase prompt. */
     val premiumLocked: Boolean,
     val enabled: Boolean,
+    val densityDpi: Int = ProjectionVideoProfile.FREE_800X480.dpi,
+    val recommendedDensityDpi: Int = ProjectionVideoProfile.FREE_800X480.dpi,
+    val appliedLandscapeDensityDpi: Int = ProjectionVideoProfile.FREE_800X480.dpi,
+    val appliedPortraitDensityDpi: Int = ProjectionVideoProfile.FREE_800X480
+        .effectiveDensityDpi(
+            ProjectionVideoProfile.FREE_800X480.dpi,
+            ProjectionVideoProfile.FREE_800X480.portraitViewport,
+        ),
+    val densityControlEnabled: Boolean = true,
 )
 
 data class ProjectionControlUiState(
@@ -65,6 +75,7 @@ data class ProjectionControlUiState(
     val profileOptions: List<ProjectionProfileOptionUi> = emptyList(),
     val profileStatus: String = "",
     val profileChangeInProgress: Boolean = false,
+    val dpiStatus: String = "",
     val codecPreference: WebRtcCodecPreferenceOption = WebRtcCodecPreferenceOption.AUTO,
     val codecStatus: String = "",
 ) {
@@ -73,6 +84,8 @@ data class ProjectionControlUiState(
             snapshot: ProjectionProfileSnapshot?,
             serviceBound: Boolean,
             profileFeedback: String,
+            dpiSettings: ProjectionDpiSettingsSnapshot = ProjectionDpiSettingsSnapshot.recommended(),
+            dpiFeedback: String = "",
             codecPreference: WebRtcCodecPreferenceOption,
             codecFeedback: String,
             textResolver: ProjectionControlTextResolver,
@@ -83,6 +96,7 @@ data class ProjectionControlUiState(
             val requested = snapshot?.requestedProfile ?: active
             val changing = snapshot?.isAutomaticReconnectPending == true
             val options = ProjectionVideoProfile.entries.map { profile ->
+                val configuredDensityDpi = dpiSettings.densityDpi(profile)
                 val premiumLocked =
                     profile.requiredTier == ProjectionAccessTier.PREMIUM &&
                         !premiumEntitled
@@ -94,6 +108,17 @@ data class ProjectionControlUiState(
                     active = profile == active,
                     premiumLocked = premiumLocked,
                     enabled = !changing && (premiumLocked || serviceBound),
+                    densityDpi = configuredDensityDpi,
+                    recommendedDensityDpi = profile.dpi,
+                    appliedLandscapeDensityDpi = profile.effectiveDensityDpi(
+                        configuredDensityDpi,
+                        profile.landscapeViewport,
+                    ),
+                    appliedPortraitDensityDpi = profile.effectiveDensityDpi(
+                        configuredDensityDpi,
+                        profile.portraitViewport,
+                    ),
+                    densityControlEnabled = !changing,
                 )
             }
             val status = profileFeedback.ifBlank {
@@ -110,6 +135,7 @@ data class ProjectionControlUiState(
                 profileOptions = options,
                 profileStatus = status,
                 profileChangeInProgress = changing,
+                dpiStatus = dpiFeedback,
                 codecPreference = codecPreference.takeIf { it.isSelectable }
                     ?: WebRtcCodecPreferenceOption.AUTO,
                 codecStatus = codecFeedback.ifBlank { textResolver.codecPolicyPending },
@@ -152,8 +178,6 @@ class AndroidProjectionControlTextResolver(context: Context) : ProjectionControl
 
     override fun profileDetail(profile: ProjectionVideoProfile): String = applicationContext.getString(
         R.string.projection_profile_detail,
-        profile.androidAutoFramesPerSecond,
-        profile.webRtcFramesPerSecond,
         formatBitrate(profile.webRtcStartBitrateBps),
         formatBitrate(profile.webRtcMaxBitrateBps),
     )
@@ -357,6 +381,4 @@ private fun ProjectionVideoProfile.displayTitle(): String = when (this) {
     ProjectionVideoProfile.PREMIUM_1080P -> "Full HD 1920×1080"
 }
 
-private fun ProjectionVideoProfile.displayDiagnostic(): String =
-    "${displayTitle()} · AA ${androidAutoFramesPerSecond} FPS · " +
-        "WebRTC ${webRtcFramesPerSecond} FPS"
+private fun ProjectionVideoProfile.displayDiagnostic(): String = displayTitle()

@@ -51,8 +51,11 @@ import com.pebble.tecomheadunit.billing.PremiumAccessGate
 import com.pebble.tecomheadunit.billing.PremiumBillingActionResult
 import com.pebble.tecomheadunit.billing.PremiumBillingConnectionState
 import com.pebble.tecomheadunit.billing.PremiumBillingProvider
+import com.pebble.tecomheadunit.billing.PremiumBillingResponsePolicy
 import com.pebble.tecomheadunit.billing.PremiumBillingState
 import com.pebble.tecomheadunit.billing.PremiumEntitlementStatus
+import com.pebble.tecomheadunit.billing.PremiumEntitlementSource
+import com.pebble.tecomheadunit.billing.PremiumLicensePresentationStore
 import com.pebble.tecomheadunit.billing.PremiumPurchaseCheckResult
 import com.pebble.tecomheadunit.diagnostics.AppDiagnostics
 import com.pebble.tecomheadunit.diagnostics.DiagnosticEventCode
@@ -64,7 +67,11 @@ import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadScheduler
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadStatusSnapshot
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadSubmissionResult
 import com.pebble.tecomheadunit.openauto.AndroidAutoSettingsNavigator
+import com.pebble.tecomheadunit.openauto.AndroidProjectionDpiPreferenceStore
 import com.pebble.tecomheadunit.openauto.HeadUnitServerGuidanceGate
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingResult
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingsManager
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingsSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionProfileRequestResult
 import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.sensor.AndroidNightModeLocationSource
@@ -77,6 +84,7 @@ import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.ui.ProjectionControlUiState
 import com.pebble.tecomheadunit.ui.AndroidProjectionControlTextResolver
 import com.pebble.tecomheadunit.ui.PremiumPurchaseUiState
+import com.pebble.tecomheadunit.ui.PremiumPurchaseConfirmationDialog
 import com.pebble.tecomheadunit.ui.BluetoothDeviceOptionUi
 import com.pebble.tecomheadunit.ui.FirstRunOnboardingStore
 import com.pebble.tecomheadunit.ui.ServiceAutomationUiState
@@ -91,7 +99,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
     private var pendingBenchStart = false
@@ -104,6 +115,7 @@ class MainActivity : ComponentActivity() {
     private var locationCancellation: CancellationSignal? = null
     private var locationRequestGeneration = 0L
     private lateinit var codecPreferenceStore: WebRtcCodecPreferenceStore
+    private lateinit var projectionDpiSettingsManager: ProjectionDpiSettingsManager
     private lateinit var firstRunOnboardingStore: FirstRunOnboardingStore
     private lateinit var nightModeLocationSource: AndroidNightModeLocationSource
     private lateinit var diagnosticUploadManager: DiagnosticReportUploadManager
@@ -113,10 +125,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var bluetoothCompanionAssociationManager: BluetoothCompanionAssociationManager
     private lateinit var bluetoothCompanionPresenceManager: BluetoothCompanionPresenceManager
     private lateinit var premiumBilling: GooglePlayPremiumBilling
+    private lateinit var premiumLicensePresentationStore: PremiumLicensePresentationStore
     private val headUnitServerGuidanceGate = HeadUnitServerGuidanceGate()
     private val projectionProfileSnapshot = MutableStateFlow<ProjectionProfileSnapshot?>(null)
     private val serviceConnected = MutableStateFlow(false)
     private val profileFeedback = MutableStateFlow("")
+    private val projectionDpiSettings = MutableStateFlow(ProjectionDpiSettingsSnapshot.recommended())
+    private val projectionDpiFeedback = MutableStateFlow("")
     private val codecPreference = MutableStateFlow(WebRtcCodecPreferenceOption.AUTO)
     private val codecFeedback = MutableStateFlow("")
     private val diagnosticLogSummary = MutableStateFlow(DiagnosticLogSummary.EMPTY)
@@ -126,9 +141,16 @@ class MainActivity : ComponentActivity() {
     private val premiumPurchaseInProgress = MutableStateFlow(false)
     private val premiumPurchaseRefreshInProgress = MutableStateFlow(false)
     private val premiumBillingFeedback = MutableStateFlow("")
+    private val premiumPurchaseConfirmationDialog = MutableStateFlow(
+        PremiumPurchaseConfirmationDialog.HIDDEN,
+    )
+    private val premiumLicenseConfirmationPending = MutableStateFlow(false)
     private val firstRunOnboardingRequired = MutableStateFlow(false)
     private var pendingAutomationMode: AutomationTriggerMode? = null
     private var premiumBillingStarted = false
+    private var premiumPurchaseFlowLaunched = false
+    private var premiumPurchaseConfirmationJob: Job? = null
+    private var pendingPremiumLicenseEvidenceDigest: String? = null
     private var lastObservedPremiumEntitlement: Boolean? = null
     private var reopenBluetoothPickerAfterPermission = false
     private var lastDiagnosticSummaryRefreshEpochMillis = 0L
@@ -139,6 +161,7 @@ class MainActivity : ComponentActivity() {
             projectionBinder = binder
             serviceConnected.value = true
             refreshServiceUi(binder)
+            synchronizeSavedProjectionDpi(binder)
             startServiceUiRefresh(binder)
             projectionSurfaceLease
                 ?.takeIf { it.surface.isValid }
@@ -260,6 +283,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(applicationContext)
         codecPreferenceStore = WebRtcCodecPreferenceStore(this)
+        projectionDpiSettingsManager = ProjectionDpiSettingsManager(
+            AndroidProjectionDpiPreferenceStore(this),
+        )
+        projectionDpiSettings.value = projectionDpiSettingsManager.snapshot()
         firstRunOnboardingStore = FirstRunOnboardingStore(this)
         firstRunOnboardingRequired.value = firstRunOnboardingStore.shouldShow()
         nightModeLocationSource = AndroidNightModeLocationSource(this)
@@ -270,6 +297,7 @@ class MainActivity : ComponentActivity() {
         bluetoothCompanionAssociationManager = BluetoothCompanionAssociationManager(this)
         bluetoothCompanionPresenceManager = BluetoothCompanionPresenceManager(this)
         premiumBilling = PremiumBillingProvider.get(this)
+        premiumLicensePresentationStore = PremiumLicensePresentationStore(this)
         observePremiumBillingState()
         enforceAutomationEntitlement(PremiumAccessGate.isPremium(this))
         observeDiagnosticUploadWork()
@@ -282,6 +310,8 @@ class MainActivity : ComponentActivity() {
             val profileSnapshot by projectionProfileSnapshot.collectAsStateWithLifecycle()
             val bound by serviceConnected.collectAsStateWithLifecycle()
             val currentProfileFeedback by profileFeedback.collectAsStateWithLifecycle()
+            val currentProjectionDpiSettings by projectionDpiSettings.collectAsStateWithLifecycle()
+            val currentProjectionDpiFeedback by projectionDpiFeedback.collectAsStateWithLifecycle()
             val currentCodecPreference by codecPreference.collectAsStateWithLifecycle()
             val currentCodecFeedback by codecFeedback.collectAsStateWithLifecycle()
             val currentDiagnosticLogSummary by diagnosticLogSummary.collectAsStateWithLifecycle()
@@ -293,9 +323,13 @@ class MainActivity : ComponentActivity() {
             val purchaseRefreshInProgress by
                 premiumPurchaseRefreshInProgress.collectAsStateWithLifecycle()
             val currentPremiumFeedback by premiumBillingFeedback.collectAsStateWithLifecycle()
+            val currentPurchaseConfirmationDialog by
+                premiumPurchaseConfirmationDialog.collectAsStateWithLifecycle()
+            val licenseConfirmationPending by
+                premiumLicenseConfirmationPending.collectAsStateWithLifecycle()
             val showFirstRunOnboarding by
                 firstRunOnboardingRequired.collectAsStateWithLifecycle()
-            val premiumEntitled = currentPremiumBilling.isPremium || debugPremiumBenchEnabled()
+            val premiumEntitled = effectivePremiumEntitlement(currentPremiumBilling)
             val premiumPurchaseUi = PremiumPurchaseUiState(
                 entitled = premiumEntitled,
                 productAvailable = currentPremiumBilling.formattedPrice?.isNotBlank() == true,
@@ -305,12 +339,16 @@ class MainActivity : ComponentActivity() {
                 statusMessage = currentPremiumFeedback.ifBlank {
                     premiumBillingStatusMessage(currentPremiumBilling)
                 },
+                confirmationDialog = currentPurchaseConfirmationDialog,
+                licenseConfirmationPending = licenseConfirmationPending,
             )
             TecomHeadUnitApp(
                 projectionControl = ProjectionControlUiState.from(
                     snapshot = profileSnapshot,
                     serviceBound = bound,
                     profileFeedback = currentProfileFeedback,
+                    dpiSettings = currentProjectionDpiSettings,
+                    dpiFeedback = currentProjectionDpiFeedback,
                     codecPreference = currentCodecPreference,
                     codecFeedback = currentCodecFeedback,
                     textResolver = AndroidProjectionControlTextResolver(this@MainActivity),
@@ -330,6 +368,8 @@ class MainActivity : ComponentActivity() {
                 onStop = ::cancelPendingStartAndStop,
                 onRequestNewBrowserPairing = ::requestNewBrowserPairing,
                 onProjectionProfileSelected = ::requestProjectionProfile,
+                onProjectionDpiChanged = ::saveProjectionDpi,
+                onProjectionDpiReset = ::resetProjectionDpi,
                 onWebRtcCodecSelected = ::saveWebRtcCodecPreference,
                 onExportDiagnosticLogs = ::requestDiagnosticLogExport,
                 onUploadDiagnosticLogs = ::submitApprovedDiagnosticLogUpload,
@@ -338,9 +378,14 @@ class MainActivity : ComponentActivity() {
                 onAutomationModeSelected = ::requestAutomationMode,
                 onSelectBluetoothDevice = ::requestBluetoothDeviceSelection,
                 onBluetoothDeviceSelected = ::selectBluetoothDevice,
+                onClearBluetoothDeviceSelection = ::clearBluetoothDeviceSelection,
                 onDismissBluetoothPicker = ::dismissBluetoothDevicePicker,
                 onUnlockPremium = ::requestPremiumPurchase,
                 onRefreshPurchases = ::requestPremiumPurchaseRefresh,
+                onDismissPremiumPurchaseConfirmation =
+                    ::dismissPremiumPurchaseConfirmation,
+                onPremiumLicenseConfirmationPresented =
+                    ::markPremiumLicenseConfirmationPresented,
                 onProjectionSurfaceAvailable = ::onProjectionSurfaceAvailable,
                 onProjectionSurfaceDestroyed = ::onProjectionSurfaceDestroyed,
             )
@@ -381,21 +426,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (premiumBillingStarted) {
-            val resolveInterruptedPurchaseFlow = premiumPurchaseInProgress.value
-            premiumBilling.refreshPurchases { result ->
-                if (resolveInterruptedPurchaseFlow) {
-                    premiumPurchaseInProgress.value = false
-                    premiumBillingFeedback.value = when (result) {
-                        PremiumPurchaseCheckResult.PremiumOwned ->
-                            getString(R.string.billing_purchase_active)
-                        PremiumPurchaseCheckResult.PurchasePending ->
-                            getString(R.string.billing_purchase_pending)
-                        PremiumPurchaseCheckResult.Free ->
-                            getString(R.string.billing_purchase_free)
-                        is PremiumPurchaseCheckResult.Failed ->
-                            getString(R.string.billing_check_failed)
-                    }
-                }
+            if (premiumPurchaseFlowLaunched || premiumPurchaseInProgress.value) {
+                premiumPurchaseFlowLaunched = false
+                beginPremiumPurchaseConfirmation(manualRefresh = false)
+            } else {
+                // Keep the offline entitlement cache authoritative only until Play is reachable.
+                premiumBilling.refreshPurchases()
             }
         } else {
             premiumBillingStarted = true
@@ -497,6 +533,17 @@ class MainActivity : ComponentActivity() {
         refreshDiagnosticLogSummary()
     }
 
+    /** Applies a setting saved while the Activity was unbound to an already-running session. */
+    private fun synchronizeSavedProjectionDpi(binder: ProjectionService.LocalBinder) {
+        val activeProfile = runCatching { binder.projectionProfileSnapshot().activeProfile }
+            .getOrNull()
+            ?: return
+        binder.notifyProjectionDpiPreferenceChanged(
+            activeProfile.profileId,
+            projectionDpiSettingsManager.densityDpi(activeProfile),
+        )
+    }
+
     private fun requestProjectionProfile(profileId: String) {
         val binder = projectionBinder
         if (binder == null) {
@@ -551,6 +598,60 @@ class MainActivity : ComponentActivity() {
             ProjectionProfileRequestResult.UnknownProfile -> {
                 profileFeedback.value = getString(R.string.projection_profile_unknown)
             }
+        }
+    }
+
+    private fun saveProjectionDpi(profileId: String, densityDpi: Int) {
+        handleProjectionDpiResult(
+            profileId = profileId,
+            result = projectionDpiSettingsManager.setDensityDpi(profileId, densityDpi),
+            reset = false,
+        )
+    }
+
+    private fun resetProjectionDpi(profileId: String) {
+        handleProjectionDpiResult(
+            profileId = profileId,
+            result = projectionDpiSettingsManager.resetToRecommended(profileId),
+            reset = true,
+        )
+    }
+
+    private fun handleProjectionDpiResult(
+        profileId: String,
+        result: ProjectionDpiSettingResult,
+        reset: Boolean,
+    ) {
+        when (result) {
+            is ProjectionDpiSettingResult.Accepted -> {
+                projectionDpiSettings.value = result.snapshot
+                val profile = com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
+                    .fromProfileId(profileId)
+                    ?: return
+                val densityDpi = result.snapshot.densityDpi(profile)
+                val reconnecting = result.changed &&
+                    projectionBinder?.notifyProjectionDpiPreferenceChanged(
+                        profileId,
+                        densityDpi,
+                    ) == true
+                projectionDpiFeedback.value = getString(
+                    when {
+                        reconnecting -> R.string.projection_dpi_saved_reconnecting
+                        reset -> R.string.projection_dpi_reset_saved
+                        else -> R.string.projection_dpi_saved
+                    },
+                    densityDpi,
+                )
+            }
+
+            is ProjectionDpiSettingResult.PersistenceFailed -> {
+                projectionDpiSettings.value = result.snapshot
+                projectionDpiFeedback.value = getString(R.string.projection_dpi_save_failed)
+            }
+
+            ProjectionDpiSettingResult.Invalid,
+            ProjectionDpiSettingResult.UnknownProfile,
+            -> projectionDpiFeedback.value = getString(R.string.projection_dpi_invalid)
         }
     }
 
@@ -885,6 +986,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun clearBluetoothDeviceSelection() {
+        if (!PremiumAccessGate.isPremium(this)) {
+            refreshServiceAutomationUi(
+                feedback = getString(R.string.service_automation_premium_required),
+                pickerVisible = false,
+            )
+            return
+        }
+        val selected = bluetoothAutomationStore.load().selectedDevice
+        if (selected == null) {
+            refreshServiceAutomationUi(pickerVisible = false)
+            return
+        }
+        val previousMode = automationController.snapshot().mode
+        if (previousMode == AutomationTriggerMode.BLUETOOTH) {
+            val disabled = automationController.selectMode(AutomationTriggerMode.NONE)
+            if (disabled is AutomationDispatchResult.Failed) {
+                refreshServiceAutomationUi(
+                    feedback = getString(R.string.automation_save_failed),
+                    pickerVisible = false,
+                )
+                return
+            }
+        }
+        if (!bluetoothAutomationStore.clearSelection()) {
+            if (previousMode == AutomationTriggerMode.BLUETOOTH) {
+                automationController.selectMode(AutomationTriggerMode.BLUETOOTH)
+            }
+            refreshServiceAutomationUi(
+                feedback = getString(R.string.automation_save_failed),
+                pickerVisible = false,
+            )
+            return
+        }
+        bluetoothCompanionPresenceManager.stopObserving(selected)
+        HotspotAutomationMonitorService.refresh(this)
+        refreshServiceAutomationUi(
+            feedback = getString(
+                if (previousMode == AutomationTriggerMode.BLUETOOTH) {
+                    R.string.service_automation_device_cleared_and_disabled
+                } else {
+                    R.string.service_automation_device_cleared
+                },
+            ),
+            pickerVisible = false,
+            devices = emptyList(),
+        )
+    }
+
     private fun requestBluetoothCompanionAssociation() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
         when (
@@ -948,6 +1098,7 @@ class MainActivity : ComponentActivity() {
         val current = serviceAutomation.value
         serviceAutomation.value = current.copy(
             mode = automationController.snapshot().mode,
+            selectedBluetoothDeviceId = selected?.address,
             selectedBluetoothDeviceName = selected?.displayName,
             selectedBluetoothAddressHint = selected?.address
                 ?.takeLast(8)
@@ -962,24 +1113,24 @@ class MainActivity : ComponentActivity() {
     private fun observePremiumBillingState() {
         lifecycleScope.launch {
             premiumBilling.state.collect { state ->
-                val entitled = state.isPremium || debugPremiumBenchEnabled()
-                val previous = lastObservedPremiumEntitlement
-                lastObservedPremiumEntitlement = entitled
+                val entitled = effectivePremiumEntitlement(billingState = state)
 
                 when (state.entitlement) {
                     PremiumEntitlementStatus.PREMIUM -> {
-                        premiumPurchaseInProgress.value = false
-                        premiumBillingFeedback.value = getString(R.string.billing_purchase_active)
+                        finishPremiumPurchaseConfirmation()
+                        maybeSchedulePremiumLicenseConfirmation(state)
                     }
                     PremiumEntitlementStatus.PENDING -> {
-                        premiumPurchaseInProgress.value = false
-                        premiumBillingFeedback.value = getString(R.string.billing_purchase_pending)
+                        if (!premiumPurchaseConfirmationActive()) {
+                            premiumBillingFeedback.value =
+                                getString(R.string.billing_purchase_pending)
+                        }
                     }
                     PremiumEntitlementStatus.FREE -> {
-                        if (premiumPurchaseInProgress.value) {
+                        if (premiumPurchaseConfirmationActive()) {
                             when (state.lastResponseCode) {
                                 BillingClient.BillingResponseCode.USER_CANCELED -> {
-                                    premiumPurchaseInProgress.value = false
+                                    clearPremiumPurchaseConfirmation()
                                     premiumBillingFeedback.value =
                                         getString(R.string.billing_purchase_cancelled)
                                 }
@@ -987,26 +1138,30 @@ class MainActivity : ComponentActivity() {
                                 BillingClient.BillingResponseCode.OK,
                                 -> Unit
                                 else -> {
-                                    premiumPurchaseInProgress.value = false
-                                    premiumBillingFeedback.value =
-                                        getString(R.string.billing_purchase_failed)
+                                    if (
+                                        state.lastPurchaseFailureResponseCode?.let(
+                                            PremiumBillingResponsePolicy::isConfirmedPurchaseFailure,
+                                        ) == true
+                                    ) {
+                                        showPremiumPurchaseFailure()
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                enforceAutomationEntitlement(entitled)
-                if (previous != null && previous != entitled) {
-                    handlePremiumEntitlementTransition(entitled)
-                }
+                applyEffectivePremiumEntitlement(entitled)
             }
         }
     }
 
     private fun requestPremiumPurchase() {
-        if (debugPremiumBenchEnabled() || premiumBilling.state.value.isPremium) {
-            premiumPurchaseInProgress.value = false
+        if (
+            debugPremiumBenchEnabled() ||
+            premiumBilling.state.value.isPremium
+        ) {
+            clearPremiumPurchaseConfirmation()
             premiumBillingFeedback.value = if (debugPremiumBenchEnabled()) {
                 getString(R.string.billing_debug_bench_active)
             } else {
@@ -1016,31 +1171,40 @@ class MainActivity : ComponentActivity() {
         }
         if (premiumPurchaseInProgress.value || premiumPurchaseRefreshInProgress.value) return
         premiumPurchaseInProgress.value = true
+        premiumPurchaseFlowLaunched = false
+        premiumPurchaseConfirmationDialog.value = PremiumPurchaseConfirmationDialog.HIDDEN
         premiumBillingFeedback.value = ""
         premiumBilling.launchPurchase(this) { result ->
             when (result) {
                 PremiumBillingActionResult.PurchaseFlowStarted -> {
+                    premiumPurchaseFlowLaunched = true
                     premiumBillingFeedback.value = getString(R.string.billing_purchase_opened)
                 }
                 PremiumBillingActionResult.PremiumOwned -> {
-                    premiumPurchaseInProgress.value = false
-                    premiumBillingFeedback.value = getString(R.string.billing_purchase_active)
+                    finishPremiumPurchaseConfirmation()
+                    maybeSchedulePremiumLicenseConfirmation(premiumBilling.state.value)
                 }
                 PremiumBillingActionResult.PurchasePending -> {
-                    premiumPurchaseInProgress.value = false
-                    premiumBillingFeedback.value = getString(R.string.billing_purchase_pending)
+                    beginPremiumPurchaseConfirmation(manualRefresh = false)
                 }
                 PremiumBillingActionResult.UserCancelled -> {
-                    premiumPurchaseInProgress.value = false
+                    clearPremiumPurchaseConfirmation()
                     premiumBillingFeedback.value = getString(R.string.billing_purchase_cancelled)
                 }
                 PremiumBillingActionResult.ProductUnavailable -> {
-                    premiumPurchaseInProgress.value = false
+                    clearPremiumPurchaseConfirmation()
                     premiumBillingFeedback.value = getString(R.string.billing_product_unavailable)
                 }
                 is PremiumBillingActionResult.Failed -> {
-                    premiumPurchaseInProgress.value = false
-                    premiumBillingFeedback.value = getString(R.string.billing_purchase_failed)
+                    if (
+                        PremiumBillingResponsePolicy.isConfirmedPurchaseFailure(
+                            result.responseCode,
+                        )
+                    ) {
+                        showPremiumPurchaseFailure()
+                    } else {
+                        beginPremiumPurchaseConfirmation(manualRefresh = false)
+                    }
                 }
             }
         }
@@ -1048,19 +1212,141 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPremiumPurchaseRefresh() {
         if (premiumPurchaseInProgress.value || premiumPurchaseRefreshInProgress.value) return
-        premiumPurchaseRefreshInProgress.value = true
-        premiumBillingFeedback.value = ""
-        premiumBilling.refreshPurchases { result ->
-            premiumPurchaseRefreshInProgress.value = false
-            premiumBillingFeedback.value = when (result) {
-                PremiumPurchaseCheckResult.PremiumOwned ->
-                    getString(R.string.billing_purchase_active)
-                PremiumPurchaseCheckResult.Free -> getString(R.string.billing_purchase_free)
-                PremiumPurchaseCheckResult.PurchasePending ->
-                    getString(R.string.billing_purchase_pending)
-                is PremiumPurchaseCheckResult.Failed -> getString(R.string.billing_check_failed)
+        beginPremiumPurchaseConfirmation(manualRefresh = true)
+    }
+
+    private fun beginPremiumPurchaseConfirmation(manualRefresh: Boolean) {
+        if (premiumBilling.state.value.isPremium) {
+            finishPremiumPurchaseConfirmation()
+            maybeSchedulePremiumLicenseConfirmation(premiumBilling.state.value)
+            return
+        }
+        premiumPurchaseConfirmationJob?.cancel()
+        if (manualRefresh) {
+            premiumPurchaseRefreshInProgress.value = true
+        } else {
+            premiumPurchaseInProgress.value = true
+        }
+        premiumPurchaseConfirmationDialog.value =
+            PremiumPurchaseConfirmationDialog.VERIFYING
+        premiumBillingFeedback.value = getString(R.string.billing_confirmation_verifying)
+        premiumPurchaseConfirmationJob = lifecycleScope.launch {
+            val delayedStateJob = launch {
+                delay(PREMIUM_PURCHASE_INITIAL_CHECK_MILLIS)
+                if (
+                    premiumPurchaseConfirmationActive() &&
+                    premiumPurchaseConfirmationDialog.value ==
+                    PremiumPurchaseConfirmationDialog.VERIFYING
+                ) {
+                    premiumPurchaseConfirmationDialog.value =
+                        PremiumPurchaseConfirmationDialog.DELAYED
+                    premiumBillingFeedback.value =
+                        getString(R.string.billing_confirmation_delayed)
+                }
+            }
+            try {
+                while (isActive && premiumPurchaseConfirmationActive()) {
+                    val checkResult =
+                        withTimeoutOrNull(PREMIUM_PURCHASE_QUERY_TIMEOUT_MILLIS) {
+                            awaitPremiumPurchaseCheck()
+                        }
+                    when (checkResult) {
+                        PremiumPurchaseCheckResult.PremiumOwned -> {
+                            finishPremiumPurchaseConfirmation()
+                            maybeSchedulePremiumLicenseConfirmation(premiumBilling.state.value)
+                            return@launch
+                        }
+                        is PremiumPurchaseCheckResult.Failed -> {
+                            if (
+                                PremiumBillingResponsePolicy.isConfirmedPurchaseFailure(
+                                    checkResult.responseCode,
+                                )
+                            ) {
+                                showPremiumPurchaseFailure()
+                                return@launch
+                            }
+                        }
+                        PremiumPurchaseCheckResult.Free,
+                        PremiumPurchaseCheckResult.PurchasePending,
+                        null,
+                        -> Unit
+                    }
+                    delay(PREMIUM_PURCHASE_POLL_MILLIS)
+                }
+            } finally {
+                delayedStateJob.cancel()
             }
         }
+    }
+
+    private suspend fun awaitPremiumPurchaseCheck(): PremiumPurchaseCheckResult =
+        suspendCancellableCoroutine { continuation ->
+            premiumBilling.refreshPurchases { result ->
+                if (continuation.isActive) continuation.resume(result)
+            }
+        }
+
+    private fun premiumPurchaseConfirmationActive(): Boolean =
+        premiumPurchaseInProgress.value || premiumPurchaseRefreshInProgress.value
+
+    private fun finishPremiumPurchaseConfirmation() {
+        premiumPurchaseConfirmationJob?.cancel()
+        premiumPurchaseConfirmationJob = null
+        premiumPurchaseFlowLaunched = false
+        premiumPurchaseInProgress.value = false
+        premiumPurchaseRefreshInProgress.value = false
+        premiumPurchaseConfirmationDialog.value = PremiumPurchaseConfirmationDialog.HIDDEN
+        premiumBillingFeedback.value = getString(R.string.billing_purchase_active)
+    }
+
+    private fun clearPremiumPurchaseConfirmation() {
+        premiumPurchaseConfirmationJob?.cancel()
+        premiumPurchaseConfirmationJob = null
+        premiumPurchaseFlowLaunched = false
+        premiumPurchaseInProgress.value = false
+        premiumPurchaseRefreshInProgress.value = false
+        premiumPurchaseConfirmationDialog.value = PremiumPurchaseConfirmationDialog.HIDDEN
+    }
+
+    private fun showPremiumPurchaseFailure() {
+        premiumPurchaseConfirmationJob?.cancel()
+        premiumPurchaseConfirmationJob = null
+        premiumPurchaseFlowLaunched = false
+        premiumPurchaseInProgress.value = false
+        premiumPurchaseRefreshInProgress.value = false
+        premiumPurchaseConfirmationDialog.value = PremiumPurchaseConfirmationDialog.FAILED
+        premiumBillingFeedback.value = getString(R.string.billing_confirmation_failed)
+    }
+
+    private fun dismissPremiumPurchaseConfirmation() {
+        val canDismiss = when (premiumPurchaseConfirmationDialog.value) {
+            PremiumPurchaseConfirmationDialog.DELAYED,
+            PremiumPurchaseConfirmationDialog.FAILED,
+            -> true
+            PremiumPurchaseConfirmationDialog.HIDDEN,
+            PremiumPurchaseConfirmationDialog.VERIFYING,
+            -> false
+        }
+        if (!canDismiss) return
+        clearPremiumPurchaseConfirmation()
+    }
+
+    private fun maybeSchedulePremiumLicenseConfirmation(state: PremiumBillingState) {
+        if (state.entitlementSource != PremiumEntitlementSource.LIVE_PLAY_QUERY) return
+        val evidenceDigest = PremiumBillingProvider.currentPurchaseEvidenceDigest() ?: return
+        if (pendingPremiumLicenseEvidenceDigest == evidenceDigest) return
+        if (!premiumLicensePresentationStore.shouldPresent(evidenceDigest)) return
+        pendingPremiumLicenseEvidenceDigest = evidenceDigest
+        premiumLicenseConfirmationPending.value = true
+    }
+
+    private fun markPremiumLicenseConfirmationPresented() {
+        pendingPremiumLicenseEvidenceDigest?.let { evidenceDigest ->
+            if (premiumLicensePresentationStore.recordPresented(evidenceDigest)) {
+                pendingPremiumLicenseEvidenceDigest = null
+            }
+        }
+        premiumLicenseConfirmationPending.value = false
     }
 
     private fun premiumBillingStatusMessage(state: PremiumBillingState): String = when {
@@ -1130,6 +1416,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
             premiumBillingFeedback.value = getString(R.string.billing_purchase_active)
+        }
+    }
+
+    private fun effectivePremiumEntitlement(
+        billingState: PremiumBillingState = premiumBilling.state.value,
+    ): Boolean = billingState.isPremium || debugPremiumBenchEnabled()
+
+    private fun applyEffectivePremiumEntitlement(entitled: Boolean) {
+        val previous = lastObservedPremiumEntitlement
+        lastObservedPremiumEntitlement = entitled
+        enforceAutomationEntitlement(entitled)
+        if (previous != null && previous != entitled) {
+            handlePremiumEntitlementTransition(entitled)
         }
     }
 
@@ -1275,6 +1574,9 @@ class MainActivity : ComponentActivity() {
         const val SERVICE_UI_REFRESH_MILLIS = 750L
         const val LOG_SUMMARY_REFRESH_MILLIS = 5_000L
         const val LOCATION_FIX_WAIT_MILLIS = 2_500L
+        const val PREMIUM_PURCHASE_INITIAL_CHECK_MILLIS = 5_000L
+        const val PREMIUM_PURCHASE_QUERY_TIMEOUT_MILLIS = 4_000L
+        const val PREMIUM_PURCHASE_POLL_MILLIS = 1_500L
         const val ENTITLEMENT_RESTART_ATTEMPTS = 16
         const val ENTITLEMENT_RESTART_RETRY_MILLIS = 250L
     }

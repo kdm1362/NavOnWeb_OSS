@@ -37,6 +37,10 @@ class BrowserSurfaceFrameCapture(
     private val frameIntervalMillis = 1_000L / targetFramesPerSecond.also {
         require(it in 1..MAX_TARGET_FPS) { "invalid browser capture frame rate" }
     }
+    private val initialJpegCapacity: Int =
+        (width.toLong() * height / 4L)
+            .coerceIn(INITIAL_JPEG_CAPACITY.toLong(), MAX_INITIAL_JPEG_CAPACITY.toLong())
+            .toInt()
     private val rateLimiter = BrowserCaptureRateLimiter(frameIntervalMillis)
     private val captureThread = HandlerThread("TecomBrowserPixelCopy").apply { start() }
     private val handler = Handler(captureThread.looper)
@@ -124,6 +128,7 @@ class BrowserSurfaceFrameCapture(
         subscriberCount = count.coerceAtLeast(0)
         if (subscriberCount == 0) {
             cancelScheduledCapture()
+            recycleBitmapWhenIdle()
             return
         }
         // A browser may long-poll using one short subscription per HTTP
@@ -172,7 +177,7 @@ class BrowserSurfaceFrameCapture(
             requestedSurface.isValid
 
         if (result == PixelCopy.SUCCESS && requestStillCurrent) {
-            val jpegOutput = ByteArrayOutputStream(INITIAL_JPEG_CAPACITY)
+            val jpegOutput = ByteArrayOutputStream(initialJpegCapacity)
             val encoded = target.compress(Bitmap.CompressFormat.JPEG, jpegQuality, jpegOutput)
             if (!encoded || !frameStore.publishOwned(jpegOutput.toByteArray())) {
                 Log.w(LOG_TAG, "BROWSER_JPEG_FRAME_REJECTED")
@@ -208,7 +213,7 @@ class BrowserSurfaceFrameCapture(
     }
 
     private fun recycleBitmapWhenIdle() {
-        if (copyInFlight || surface != null) return
+        if (copyInFlight || surface != null && frameStore.activeSubscriberCount > 0) return
         recycleBitmap()
     }
 
@@ -225,7 +230,9 @@ class BrowserSurfaceFrameCapture(
         const val MAX_TARGET_FPS = 10
         const val DEFAULT_JPEG_QUALITY = 70
         const val INITIAL_JPEG_CAPACITY = 128 * 1024
+        const val MAX_INITIAL_JPEG_CAPACITY = 512 * 1024
         const val NO_GENERATION = -1L
         const val CLOSE_TIMEOUT_MILLIS = 1_000L
     }
+
 }

@@ -9,6 +9,7 @@ import com.pebble.tecomheadunit.browser.BrowserRelayRequest
 import com.pebble.tecomheadunit.browser.BrowserRelayResponse
 import com.pebble.tecomheadunit.session.PairingCodeLease
 import java.io.Closeable
+import java.net.URI
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,6 +32,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import org.json.JSONObject
 
+internal fun isAllowedCloudRelaySignalingRequest(request: BrowserRelayRequest): Boolean {
+    val uri = runCatching { URI(request.target) }.getOrNull() ?: return false
+    val path = uri.path ?: return false
+    return BrowserProbeServer.isCloudSignalingRelayRequest(request.method, path)
+}
+
 internal enum class CloudPairingRegistrationResult {
     SUCCESS,
     CONFLICT,
@@ -47,6 +54,36 @@ internal enum class CloudPairingRegistrationResult {
             else -> RETRY
         }
     }
+}
+
+/** Observable readiness of the current one-time code in the cloud pairing bootstrap. */
+enum class CloudPairingRegistrationStatus {
+    REGISTERING,
+    READY,
+    RETRY,
+    THROTTLED,
+    EXPIRED,
+}
+
+/**
+ * Identifies one persisted publication epoch without exposing its one-time code.
+ *
+ * Consumers must ignore an update once [CloudBrowserRelayClient.isCurrentPairingPublication]
+ * returns false. This keeps delayed callbacks from an old retry job from changing a newer code.
+ */
+data class CloudPairingRegistrationUpdate(
+    val publicationEpoch: Long,
+    val status: CloudPairingRegistrationStatus,
+)
+
+internal fun CloudPairingRegistrationStatus?.canTransitionTo(
+    next: CloudPairingRegistrationStatus,
+): Boolean = when (this) {
+    null -> true
+    next -> false
+    CloudPairingRegistrationStatus.READY -> next == CloudPairingRegistrationStatus.EXPIRED
+    CloudPairingRegistrationStatus.EXPIRED -> false
+    else -> true
 }
 
 internal data class CloudPairingRegistrationOutcome(
@@ -82,6 +119,7 @@ internal object CloudPairingRetryAfter {
 }
 
 private const val DEFAULT_THROTTLED_RETRY_MILLIS = 60_000L
+private const val PAIRING_READY_REFRESH_SAFETY_MILLIS = 1_000L
 
 internal data class CloudPairingPublication(
     val pairingCode: String,
@@ -111,6 +149,11 @@ internal data class CloudPairingPublication(
     fun registrationTtlMillis(nowMonotonicMillis: Long): Long =
         (remainingTtlMillis(nowMonotonicMillis) - PAIRING_REGISTRATION_CALL_TIMEOUT_MILLIS)
             .coerceAtLeast(0L)
+
+    /** Rotates before the conservative Worker slot deadline instead of showing a dead code. */
+    fun readyRefreshDelayMillis(nowMonotonicMillis: Long): Long =
+        (registrationTtlMillis(nowMonotonicMillis) - PAIRING_READY_REFRESH_SAFETY_MILLIS)
+            .coerceAtLeast(0L)
 }
 
 /** Owns one epoch for the entire lifetime of one code publication, including reconnect retries. */
@@ -121,6 +164,8 @@ internal class CloudPairingPublicationState(
     private var current: CloudPairingPublication? = initialPairingCode
         ?.let(::newPublication)
     private var registrationComplete: CloudPairingPublication? = null
+    private var registrationStatus: CloudPairingRegistrationStatus? = current
+        ?.let { CloudPairingRegistrationStatus.REGISTERING }
 
     @Synchronized
     fun publish(pairingCode: PairingCodeLease): CloudPairingPublication {
@@ -131,6 +176,7 @@ internal class CloudPairingPublicationState(
         return newPublication(pairingCode).also {
             current = it
             registrationComplete = null
+            registrationStatus = CloudPairingRegistrationStatus.REGISTERING
         }
     }
 
@@ -149,9 +195,35 @@ internal class CloudPairingPublicationState(
     }
 
     @Synchronized
+    fun isRegistrationComplete(publication: CloudPairingPublication): Boolean =
+        current == publication && registrationComplete == publication
+
+    @Synchronized
+    fun isCurrentEpoch(publicationEpoch: Long): Boolean = current?.epoch == publicationEpoch
+
+    @Synchronized
+    fun currentUpdate(): CloudPairingRegistrationUpdate? {
+        val publication = current ?: return null
+        val status = registrationStatus ?: CloudPairingRegistrationStatus.REGISTERING
+        return CloudPairingRegistrationUpdate(publication.epoch, status)
+    }
+
+    @Synchronized
+    fun transition(
+        publication: CloudPairingPublication,
+        status: CloudPairingRegistrationStatus,
+    ): CloudPairingRegistrationUpdate? {
+        if (current != publication) return null
+        if (!registrationStatus.canTransitionTo(status)) return null
+        registrationStatus = status
+        return CloudPairingRegistrationUpdate(publication.epoch, status)
+    }
+
+    @Synchronized
     fun clear() {
         current = null
         registrationComplete = null
+        registrationStatus = null
     }
 
     private fun newPublication(pairingCode: PairingCodeLease): CloudPairingPublication =
@@ -176,6 +248,9 @@ class CloudBrowserRelayClient(
     private val onConnectionChanged: (Boolean) -> Unit = {},
     private val onPairingRegistrationConflict: () -> Unit = {},
     private val monotonicNowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val onPairingRegistrationChanged: (CloudPairingRegistrationUpdate) -> Unit = {},
+    private val onPairingRegistrationConflictForPublication:
+        (Long, PairingCodeLease) -> Unit = { _, _ -> },
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val closed = AtomicBoolean(false)
@@ -195,12 +270,14 @@ class CloudBrowserRelayClient(
     private var socketReady = false
     private var reconnectJob: Job? = null
     private var pairingRegistrationJob: Job? = null
+    private var pairingRegistrationJobEpoch: Long? = null
     private var reconnectAttempt = 0
 
     val browserUrl: String = config.browserUrl()
 
     fun start() {
         if (closed.get()) return
+        notifyCurrentPairingRegistration()
         synchronized(socketLock) {
             if (socket != null) return
             openSocketLocked()
@@ -210,6 +287,7 @@ class CloudBrowserRelayClient(
     /** Publishes only an explicitly opened one-time code; the signed route cookie is separate. */
     fun publishPairingCode(pairingCode: PairingCodeLease) {
         val publication = pairingPublication.publish(pairingCode)
+        notifyCurrentPairingRegistration()
         if (synchronized(socketLock) { socketReady }) {
             schedulePairingRegistration(publication)
         }
@@ -225,8 +303,13 @@ class CloudBrowserRelayClient(
         synchronized(socketLock) {
             pairingRegistrationJob?.cancel()
             pairingRegistrationJob = null
+            pairingRegistrationJobEpoch = null
         }
     }
+
+    /** True only while [publicationEpoch] still identifies the code owned by this client. */
+    fun isCurrentPairingPublication(publicationEpoch: Long): Boolean =
+        pairingPublication.isCurrentEpoch(publicationEpoch)
 
     private fun openSocketLocked() {
         if (closed.get()) return
@@ -250,6 +333,10 @@ class CloudBrowserRelayClient(
         if (!REQUEST_ID_PATTERN.matches(requestId)) return
         val request = runCatching { decodeRequest(envelope) }.getOrElse {
             sendError(webSocket, requestId, 400, "invalid_relay_request")
+            return
+        }
+        if (!isAllowedCloudRelaySignalingRequest(request)) {
+            sendError(webSocket, requestId, 403, "cloud_relay_signaling_only")
             return
         }
         val response = runCatching { gateway.dispatchRelay(request) }.getOrElse {
@@ -330,6 +417,9 @@ class CloudBrowserRelayClient(
         }
         if (shouldReconnect) {
             onConnectionChanged(false)
+            pairingPublication.current()?.let { publication ->
+                notifyPairingRegistration(publication, CloudPairingRegistrationStatus.RETRY)
+            }
             scheduleReconnect()
         }
     }
@@ -354,31 +444,102 @@ class CloudBrowserRelayClient(
     }
 
     private fun schedulePairingRegistration(publication: CloudPairingPublication) {
-        if (!pairingPublication.shouldRegister(publication)) return
+        if (!pairingPublication.shouldRegister(publication)) {
+            notifyCurrentPairingRegistration()
+            return
+        }
         synchronized(socketLock) {
             if (closed.get()) return
+            if (
+                pairingRegistrationJob?.isActive == true &&
+                pairingRegistrationJobEpoch == publication.epoch
+            ) {
+                return
+            }
             pairingRegistrationJob?.cancel()
+            pairingRegistrationJobEpoch = publication.epoch
             pairingRegistrationJob = scope.launch {
                 var attempt = 0
                 while (isActive && !closed.get() && pairingPublication.shouldRegister(publication)) {
+                    notifyPairingRegistration(
+                        publication,
+                        CloudPairingRegistrationStatus.REGISTERING,
+                    )
                     val outcome = registerPairingCode(publication)
                     when (outcome.result) {
                         CloudPairingRegistrationResult.SUCCESS -> {
-                            pairingPublication.markRegistrationComplete(publication)
+                            if (!pairingPublication.markRegistrationComplete(publication)) {
+                                return@launch
+                            }
+                            val becameReady = notifyPairingRegistration(
+                                publication,
+                                CloudPairingRegistrationStatus.READY,
+                            )
+                            if (
+                                !becameReady &&
+                                pairingPublication.currentUpdate()?.status !=
+                                CloudPairingRegistrationStatus.READY
+                            ) {
+                                return@launch
+                            }
+                            val refreshDelayMillis =
+                                publication.readyRefreshDelayMillis(monotonicNowMillis())
+                            if (refreshDelayMillis > 0L) delay(refreshDelayMillis)
+                            if (
+                                isActive &&
+                                !closed.get() &&
+                                pairingPublication.isRegistrationComplete(publication)
+                            ) {
+                                notifyPairingRegistration(
+                                    publication,
+                                    CloudPairingRegistrationStatus.EXPIRED,
+                                )
+                            }
                             return@launch
                         }
                         CloudPairingRegistrationResult.CONFLICT -> {
                             if (pairingPublication.markRegistrationComplete(publication)) {
-                                runCatching(onPairingRegistrationConflict)
+                                val conflictIsCurrent = notifyPairingRegistration(
+                                    publication,
+                                    CloudPairingRegistrationStatus.RETRY,
+                                )
+                                if (conflictIsCurrent) {
+                                    runCatching(onPairingRegistrationConflict)
+                                    runCatching {
+                                        onPairingRegistrationConflictForPublication(
+                                            publication.epoch,
+                                            PairingCodeLease(
+                                                code = publication.pairingCode,
+                                                expiresAtMonotonicMillis =
+                                                    publication.expiresAtMonotonicMillis,
+                                            ),
+                                        )
+                                    }
+                                }
                             }
                             return@launch
                         }
-                        CloudPairingRegistrationResult.THROTTLED -> Unit
+                        CloudPairingRegistrationResult.THROTTLED -> {
+                            notifyPairingRegistration(
+                                publication,
+                                CloudPairingRegistrationStatus.THROTTLED,
+                            )
+                        }
                         CloudPairingRegistrationResult.EXPIRED -> {
-                            pairingPublication.markRegistrationComplete(publication)
+                            if (pairingPublication.markRegistrationComplete(publication)) {
+                                notifyPairingRegistration(
+                                    publication,
+                                    CloudPairingRegistrationStatus.EXPIRED,
+                                )
+                            }
                             return@launch
                         }
-                        CloudPairingRegistrationResult.RETRY -> Unit
+                        CloudPairingRegistrationResult.RETRY -> {
+                            notifyPairingRegistration(
+                                publication,
+                                CloudPairingRegistrationStatus.RETRY,
+                            )
+                        }
                     }
                     val retryMillis = outcome.retryAfterMillis
                         ?: CloudRelayRetryBackoff.randomizedDelayMillis(
@@ -389,7 +550,12 @@ class CloudBrowserRelayClient(
                     val registrationTtlMillis =
                         publication.registrationTtlMillis(monotonicNowMillis())
                     if (registrationTtlMillis <= 0L) {
-                        pairingPublication.markRegistrationComplete(publication)
+                        if (pairingPublication.markRegistrationComplete(publication)) {
+                            notifyPairingRegistration(
+                                publication,
+                                CloudPairingRegistrationStatus.EXPIRED,
+                            )
+                        }
                         return@launch
                     }
                     attempt += 1
@@ -397,6 +563,20 @@ class CloudBrowserRelayClient(
                 }
             }
         }
+    }
+
+    private fun notifyCurrentPairingRegistration() {
+        val update = pairingPublication.currentUpdate() ?: return
+        runCatching { onPairingRegistrationChanged(update) }
+    }
+
+    private fun notifyPairingRegistration(
+        publication: CloudPairingPublication,
+        status: CloudPairingRegistrationStatus,
+    ): Boolean {
+        val update = pairingPublication.transition(publication, status) ?: return false
+        runCatching { onPairingRegistrationChanged(update) }
+        return true
     }
 
     private fun registerPairingCode(
@@ -453,6 +633,7 @@ class CloudBrowserRelayClient(
             reconnectJob = null
             pairingRegistrationJob?.cancel()
             pairingRegistrationJob = null
+            pairingRegistrationJobEpoch = null
             socketReady = false
             socket.also { socket = null }
         }
@@ -512,7 +693,11 @@ class CloudBrowserRelayClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            Log.w(LOG_TAG, "CLOUD_RELAY_DISCONNECTED ${t.javaClass.simpleName}")
+            Log.w(
+                LOG_TAG,
+                "CLOUD_RELAY_DISCONNECTED ${t.javaClass.simpleName} " +
+                    "httpStatus=${response?.code ?: 0}",
+            )
             connectionEnded(webSocket)
         }
     }

@@ -9,8 +9,8 @@ import com.pebble.tecomheadunit.billing.PremiumBillingProvider
 import com.pebble.tecomheadunit.billing.PremiumEntitlementStore
 
 /**
- * Synchronous projection-start gate backed only by a prior successful Play ownership query.
- * Browser input, profile preferences and the debug bench switch cannot write this store.
+ * Synchronous projection-start gate backed by a prior successful Play ownership query. Browser
+ * input and profile preferences cannot mutate this source.
  */
 internal class PlayBillingProjectionEntitlementProvider(context: Context) :
     ServerProjectionEntitlementProvider {

@@ -1,9 +1,12 @@
 package com.pebble.tecomheadunit.browser
 
+import com.pebble.tecomheadunit.core.VideoViewport
 import com.pebble.tecomheadunit.openauto.ProjectionAccessTier
 import com.pebble.tecomheadunit.openauto.ProjectionProfileRequestResult
 import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
+import com.pebble.tecomheadunit.openauto.ProjectionViewportLayout
+import com.pebble.tecomheadunit.openauto.ProjectionViewportSnapshot
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,6 +54,85 @@ class BrowserProjectionProfileApiTest {
         assertTrue(body.contains("premium_entitlement_required"))
         assertTrue(body.contains("\"entitlement\":\"free\""))
         assertFalse(body.contains("\"entitlement\":\"premium\""))
+    }
+
+    @Test
+    fun snapshotReportsLivePortraitSourceWhileCatalogueDimensionsStayStable() {
+        val profile = ProjectionVideoProfile.FREE_800X480
+        val layout = ProjectionViewportLayout(
+            encodedViewport = VideoViewport(720, 1280),
+            totalMarginWidth = 144,
+            totalMarginHeight = 0,
+            densityDpi = 140,
+        )
+
+        val json = BrowserProjectionProfileApi.snapshotJsonString(
+            snapshot = snapshot(active = profile, requested = profile),
+            viewport = ProjectionViewportSnapshot(layout, layout, revision = 4L),
+        )
+
+        assertTrue(
+            json.contains(
+                "\"activeProfile\":{\"id\":\"free-800x480\",\"width\":720,\"height\":1280",
+            ),
+        )
+        assertTrue(json.contains("\"sourceAspectWidth\":9,\"sourceAspectHeight\":16"))
+        assertTrue(
+            json.contains(
+                "\"requestedProfile\":{\"id\":\"free-800x480\",\"width\":800,\"height\":480",
+            ),
+        )
+        assertTrue(
+            json.contains(
+                "\"availableProfiles\":[{\"id\":\"free-800x480\",\"width\":800,\"height\":480",
+            ),
+        )
+    }
+
+    @Test
+    fun snapshotReportsTheActiveSavedDpiWithTheLiveSource() {
+        val profile = ProjectionVideoProfile.PREMIUM_1080P
+        val layout = ProjectionViewportLayout(
+            encodedViewport = profile.portraitViewport,
+            totalMarginWidth = 0,
+            totalMarginHeight = 192,
+            densityDpi = 180,
+        )
+
+        val json = BrowserProjectionProfileApi.snapshotJsonString(
+            snapshot = snapshot(active = profile, requested = profile),
+            viewport = ProjectionViewportSnapshot(layout, layout, revision = 8L),
+        )
+
+        assertTrue(json.contains("\"activeProfile\":{\"id\":\"premium-1080p\""))
+        assertTrue(json.contains("\"densityDpi\":180"))
+        assertTrue(json.contains("\"activeLayout\":{\"encodedWidth\":1080"))
+    }
+
+    @Test
+    fun snapshotFallsBackToCatalogueSourceDuringAProfileViewportRace() {
+        val layout = ProjectionViewportLayout(
+            encodedViewport = VideoViewport(720, 1280),
+            totalMarginWidth = 0,
+            totalMarginHeight = 0,
+            densityDpi = 140,
+        )
+
+        val json = BrowserProjectionProfileApi.snapshotJsonString(
+            snapshot = snapshot(
+                active = ProjectionVideoProfile.PREMIUM_1080P,
+                requested = ProjectionVideoProfile.PREMIUM_1080P,
+            ),
+            viewport = ProjectionViewportSnapshot(layout, layout, revision = 7L),
+        )
+
+        assertTrue(
+            json.contains(
+                "\"activeProfile\":{\"id\":\"premium-1080p\",\"width\":1920," +
+                    "\"height\":1080",
+            ),
+        )
+        assertTrue(json.contains("\"encodedWidth\":720,\"encodedHeight\":1280"))
     }
 
     @Test

@@ -73,7 +73,12 @@ class ProjectionViewportResolverTest {
     @Test
     fun `layout applies total margins while preserving base projection config`() {
         val base = ProjectionVideoProfile.PREMIUM_720P.toOpenAutoConfig()
-        val layout = ProjectionViewportResolver.resolve(base.viewport, 5, 3)
+        val layout = ProjectionViewportResolver.resolve(
+            encodedViewport = base.viewport,
+            browserWidth = 5,
+            browserHeight = 3,
+            baseDensityDpi = base.dpi,
+        )
 
         val applied = layout.applyTo(base)
 
@@ -83,6 +88,49 @@ class ProjectionViewportResolverTest {
         assertEquals(80, applied.totalMarginWidth)
         assertEquals(0, applied.totalMarginHeight)
         assertEquals(VideoViewport(1200, 720), applied.contentViewport)
+    }
+
+    @Test
+    fun `each resolution keeps its profile density baseline at matching aspect ratio`() {
+        val expectedDensities = mapOf(
+            ProjectionVideoProfile.FREE_800X480 to 140,
+            ProjectionVideoProfile.PREMIUM_720P to 220,
+            ProjectionVideoProfile.PREMIUM_1080P to 320,
+        )
+
+        expectedDensities.forEach { (profile, expectedDensity) ->
+            val layout = ProjectionViewportResolver.resolve(
+                encodedViewport = profile.toOpenAutoConfig().viewport,
+                browserWidth = profile.width,
+                browserHeight = profile.height,
+                baseDensityDpi = profile.dpi,
+            )
+
+            assertEquals(expectedDensity, layout.densityDpi)
+        }
+    }
+
+    @Test
+    fun `higher resolution profiles preserve their recommendation for narrow portrait content`() {
+        val expectedDensities = mapOf(
+            ProjectionVideoProfile.PREMIUM_720P to 220,
+            ProjectionVideoProfile.PREMIUM_1080P to 320,
+        )
+
+        expectedDensities.forEach { (profile, expectedDensity) ->
+            val layout = ProjectionViewportResolver.resolve(
+                encodedViewport = profile.toOpenAutoConfig().viewport,
+                browserWidth = 576,
+                browserHeight = 976,
+                baseDensityDpi = profile.dpi,
+            )
+
+            assertEquals(expectedDensity, layout.densityDpi)
+            assertTrue(layout.densityDpi <= profile.dpi)
+            assertTrue(
+                layout.contentRect.width >= ProjectionViewportResolver.MIN_CONTENT_WIDTH_PIXELS,
+            )
+        }
     }
 
     @Test
@@ -99,17 +147,17 @@ class ProjectionViewportResolverTest {
     }
 
     @Test
-    fun `landscape keeps baseline density while portrait preserves minimum logical width`() {
-        val encoded = VideoViewport(800, 480)
+    fun `landscape and portrait encoded frames keep the same profile density`() {
+        val landscapeEncoded = VideoViewport(800, 480)
         val landscape = ProjectionViewportResolver.resolve(
-            encodedViewport = encoded,
+            encodedViewport = landscapeEncoded,
             browserWidth = 1920,
             browserHeight = 1080,
             baseDensityDpi = 140,
             browserDevicePixelRatio = 1.0,
         )
         val portrait = ProjectionViewportResolver.resolve(
-            encodedViewport = encoded,
+            encodedViewport = VideoViewport(720, 1280),
             browserWidth = 576,
             browserHeight = 976,
             baseDensityDpi = 140,
@@ -119,10 +167,11 @@ class ProjectionViewportResolverTest {
         assertEquals(800, landscape.contentRect.width)
         assertEquals(448, landscape.contentRect.height)
         assertEquals(140, landscape.densityDpi)
-        assertEquals(520, portrait.totalMarginWidth)
-        assertEquals(280, portrait.contentRect.width)
-        assertEquals(480, portrait.contentRect.height)
-        assertEquals(92, portrait.densityDpi)
+        assertEquals(0, portrait.totalMarginWidth)
+        assertEquals(64, portrait.totalMarginHeight)
+        assertEquals(720, portrait.contentRect.width)
+        assertEquals(1216, portrait.contentRect.height)
+        assertEquals(140, portrait.densityDpi)
         assertTrue(
             portrait.contentRect.width * OpenAutoConfig.REFERENCE_DENSITY_DPI.toDouble() /
                 portrait.densityDpi >=
@@ -131,8 +180,8 @@ class ProjectionViewportResolverTest {
     }
 
     @Test
-    fun `twenty by nine mobile portrait keeps 480 logical dp and narrower ratios fail closed`() {
-        val encoded = VideoViewport(800, 480)
+    fun `twenty by nine mobile portrait uses wide source content at fixed density`() {
+        val encoded = VideoViewport(720, 1280)
 
         val mobilePortrait = ProjectionViewportResolver.resolve(
             encodedViewport = encoded,
@@ -142,21 +191,20 @@ class ProjectionViewportResolverTest {
             browserDevicePixelRatio = 3.0,
         )
 
-        assertEquals(584, mobilePortrait.totalMarginWidth)
-        assertEquals(216, mobilePortrait.contentRect.width)
-        assertEquals(480, mobilePortrait.contentRect.height)
-        assertEquals(72, mobilePortrait.densityDpi)
-        assertEquals(
-            480.0,
+        assertEquals(144, mobilePortrait.totalMarginWidth)
+        assertEquals(576, mobilePortrait.contentRect.width)
+        assertEquals(1280, mobilePortrait.contentRect.height)
+        assertEquals(140, mobilePortrait.densityDpi)
+        assertTrue(
             mobilePortrait.contentRect.width * OpenAutoConfig.REFERENCE_DENSITY_DPI.toDouble() /
-                mobilePortrait.densityDpi,
-            0.0,
+                mobilePortrait.densityDpi >=
+                ProjectionViewportResolver.MIN_LOGICAL_CONTENT_WIDTH_DP,
         )
         assertThrows(IllegalArgumentException::class.java) {
             ProjectionViewportResolver.resolve(
                 encodedViewport = encoded,
-                browserWidth = 360,
-                browserHeight = 840,
+                browserWidth = 1,
+                browserHeight = 16_384,
             )
         }
     }
@@ -177,16 +225,39 @@ class ProjectionViewportResolverTest {
     }
 
     @Test
-    fun `density uses its own two quantum change threshold`() {
+    fun `trusted custom profile density is accepted and invalid density fails closed`() {
         val encoded = VideoViewport(800, 480)
-        val current = ProjectionViewportLayout(encoded, 520, 0, densityDpi = 92)
-        val densityJitter = current.copy(densityDpi = 88)
-        val densityChange = current.copy(densityDpi = 84)
 
-        assertFalse(ProjectionViewportResolver.isMeaningfulChange(current, densityJitter))
-        assertSame(current, ProjectionViewportResolver.stabilize(current, densityJitter))
-        assertTrue(ProjectionViewportResolver.isMeaningfulChange(current, densityChange))
-        assertSame(densityChange, ProjectionViewportResolver.stabilize(current, densityChange))
+        val layout = ProjectionViewportLayout(encoded, 520, 0, densityDpi = 92)
+        val resolved = ProjectionViewportResolver.resolve(
+            encodedViewport = encoded,
+            browserWidth = 576,
+            browserHeight = 976,
+            baseDensityDpi = 92,
+        )
+        assertEquals(92, layout.densityDpi)
+        assertEquals(92, resolved.densityDpi)
+
+        assertEquals(
+            93,
+            ProjectionViewportResolver.resolve(
+                encodedViewport = encoded,
+                browserWidth = 576,
+                browserHeight = 976,
+                baseDensityDpi = 93,
+            ).densityDpi,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectionViewportResolver.resolve(
+                encodedViewport = encoded,
+                browserWidth = 576,
+                browserHeight = 976,
+                baseDensityDpi = 68,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectionViewportLayout(encoded, 520, 0, densityDpi = 324)
+        }
     }
 
     @Test
@@ -206,12 +277,21 @@ class ProjectionViewportResolverTest {
         assertThrows(IllegalArgumentException::class.java) {
             ProjectionViewportResolver.resolve(encoded, browserWidth = 1, browserHeight = 1_000)
         }
+        assertEquals(
+            145,
+            ProjectionViewportResolver.resolve(
+                encoded,
+                browserWidth = 800,
+                browserHeight = 480,
+                baseDensityDpi = 145,
+            ).densityDpi,
+        )
         assertThrows(IllegalArgumentException::class.java) {
             ProjectionViewportResolver.resolve(
                 encoded,
                 browserWidth = 800,
                 browserHeight = 480,
-                baseDensityDpi = 144,
+                baseDensityDpi = 68,
             )
         }
     }

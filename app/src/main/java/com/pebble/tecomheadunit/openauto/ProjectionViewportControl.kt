@@ -57,11 +57,16 @@ internal class ProjectionViewportManager(
     private val profileSnapshot: () -> ProjectionProfileSnapshot,
     initialProfile: ProjectionVideoProfile,
     private val applyScheduler: ProjectionViewportApplyScheduler,
+    private val densityDpiForProfile: (ProjectionVideoProfile) -> Int = { it.dpi },
 ) : ProjectionViewportControl {
     private val lock = Any()
     private var active = zeroLayout(initialProfile)
     private var requested = active
     private var revision = 0L
+    private var portraitEncodedViewportsEnabled = true
+    private var lastBrowserWidth: Int? = null
+    private var lastBrowserHeight: Int? = null
+    private var lastBrowserDevicePixelRatio = 1.0
 
     override fun snapshot(): ProjectionViewportSnapshot = synchronized(lock) { currentSnapshot() }
 
@@ -80,14 +85,28 @@ internal class ProjectionViewportManager(
             val width = browserWidth ?: return ProjectionViewportRequestResult.Invalid(currentSnapshot())
             val height = browserHeight ?: return ProjectionViewportRequestResult.Invalid(currentSnapshot())
             val candidate = runCatching {
+                val encodedViewport = if (portraitEncodedViewportsEnabled) {
+                    profileState.activeProfile.encodedViewportForBrowser(
+                        browserWidth = width,
+                        browserHeight = height,
+                    )
+                } else {
+                    profileState.activeProfile.landscapeViewport
+                }
                 ProjectionViewportResolver.resolve(
-                    encodedViewport = active.encodedViewport,
+                    encodedViewport = encodedViewport,
                     browserWidth = width,
                     browserHeight = height,
-                    baseDensityDpi = profileState.activeProfile.dpi,
+                    baseDensityDpi = effectiveDensityDpi(
+                        profileState.activeProfile,
+                        encodedViewport,
+                    ),
                     browserDevicePixelRatio = browserDevicePixelRatio,
                 )
             }.getOrNull() ?: return ProjectionViewportRequestResult.Invalid(currentSnapshot())
+            lastBrowserWidth = width
+            lastBrowserHeight = height
+            lastBrowserDevicePixelRatio = browserDevicePixelRatio
             val stabilized = ProjectionViewportResolver.stabilize(requested, candidate)
             if (stabilized == requested) {
                 ProjectionViewportRequestResult.Accepted(currentSnapshot(), changed = false)
@@ -102,12 +121,67 @@ internal class ProjectionViewportManager(
         return result
     }
 
+    /**
+     * Permanently disables portrait protocol enums for this manager/session and immediately
+     * schedules the audited landscape+margin fallback for the last valid browser geometry.
+     * Repeated calls are idempotent, so a browser resize cannot start a portrait retry loop.
+     */
+    internal fun disablePortraitEncodedViewportsForSession(): ProjectionViewportSnapshot {
+        var scheduled: ProjectionViewportLayout? = null
+        val snapshot = synchronized(lock) {
+            if (!portraitEncodedViewportsEnabled) return@synchronized currentSnapshot()
+            portraitEncodedViewportsEnabled = false
+            val width = lastBrowserWidth ?: return@synchronized currentSnapshot()
+            val height = lastBrowserHeight ?: return@synchronized currentSnapshot()
+            val profile = profileSnapshot().activeProfile
+            val candidate = runCatching {
+                ProjectionViewportResolver.resolve(
+                    encodedViewport = profile.landscapeViewport,
+                    browserWidth = width,
+                    browserHeight = height,
+                    baseDensityDpi = effectiveDensityDpi(profile, profile.landscapeViewport),
+                    browserDevicePixelRatio = lastBrowserDevicePixelRatio,
+                )
+            }.getOrNull() ?: return@synchronized currentSnapshot()
+            if (candidate != requested) {
+                requested = candidate
+                revision += 1
+                scheduled = candidate
+            }
+            currentSnapshot()
+        }
+        scheduled?.let(applyScheduler::schedule)
+        return snapshot
+    }
+
+    internal fun portraitEncodedViewportsEnabledForSession(): Boolean =
+        synchronized(lock) { portraitEncodedViewportsEnabled }
+
     /** Called after a profile switch commits; browser geometry is renegotiated from a safe zero. */
-    fun activateProfile(profile: ProjectionVideoProfile): ProjectionViewportSnapshot =
+    fun activateProfile(
+        profile: ProjectionVideoProfile,
+        encodedViewport: VideoViewport = profile.landscapeViewport,
+    ): ProjectionViewportSnapshot = activateProfile(
+        profile = profile,
+        layout = zeroLayout(profile, encodedViewport),
+    )
+
+    /** Commits a profile switch without discarding an already negotiated browser aspect. */
+    fun activateProfile(
+        profile: ProjectionVideoProfile,
+        layout: ProjectionViewportLayout,
+    ): ProjectionViewportSnapshot =
         synchronized(lock) {
-            val zero = zeroLayout(profile)
-            active = zero
-            requested = zero
+            require(profile.supportsEncodedViewport(layout.encodedViewport)) {
+                "encoded viewport is not supported by activated profile"
+            }
+            require(
+                layout.densityDpi == effectiveDensityDpi(profile, layout.encodedViewport),
+            ) {
+                "activated layout must preserve the effective profile density"
+            }
+            active = layout
+            requested = layout
             revision += 1
             currentSnapshot()
         }
@@ -115,6 +189,51 @@ internal class ProjectionViewportManager(
     fun confirmActive(layout: ProjectionViewportLayout): ProjectionViewportSnapshot =
         synchronized(lock) {
             if (layout == requested) active = layout
+            currentSnapshot()
+        }
+
+    /** Schedules a trusted app-setting density change without accepting density from browsers. */
+    internal fun requestDensityDpi(
+        profile: ProjectionVideoProfile,
+        configuredDensityDpi: Int,
+    ): ProjectionViewportRequestResult {
+        var scheduled: ProjectionViewportLayout? = null
+        val result = synchronized(lock) {
+            val profileState = profileSnapshot()
+            if (
+                profileState.activationState != ProjectionProfileActivationState.ACTIVE ||
+                profileState.activeProfile != profile
+            ) {
+                return ProjectionViewportRequestResult.ProfileApplying(currentSnapshot())
+            }
+            if (!ProjectionVideoProfile.isSupportedDensityDpi(configuredDensityDpi)) {
+                return ProjectionViewportRequestResult.Invalid(currentSnapshot())
+            }
+            val candidate = requested.copy(
+                densityDpi = profile.effectiveDensityDpi(
+                    configuredDensityDpi,
+                    requested.encodedViewport,
+                ),
+            )
+            if (candidate == requested) {
+                ProjectionViewportRequestResult.Accepted(currentSnapshot(), changed = false)
+            } else {
+                requested = candidate
+                revision += 1
+                scheduled = candidate
+                ProjectionViewportRequestResult.Accepted(currentSnapshot(), changed = true)
+            }
+        }
+        scheduled?.let(applyScheduler::schedule)
+        return result
+    }
+
+    /** Records a transport that was committed after teardown began, preserving any newer request. */
+    internal fun confirmTransportActive(
+        layout: ProjectionViewportLayout,
+    ): ProjectionViewportSnapshot =
+        synchronized(lock) {
+            active = layout
             currentSnapshot()
         }
 
@@ -126,13 +245,18 @@ internal class ProjectionViewportManager(
         }
 
     private fun synchronizeEncodedViewport(profile: ProjectionVideoProfile) {
-        val expected = VideoViewport(profile.width, profile.height)
-        if (active.encodedViewport == expected && requested.encodedViewport == expected) return
+        if (
+            profile.supportsEncodedViewport(active.encodedViewport) &&
+            profile.supportsEncodedViewport(requested.encodedViewport)
+        ) {
+            return
+        }
+        val expected = profile.landscapeViewport
         val zero = ProjectionViewportLayout(
             encodedViewport = expected,
             totalMarginWidth = 0,
             totalMarginHeight = 0,
-            densityDpi = profile.dpi,
+            densityDpi = effectiveDensityDpi(profile, expected),
         )
         active = zero
         requested = zero
@@ -145,15 +269,27 @@ internal class ProjectionViewportManager(
         revision = revision,
     )
 
-    private companion object {
-        fun zeroLayout(profile: ProjectionVideoProfile): ProjectionViewportLayout =
-            ProjectionViewportLayout(
-                encodedViewport = VideoViewport(profile.width, profile.height),
-                totalMarginWidth = 0,
-                totalMarginHeight = 0,
-                densityDpi = profile.dpi,
-            )
-    }
+    private fun configuredDensityDpi(profile: ProjectionVideoProfile): Int =
+        densityDpiForProfile(profile).also { densityDpi ->
+            require(ProjectionVideoProfile.isSupportedDensityDpi(densityDpi)) {
+                "saved projection density is outside the supported range"
+            }
+        }
+
+    private fun effectiveDensityDpi(
+        profile: ProjectionVideoProfile,
+        encodedViewport: VideoViewport,
+    ): Int = profile.effectiveDensityDpi(configuredDensityDpi(profile), encodedViewport)
+
+    private fun zeroLayout(
+        profile: ProjectionVideoProfile,
+        encodedViewport: VideoViewport = profile.landscapeViewport,
+    ): ProjectionViewportLayout = ProjectionViewportLayout(
+        encodedViewport = encodedViewport,
+        totalMarginWidth = 0,
+        totalMarginHeight = 0,
+        densityDpi = effectiveDensityDpi(profile, encodedViewport),
+    )
 }
 
 data object FreeProjectionViewportControl : ProjectionViewportControl {

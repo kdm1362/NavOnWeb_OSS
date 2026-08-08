@@ -47,7 +47,7 @@ enum class ProjectionVideoProfile(
         height = 720,
         androidAutoFramesPerSecond = 60,
         webRtcFramesPerSecond = 30,
-        dpi = 140,
+        dpi = 220,
         webRtcMinBitrateBps = 1_000_000,
         webRtcStartBitrateBps = 4_000_000,
         webRtcMaxBitrateBps = 8_000_000,
@@ -59,7 +59,7 @@ enum class ProjectionVideoProfile(
         height = 1080,
         androidAutoFramesPerSecond = 60,
         webRtcFramesPerSecond = 30,
-        dpi = 140,
+        dpi = 320,
         webRtcMinBitrateBps = 2_000_000,
         webRtcStartBitrateBps = 8_000_000,
         webRtcMaxBitrateBps = 14_000_000,
@@ -72,15 +72,98 @@ enum class ProjectionVideoProfile(
     val sourceAspectHeight: Int
         get() = height / greatestCommonDivisor(width, height)
 
-    fun toOpenAutoConfig(): OpenAutoConfig = OpenAutoConfig(
-        viewport = VideoViewport(width, height),
-        fps = androidAutoFramesPerSecond,
-        dpi = dpi,
-    )
+    /**
+     * Android Auto exposes portrait resolutions as distinct protocol enum values. Keep the
+     * persisted/profile catalogue dimensions above stable, and select only the live encoded
+     * viewport from trusted browser orientation.
+     */
+    val landscapeViewport: VideoViewport
+        get() = VideoViewport(width, height)
+
+    val portraitViewport: VideoViewport
+        get() = when (this) {
+            FREE_800X480,
+            PREMIUM_720P,
+            -> VideoViewport(720, 1280)
+
+            PREMIUM_1080P -> VideoViewport(1080, 1920)
+        }
+
+    fun encodedViewportForBrowser(browserWidth: Int, browserHeight: Int): VideoViewport {
+        require(browserWidth > 0 && browserHeight > 0) {
+            "browser dimensions must be positive"
+        }
+        return if (browserHeight > browserWidth) portraitViewport else landscapeViewport
+    }
+
+    fun supportsEncodedViewport(viewport: VideoViewport): Boolean =
+        viewport == landscapeViewport || viewport == portraitViewport
+
+    /**
+     * Converts the profile-local saved DPI into the value advertised for an encoded viewport.
+     *
+     * The Basic profile stores its value against the nominal 800x480 frame, but Android Auto's
+     * audited portrait enum is 720x1280. Scaling that one orientation from the 140-DPI baseline
+     * to the 220-DPI 720p baseline keeps the apparent UI size stable without coupling Basic to a
+     * Premium preference. Other profiles use the same resolution class in both orientations.
+     */
+    fun effectiveDensityDpi(
+        configuredDensityDpi: Int,
+        viewport: VideoViewport,
+    ): Int {
+        require(supportsEncodedViewport(viewport)) {
+            "encoded viewport is not supported by projection profile $profileId"
+        }
+        require(isSupportedDensityDpi(configuredDensityDpi)) {
+            "configured projection density is outside the supported range"
+        }
+        val viewportBaselineDpi = if (
+            this == FREE_800X480 && viewport == portraitViewport
+        ) {
+            BASIC_PORTRAIT_BASELINE_DPI
+        } else {
+            dpi
+        }
+        val rounded = (
+            configuredDensityDpi.toLong() * viewportBaselineDpi + dpi / 2L
+        ) / dpi
+        return rounded.toInt().coerceIn(MIN_DENSITY_DPI, MAX_DENSITY_DPI)
+    }
+
+    fun toOpenAutoConfig(viewport: VideoViewport = landscapeViewport): OpenAutoConfig {
+        return toOpenAutoConfig(
+            viewport = viewport,
+            densityDpi = effectiveDensityDpi(dpi, viewport),
+        )
+    }
+
+    fun toOpenAutoConfig(
+        viewport: VideoViewport = landscapeViewport,
+        densityDpi: Int,
+    ): OpenAutoConfig {
+        require(supportsEncodedViewport(viewport)) {
+            "encoded viewport is not supported by projection profile $profileId"
+        }
+        require(isSupportedDensityDpi(densityDpi)) {
+            "projection density is outside the supported range"
+        }
+        return OpenAutoConfig(
+            viewport = viewport,
+            fps = androidAutoFramesPerSecond,
+            dpi = densityDpi,
+        )
+    }
 
     companion object {
         fun fromProfileId(profileId: String?): ProjectionVideoProfile? =
             entries.firstOrNull { it.profileId == profileId?.trim()?.lowercase() }
+
+        const val MIN_DENSITY_DPI = 72
+        const val MAX_DENSITY_DPI = 320
+        private const val BASIC_PORTRAIT_BASELINE_DPI = 220
+
+        fun isSupportedDensityDpi(densityDpi: Int): Boolean =
+            densityDpi in MIN_DENSITY_DPI..MAX_DENSITY_DPI
 
         private fun greatestCommonDivisor(first: Int, second: Int): Int {
             var a = first
@@ -168,7 +251,7 @@ internal fun requestProjectionProfileWithCurrentEntitlement(
 /**
  * Trusted native entitlement boundary. A browser request is never passed into this provider and
  * therefore cannot supply a tier, receipt, token or grant ID. Concrete grants retain provenance:
- * server verification and the weaker cached local Play ownership query are distinct types.
+ * server verification and the local Play ownership query are distinct types.
  */
 internal fun interface ServerProjectionEntitlementProvider {
     fun currentGrant(): ServerProjectionEntitlementGrant

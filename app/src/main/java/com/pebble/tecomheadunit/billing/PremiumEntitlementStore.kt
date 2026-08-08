@@ -160,7 +160,7 @@ internal object PremiumPurchasePolicy {
 }
 
 internal fun isValidProductId(productId: String): Boolean =
-    productId.matches(Regex("[a-z][a-z0-9._]{0,149}"))
+    productId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))
 
 internal fun purchaseTokenSha256(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(Charsets.UTF_8))

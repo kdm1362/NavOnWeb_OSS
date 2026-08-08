@@ -39,6 +39,7 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -83,6 +84,9 @@ class WebRtcProjectionController(
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "TecomWebRtcController").apply { isDaemon = true }
     }
+    private val statsScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "TecomWebRtcStats").apply { isDaemon = true }
+    }
     private val secureRandom = SecureRandom()
     private val codecProbe = AndroidMediaCodecCapabilityProbe()
     private val codecPolicy = WebRtcCodecSelectionPolicy()
@@ -121,6 +125,7 @@ class WebRtcProjectionController(
                     enabledCodecs = WebRtcOutboundCodecPolicy.enabledCodecs,
                 )
                 createdFactory = PeerConnectionFactory.builder()
+                    .setOptions(WebRtcLocalNetworkPolicy.peerConnectionFactoryOptions())
                     .setVideoEncoderFactory(encoderFactory)
                     .setVideoDecoderFactory(DefaultVideoDecoderFactory(createdEgl.eglBaseContext))
                     .createPeerConnectionFactory()
@@ -349,6 +354,54 @@ class WebRtcProjectionController(
         return post { runtime.peer?.getStats(callback) }
     }
 
+    private fun startVideoStatsSampling(runtime: SessionRuntime) {
+        synchronized(lifecycleLock) {
+            if (closed || activeSession !== runtime || runtime.videoStatsTask != null) return
+            val requestStats = Runnable {
+                if (!isActive(runtime)) return@Runnable
+                post {
+                    if (!isActive(runtime)) return@post
+                    runtime.peer?.getStats { report -> publishVideoStats(runtime, report) }
+                }
+            }
+            runtime.videoStatsTask = statsScheduler.scheduleAtFixedRate(
+                requestStats,
+                0L,
+                VIDEO_STATS_INTERVAL_SECONDS,
+                TimeUnit.SECONDS,
+            )
+        }
+    }
+
+    private fun stopVideoStatsSampling(runtime: SessionRuntime) {
+        val task = synchronized(lifecycleLock) {
+            runtime.videoStatsTask.also {
+                runtime.videoStatsTask = null
+                runtime.lastVideoStats = null
+            }
+        }
+        task?.cancel(false)
+    }
+
+    private fun publishVideoStats(runtime: SessionRuntime, report: org.webrtc.RTCStatsReport) {
+        val current = WebRtcOutboundVideoStatsParser.parse(report) ?: return
+        var previous: WebRtcOutboundVideoStats? = null
+        val accepted = synchronized(lifecycleLock) {
+            if (closed || activeSession !== runtime || runtime.snapshot.state !in ACTIVE_SESSION_STATES) {
+                false
+            } else {
+                previous = runtime.lastVideoStats
+                runtime.lastVideoStats = current
+                true
+            }
+        }
+        if (!accepted) return
+        Log.i(
+            LOG_TAG,
+            "WEBRTC_VIDEO_STATS id=${runtime.snapshot.sessionId} ${current.logSummary(previous)}",
+        )
+    }
+
     override fun close() {
         val detached = synchronized(lifecycleLock) {
             if (closed) return
@@ -364,6 +417,7 @@ class WebRtcProjectionController(
             resources to runtime
         }
         microphoneFrameDispatcher?.close()
+        statsScheduler.shutdownNow()
         val releaseFuture = runCatching {
             worker.submit { detached.second?.let(::disposePeer) }
         }.getOrNull()
@@ -597,6 +651,7 @@ class WebRtcProjectionController(
     }
 
     private fun disposePeer(runtime: SessionRuntime) {
+        stopVideoStatsSampling(runtime)
         releaseAudioDataChannels(runtime)
         releaseMicrophoneDataChannel(runtime)
         releaseControlDataChannel(runtime)
@@ -1036,20 +1091,42 @@ class WebRtcProjectionController(
         }
         override fun onRenegotiationNeeded() = Unit
         override fun onAddTrack(receiver: RtpReceiver, mediaStreams: Array<MediaStream>) = Unit
-        override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) = Unit
+        override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+            val localAdapter = event.local.adapterType
+            Log.i(
+                LOG_TAG,
+                "WEBRTC_SELECTED_PAIR id=${runtime.snapshot.sessionId} " +
+                    "localAdapter=$localAdapter " +
+                    "local=${candidateSummary(event.local.sdp)} " +
+                    "remote=${candidateSummary(event.remote.sdp)} " +
+                    "reason=${sanitizeDetail(event.reason)}",
+            )
+            if (WebRtcLocalNetworkPolicy.isForbiddenSelectedAdapter(localAdapter)) {
+                Log.e(
+                    LOG_TAG,
+                    "WEBRTC_SELECTED_PAIR_REJECTED id=${runtime.snapshot.sessionId} " +
+                        "localAdapter=$localAdapter",
+                )
+                failSessionAsync(runtime, "Non-local ICE adapter rejected: $localAdapter")
+            }
+        }
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             Log.i(LOG_TAG, "WEBRTC_PEER_STATE id=${runtime.snapshot.sessionId} state=$newState")
             when (newState) {
+                PeerConnection.PeerConnectionState.CONNECTED -> startVideoStatsSampling(runtime)
                 PeerConnection.PeerConnectionState.FAILED ->
                     failSessionAsync(runtime, "PeerConnection failed")
-                PeerConnection.PeerConnectionState.CLOSED -> postFor(runtime) {
-                    if (runtime.snapshot.state in ACTIVE_SESSION_STATES) {
-                        runtime.snapshot = runtime.snapshot.copy(
-                            state = BrowserWebRtcSessionState.CLOSED,
-                            answerSdp = null,
-                            detail = "PeerConnection closed",
-                        )
+                PeerConnection.PeerConnectionState.CLOSED -> {
+                    stopVideoStatsSampling(runtime)
+                    postFor(runtime) {
+                        if (runtime.snapshot.state in ACTIVE_SESSION_STATES) {
+                            runtime.snapshot = runtime.snapshot.copy(
+                                state = BrowserWebRtcSessionState.CLOSED,
+                                answerSdp = null,
+                                detail = "PeerConnection closed",
+                            )
+                        }
                     }
                 }
                 else -> Unit
@@ -1176,6 +1253,8 @@ class WebRtcProjectionController(
         var controlDataChannel: ControlDataChannelAttachment? = null,
         var microphoneDataChannel: DataChannel? = null,
         var microphoneDataChannelObserver: DataChannel.Observer? = null,
+        var videoStatsTask: ScheduledFuture<*>? = null,
+        var lastVideoStats: WebRtcOutboundVideoStats? = null,
         val audioDataChannels: MutableMap<BrowserAudioTrack, AudioDataChannelAttachment> =
             mutableMapOf(),
     )
@@ -1201,6 +1280,7 @@ class WebRtcProjectionController(
         const val MAX_DETAIL_CHARS = 240
         const val MAX_LOGGED_ICE_CANDIDATES = 8
         const val RELEASE_TIMEOUT_MILLIS = 2_000L
+        const val VIDEO_STATS_INTERVAL_SECONDS = 5L
         const val CONTROL_JSON_CONTENT_TYPE = "application/json; charset=utf-8"
 
         val CONTROL_GET_TARGETS = setOf(
@@ -1242,6 +1322,32 @@ class WebRtcProjectionController(
             "a=inactive",
         )
     }
+}
+
+/**
+ * Keeps browser projection off carrier and VPN adapters.
+ *
+ * Cloudflare is signaling-only. Browser media may use Wi-Fi, a phone hotspot, Ethernet, or the
+ * on-device loopback path, but a mobile-network handover must never become a media route.
+ */
+internal object WebRtcLocalNetworkPolicy {
+    fun peerConnectionFactoryOptions(): PeerConnectionFactory.Options =
+        PeerConnectionFactory.Options().apply {
+            networkIgnoreMask = PeerConnectionFactory.Options.ADAPTER_TYPE_CELLULAR or
+                PeerConnectionFactory.Options.ADAPTER_TYPE_VPN
+        }
+
+    fun isForbiddenSelectedAdapter(adapterType: PeerConnection.AdapterType): Boolean =
+        adapterType in FORBIDDEN_SELECTED_ADAPTERS
+
+    private val FORBIDDEN_SELECTED_ADAPTERS = setOf(
+        PeerConnection.AdapterType.CELLULAR,
+        PeerConnection.AdapterType.CELLULAR_2G,
+        PeerConnection.AdapterType.CELLULAR_3G,
+        PeerConnection.AdapterType.CELLULAR_4G,
+        PeerConnection.AdapterType.CELLULAR_5G,
+        PeerConnection.AdapterType.VPN,
+    )
 }
 
 /** Keeps libwebrtc callbacks non-blocking and favors recent speech under receiver pressure. */

@@ -32,6 +32,8 @@ data class PremiumBillingState(
     val formattedPrice: String? = null,
     val productName: String? = null,
     val lastResponseCode: Int? = null,
+    /** Non-null only when the Google Play purchase UI reports a terminal purchase failure. */
+    val lastPurchaseFailureResponseCode: Int? = null,
 ) {
     val isPremium: Boolean
         get() = entitlement == PremiumEntitlementStatus.PREMIUM

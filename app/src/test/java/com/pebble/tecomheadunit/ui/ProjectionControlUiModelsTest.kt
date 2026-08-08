@@ -15,6 +15,7 @@ import com.pebble.tecomheadunit.core.TouchPhase
 import com.pebble.tecomheadunit.openauto.ProjectionAccessTier
 import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
+import com.pebble.tecomheadunit.openauto.ProjectionDpiSettingsSnapshot
 import com.pebble.tecomheadunit.openauto.sensor.NightModeDecision
 import com.pebble.tecomheadunit.openauto.sensor.NightModeDecisionSource
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionReason
@@ -29,6 +30,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProjectionControlUiModelsTest {
+    @Test
+    fun `profile rows expose independent saved DPI and recommended reset values`() {
+        val settings = ProjectionDpiSettingsSnapshot(
+            mapOf(
+                ProjectionVideoProfile.FREE_800X480.profileId to 100,
+                ProjectionVideoProfile.PREMIUM_720P.profileId to 180,
+                ProjectionVideoProfile.PREMIUM_1080P.profileId to 220,
+            ),
+        )
+
+        val state = ProjectionControlUiState.from(
+            snapshot = null,
+            serviceBound = false,
+            profileFeedback = "",
+            dpiSettings = settings,
+            dpiFeedback = "saved",
+            codecPreference = WebRtcCodecPreferenceOption.AUTO,
+            codecFeedback = "",
+            textResolver = TEST_TEXT_RESOLVER,
+        )
+
+        assertEquals(listOf(100, 180, 220), state.profileOptions.map { it.densityDpi })
+        assertEquals(
+            listOf(140, 220, 320),
+            state.profileOptions.map { it.recommendedDensityDpi },
+        )
+        assertEquals(100, state.profileOptions.first().appliedLandscapeDensityDpi)
+        assertEquals(157, state.profileOptions.first().appliedPortraitDensityDpi)
+        assertTrue(state.profileOptions.all { it.densityControlEnabled })
+        assertEquals("saved", state.dpiStatus)
+    }
+
     @Test
     fun codecPreferenceIsClosedAndCorruptStorageFailsToAuto() {
         assertEquals(
@@ -191,6 +224,9 @@ class ProjectionControlUiModelsTest {
         assertFalse(rendered.contains(ICE_SECRET))
         assertFalse(rendered.contains(PRIVATE_KEY_SECRET))
         assertFalse(diagnostics.toString().contains("iceServers"))
+        val activeProfile = diagnostics.rows.single { it.label == "Active profile" }.value
+        assertTrue(activeProfile.contains("800"))
+        assertFalse(activeProfile.contains("FPS", ignoreCase = true))
     }
 
     @Test

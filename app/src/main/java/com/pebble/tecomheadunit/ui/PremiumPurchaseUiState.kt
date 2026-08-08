@@ -3,6 +3,13 @@
  */
 package com.pebble.tecomheadunit.ui
 
+enum class PremiumPurchaseConfirmationDialog {
+    HIDDEN,
+    VERIFYING,
+    DELAYED,
+    FAILED,
+}
+
 /**
  * Billing-library-independent purchase state consumed by Compose.
  *
@@ -16,6 +23,10 @@ data class PremiumPurchaseUiState(
     val purchaseInProgress: Boolean = false,
     val purchaseRefreshInProgress: Boolean = false,
     val statusMessage: String = "",
+    val confirmationDialog: PremiumPurchaseConfirmationDialog =
+        PremiumPurchaseConfirmationDialog.HIDDEN,
+    /** One-shot event set only after a new Play purchase-evidence digest is persisted as seen. */
+    val licenseConfirmationPending: Boolean = false,
 ) {
     val busy: Boolean
         get() = purchaseInProgress || purchaseRefreshInProgress
@@ -27,4 +38,8 @@ data class PremiumPurchaseUiState(
 
     val canRefreshPurchases: Boolean
         get() = !busy
+
+    val confirmationCanBeDismissed: Boolean
+        get() = confirmationDialog == PremiumPurchaseConfirmationDialog.DELAYED ||
+            confirmationDialog == PremiumPurchaseConfirmationDialog.FAILED
 }

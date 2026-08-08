@@ -29,7 +29,7 @@ exact source and use its immutable public tag or commit URL:
 
 ```powershell
 .\gradlew.bat bundleRelease `
-  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.0-p0-source
+  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.8-p0-source
 ```
 
 Release tasks fail when `sourceCodeUrl` is omitted or points only to the mutable repository root.
@@ -40,7 +40,6 @@ Signing material must be supplied outside the repository. If the optional releas
 ```text
 productionAasdkIdentityLeafSha256
 productionAasdkIdentityAnchorSha256
-productionAasdkPhonePeerLeafSha256
 ```
 
 The Android Auto identity itself is a runtime/deployment input. A build without a provisioned identity can compile and run its non-projection functions but cannot authenticate an Android Auto projection session.
@@ -52,6 +51,22 @@ The optional JNI scaffold can be compiled with:
 ```
 
 This flag compiles the repository's JNI scaffold; it does not link an external OpenAuto runtime.
+
+## Cloudflare Worker and Pages
+
+The public signaling Worker and landing/browser Pages source are under `cloudflare/`. Node.js 20
+or newer is required. Syntax-check and run the complete local test suite without deployment
+credentials:
+
+```powershell
+Set-Location cloudflare
+npm ci
+npm run check
+npm test
+```
+
+`BOOTSTRAP_HMAC_KEY`, account authentication, Durable Object state, and other deployed values are
+external inputs. Never commit `.dev.vars`, `.env`, Wrangler state, or deployment output.
 
 The preferred launcher artwork is `app/src/main/res/drawable-nodpi/navonweb_icon.png`. Density-specific launcher PNGs can be regenerated on Windows with:
 

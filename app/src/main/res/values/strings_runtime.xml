@@ -47,7 +47,7 @@
     <string name="projection_profile_free_title">Basic 800×480</string>
     <string name="projection_profile_720p_title">HD 1280×720</string>
     <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
-    <string name="projection_profile_detail">Android Auto %1$d FPS · WebRTC %2$d FPS · %3$s start / %4$s max</string>
+    <string name="projection_profile_detail">%1$s start / %2$s max</string>
     <string name="projection_bitrate_mbps">%1$s Mbps</string>
     <string name="projection_profile_waiting_for_service">Waiting for the projection service.</string>
     <string name="projection_profile_service_not_connected">The projection service is not connected.</string>
@@ -63,6 +63,11 @@
     <string name="projection_profile_not_entitled">This profile is not available with the current access tier.</string>
     <string name="projection_profile_persistence_failed">The change was cancelled because the profile setting could not be saved safely.</string>
     <string name="projection_profile_unknown">This profile is not provided by the service.</string>
+    <string name="projection_dpi_saved">Saved %1$d DPI.</string>
+    <string name="projection_dpi_saved_reconnecting">Saved %1$d DPI and reconnecting Android Auto. The browser media session stays active.</string>
+    <string name="projection_dpi_reset_saved">Restored the recommended value of %1$d DPI.</string>
+    <string name="projection_dpi_save_failed">Could not save the DPI setting. The previous value is unchanged.</string>
+    <string name="projection_dpi_invalid">Choose a whole-number DPI from 72 to 320.</string>
 
     <!-- Diagnostic feedback -->
     <string name="diagnostic_export_cancelled">Log file saving was cancelled.</string>

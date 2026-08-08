@@ -18,6 +18,24 @@ import org.junit.Test
 
 class BluetoothAutomationTest {
     @Test
+    fun `device picker catalog contains every bonded device without connection filtering`() {
+        val devices = buildBondedBluetoothDeviceOptions(
+            records = listOf(
+                BondedBluetoothDeviceRecord("AA:BB:CC:DD:EE:01", "Connected car"),
+                BondedBluetoothDeviceRecord("AA:BB:CC:DD:EE:02", "Paired but offline"),
+                BondedBluetoothDeviceRecord("invalid", "Broken platform record"),
+            ),
+            unnamedDeviceName = "Unnamed device",
+        )
+
+        assertEquals(2, devices.size)
+        assertEquals(
+            setOf("AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"),
+            devices.mapTo(mutableSetOf()) { it.address },
+        )
+    }
+
+    @Test
     fun `single selected device and companion association are app state`() {
         var state = BluetoothAutomationState()
         val store = BluetoothAutomationStore(

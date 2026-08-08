@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.pebble.tecomheadunit.MainActivity
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.billing.PremiumAccessGate
+import com.pebble.tecomheadunit.notification.NavOnWebNotificationAssets
 
 /**
  * Keeps Android 16's public tethering callback registered while hotspot automation is selected.
@@ -99,7 +100,7 @@ class HotspotAutomationMonitorService : Service() {
             getString(R.string.hotspot_automation_monitoring)
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(NavOnWebNotificationAssets.smallIcon)
             .setContentTitle(getString(R.string.hotspot_automation_title))
             .setContentText(text)
             .setContentIntent(openSettings)

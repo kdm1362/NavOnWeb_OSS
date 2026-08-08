@@ -6,7 +6,7 @@ This public repository is maintained as the preferred form for modifying NavOnWe
 
 1. Freeze the exact source revision used for the binary and push it to the public repository.
 2. Run the Android tests described in `BUILDING.md`.
-3. Confirm that all modified Android, bundled-browser, build, and test sources are present.
+3. Confirm that all modified Android, bundled-browser, Cloudflare Worker/Pages, build, and test sources are present.
 4. Confirm that Gradle wrapper files, the version catalog, licenses, notices, and upstream revision lock are present.
 5. Confirm that credentials, signing keys, service secrets, diagnostic data, device identifiers, private-network records, build outputs, and internal planning records are absent from the full Git history.
 6. Tag the matching public commit and retain it for as long as required by the GPL and the distribution channel.
@@ -35,4 +35,9 @@ The following are not source code and must never be committed:
 
 Public certificate fingerprints and public service origins may be supplied as build parameters when required, but they are not secrets and should still be reviewed for release correspondence.
 
-Cloudflare-hosted signaling code and Supabase backend code are independently deployed network services, are not linked into the Android binary, and are not included in this Android Corresponding Source repository. The client-side protocol implementation and the browser code bundled in the APK remain included under `app/src/`.
+The Cloudflare Worker and Pages source used by NavOnWeb is included under `cloudflare/` so the
+signaling protocol and public browser deployment can be audited and reproduced. Cloudflare account
+authentication, secrets, deployed Durable Object state, and generated deployment output remain
+external. Supabase backend code is independently deployed and is not included in this Android
+Corresponding Source repository. The client-side protocol implementation and browser code bundled
+in the APK remain included under `app/src/`.

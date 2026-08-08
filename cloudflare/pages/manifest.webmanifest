@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "NavOnWeb",
+  "short_name": "NavOnWeb",
+  "description": "Connect a supported phone projection to a nearby browser / 휴대전화의 차량용 화면을 가까운 브라우저에 연결합니다.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#05080c",
+  "theme_color": "#05080c",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

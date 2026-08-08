@@ -47,7 +47,7 @@
     <string name="projection_profile_free_title">기본 800×480</string>
     <string name="projection_profile_720p_title">HD 1280×720</string>
     <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
-    <string name="projection_profile_detail">Android Auto %1$d FPS · WebRTC %2$d FPS · %3$s 시작 / %4$s 최대</string>
+    <string name="projection_profile_detail">%1$s 시작 / %2$s 최대</string>
     <string name="projection_bitrate_mbps">%1$s Mbps</string>
     <string name="projection_profile_waiting_for_service">프로젝션 서비스 연결을 기다리는 중입니다.</string>
     <string name="projection_profile_service_not_connected">프로젝션 서비스에 연결되지 않았습니다.</string>
@@ -63,6 +63,11 @@
     <string name="projection_profile_not_entitled">현재 이용 권한에서는 해당 프로필을 사용할 수 없습니다.</string>
     <string name="projection_profile_persistence_failed">프로필 설정을 안전하게 저장하지 못해 변경을 취소했습니다.</string>
     <string name="projection_profile_unknown">서비스가 제공하지 않는 프로필입니다.</string>
+    <string name="projection_dpi_saved">%1$d DPI로 저장했습니다.</string>
+    <string name="projection_dpi_saved_reconnecting">%1$d DPI로 저장하고 Android Auto를 다시 연결하고 있습니다. 브라우저 미디어 세션은 유지됩니다.</string>
+    <string name="projection_dpi_reset_saved">추천값인 %1$d DPI로 초기화했습니다.</string>
+    <string name="projection_dpi_save_failed">DPI 설정을 저장하지 못했습니다. 이전 값을 유지합니다.</string>
+    <string name="projection_dpi_invalid">72~320 범위의 정수 DPI를 입력해 주세요.</string>
 
     <!-- Diagnostic feedback -->
     <string name="diagnostic_export_cancelled">로그 파일 저장을 취소했습니다.</string>

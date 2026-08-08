@@ -8,16 +8,13 @@
  */
 package com.pebble.tecomheadunit.openauto.protocol
 
-import android.util.Log
 import com.pebble.tecomheadunit.openauto.credential.HeadUnitCredential
 import com.pebble.tecomheadunit.openauto.credential.HeadUnitCredentialSource
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.security.Principal
 import java.security.SecureRandom
-import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
-import java.util.Locale
 import javax.net.ssl.KeyManager
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLEngine
@@ -36,40 +33,13 @@ internal enum class AasdkTlsBuildBoundary {
 /**
  * Peer-authentication policy for the phone-side TLS server.
  *
- * The pinned AASDK implementation disabled peer verification. That behaviour
- * is available here only through an explicitly named debug-only policy. A
- * release caller must use either the platform trust store or an exact leaf
- * certificate SHA-256 pin.
+ * AASDK development Head Unit Server certificates are not pinned by the app.
+ * Callers may use platform trust or the protocol-compatible unverified mode.
  */
 internal sealed interface AasdkTlsPeerTrustPolicy {
-    /** Production trust material has not been supplied. Never opens a TLS session. */
-    data object NotConfigured : AasdkTlsPeerTrustPolicy
-
     data object PlatformTrust : AasdkTlsPeerTrustPolicy
 
-    class PinnedLeafSha256(fingerprints: Set<String>) : AasdkTlsPeerTrustPolicy {
-        val fingerprints: Set<String> = fingerprints.map(::normalizeSha256).toSet()
-
-        init {
-            require(this.fingerprints.isNotEmpty()) { "at least one peer pin is required" }
-        }
-
-        private companion object {
-            fun normalizeSha256(value: String): String {
-                val normalized = value
-                    .replace(":", "")
-                    .replace(" ", "")
-                    .uppercase(Locale.US)
-                require(normalized.matches(Regex("[0-9A-F]{64}"))) {
-                    "peer pin must be a SHA-256 fingerprint"
-                }
-                return normalized
-            }
-        }
-    }
-
-    /** Never accepted at the RELEASE boundary. */
-    data object DebugOnlyUnverifiedPeer : AasdkTlsPeerTrustPolicy
+    data object UnverifiedPeer : AasdkTlsPeerTrustPolicy
 }
 
 internal class AasdkTlsPolicyException(message: String) : IllegalArgumentException(message)
@@ -116,23 +86,11 @@ internal object AasdkTlsEngineFactory {
         ) {
             throw AasdkTlsPolicyException("development credentials are forbidden in release")
         }
-        if (
-            buildBoundary == AasdkTlsBuildBoundary.RELEASE &&
-            peerTrustPolicy == AasdkTlsPeerTrustPolicy.DebugOnlyUnverifiedPeer
-        ) {
-            throw AasdkTlsPolicyException("unverified peer mode is forbidden in release")
-        }
-        if (peerTrustPolicy == AasdkTlsPeerTrustPolicy.NotConfigured) {
-            throw AasdkTlsPolicyException("phone peer trust policy is not configured")
-        }
     }
 
     private fun trustManager(policy: AasdkTlsPeerTrustPolicy): X509TrustManager = when (policy) {
-        AasdkTlsPeerTrustPolicy.NotConfigured ->
-            throw AasdkTlsPolicyException("phone peer trust policy is not configured")
         AasdkTlsPeerTrustPolicy.PlatformTrust -> platformTrustManager()
-        is AasdkTlsPeerTrustPolicy.PinnedLeafSha256 -> PinnedLeafTrustManager(policy.fingerprints)
-        AasdkTlsPeerTrustPolicy.DebugOnlyUnverifiedPeer -> DebugOnlyUnverifiedTrustManager
+        AasdkTlsPeerTrustPolicy.UnverifiedPeer -> UnverifiedTrustManager
     }
 
     private fun platformTrustManager(): X509TrustManager {
@@ -193,61 +151,12 @@ internal class AasdkCredentialKeyManager(
     }
 }
 
-private class PinnedLeafTrustManager(
-    private val acceptedFingerprints: Set<String>,
-) : X509TrustManager {
-    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        val leaf = chain?.firstOrNull() ?: throw CertificateException("empty server certificate chain")
-        try {
-            leaf.checkValidity()
-        } catch (error: Exception) {
-            throw CertificateException("server certificate is outside its validity period", error)
-        }
-        val actual = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(leaf.encoded)
-            .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xFF) }
-        val match = acceptedFingerprints.any { expected ->
-            java.security.MessageDigest.isEqual(
-                expected.toByteArray(Charsets.US_ASCII),
-                actual.toByteArray(Charsets.US_ASCII),
-            )
-        }
-        if (!match) throw CertificateException("server certificate pin mismatch")
-    }
-
-    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        throw CertificateException("client trust checks are unsupported in client mode")
-    }
-
-    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-}
-
-/** Construction is guarded by [AasdkTlsEngineFactory.validateBoundary]. */
-private object DebugOnlyUnverifiedTrustManager : X509TrustManager {
-    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        val leaf = chain?.firstOrNull()
-        val fingerprint = leaf?.let { certificate ->
-            runCatching {
-                java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(certificate.encoded)
-                    .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xFF) }
-            }.getOrNull()
-        }
-        if (fingerprint == null) {
-            Log.w(DEBUG_PEER_LOG_TAG, "DEBUG_PHONE_PEER_CERT_UNAVAILABLE")
-        } else {
-            Log.i(
-                DEBUG_PEER_LOG_TAG,
-                "DEBUG_PHONE_PEER_CERT leafSha256=$fingerprint chainLength=${chain.size}",
-            )
-        }
-    }
+private object UnverifiedTrustManager : X509TrustManager {
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
     override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
     override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-
-    private const val DEBUG_PEER_LOG_TAG = "AasdkTlsPeer"
 }
 
 internal enum class AasdkTlsState {

@@ -87,6 +87,46 @@ class AndroidStringResourceParityTest {
         assertTrue(englishCopy.contains("video stream itself does not use the phone’s mobile data"))
     }
 
+    @Test
+    fun `projection profile descriptions show bitrate without frame rates`() {
+        listOf("values", "values-ko").forEach { qualifier ->
+            val resources = readTextResources(findResourceDirectory(qualifier))
+            val description = (
+                resources.entries.getValue("projection_profile_detail") as TextResource.StringValue
+                ).text
+
+            assertFalse(description.contains("FPS", ignoreCase = true))
+            assertFalse(description.contains("Android Auto", ignoreCase = true))
+            assertFalse(description.contains("WebRTC", ignoreCase = true))
+            assertEquals(mapOf("1:s" to 1, "2:s" to 1), printfPlaceholders(description))
+        }
+    }
+
+    @Test
+    fun `visible copy uses paragraph breaks instead of manual line wrapping`() {
+        listOf("values", "values-ko").forEach { qualifier ->
+            val resources = readTextResources(findResourceDirectory(qualifier))
+            resources.entries.forEach { (name, entry) ->
+                val values = when (entry) {
+                    is TextResource.StringValue -> listOf(entry.text)
+                    is TextResource.PluralsValue -> entry.quantities.values
+                }
+                values.forEach { text ->
+                    val withoutParagraphBreaks = text
+                        .replace("\\n\\n", "")
+                        .replace("\r\n\r\n", "")
+                        .replace("\n\n", "")
+                    assertFalse(
+                        "$qualifier/$name contains a single forced line break",
+                        withoutParagraphBreaks.contains("\\n") ||
+                            withoutParagraphBreaks.contains('\r') ||
+                            withoutParagraphBreaks.contains('\n'),
+                    )
+                }
+            }
+        }
+    }
+
     private fun comparePluralPlaceholders(
         name: String,
         defaultValue: TextResource.PluralsValue,

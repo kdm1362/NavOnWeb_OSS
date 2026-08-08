@@ -6,6 +6,9 @@ package com.pebble.tecomheadunit.session
 import android.os.SystemClock
 import androidx.annotation.StringRes
 import com.pebble.tecomheadunit.R
+import com.pebble.tecomheadunit.browser.cloud.CloudPairingRegistrationStatus
+import com.pebble.tecomheadunit.browser.cloud.CloudPairingRegistrationUpdate
+import com.pebble.tecomheadunit.browser.cloud.canTransitionTo
 import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +28,8 @@ data class SessionUiState(
     @param:StringRes @get:StringRes val messageRes: Int? = null,
     val browserUrl: String? = null,
     val pairingCode: String? = null,
+    val cloudPairingRegistrationStatus: CloudPairingRegistrationStatus? = null,
+    val cloudPairingPublicationEpoch: Long? = null,
     val nativeStatus: String = "CHECKING",
     val androidAutoConnection: AndroidAutoConnectionStatus = AndroidAutoConnectionStatus(),
     val lastTouch: OpenAutoTouchEvent? = null,
@@ -50,13 +55,19 @@ object SessionController {
         )
     }
 
-    fun ready(url: String, pairingCode: String?, nativeStatus: String) {
+    fun ready(
+        url: String,
+        pairingCode: String?,
+        nativeStatus: String,
+        cloudPairingRegistrationStatus: CloudPairingRegistrationStatus? = null,
+    ) {
         val previousConnection = mutableState.value.androidAutoConnection
         mutableState.value = SessionUiState(
             phase = SessionPhase.READY,
             messageRes = R.string.session_browser_ready,
             browserUrl = url,
             pairingCode = pairingCode,
+            cloudPairingRegistrationStatus = cloudPairingRegistrationStatus,
             nativeStatus = nativeStatus,
             androidAutoConnection = previousConnection,
         )
@@ -66,10 +77,55 @@ object SessionController {
     fun updatePairingCode(pairingCode: String?) {
         mutableState.update { current ->
             if (current.phase == SessionPhase.READY) {
-                current.copy(pairingCode = pairingCode)
+                current.copy(
+                    pairingCode = pairingCode,
+                    cloudPairingRegistrationStatus =
+                        current.cloudPairingRegistrationStatus.takeIf {
+                            pairingCode != null && pairingCode == current.pairingCode
+                        },
+                    cloudPairingPublicationEpoch = current.cloudPairingPublicationEpoch.takeIf {
+                        pairingCode != null && pairingCode == current.pairingCode
+                    },
+                )
             } else {
                 current
             }
+        }
+    }
+
+    /** Replaces the code and its cloud readiness as one observable UI transition. */
+    fun updatePairingCode(
+        pairingCode: String?,
+        cloudPairingRegistrationStatus: CloudPairingRegistrationStatus?,
+    ) {
+        mutableState.update { current ->
+            if (current.phase == SessionPhase.READY) {
+                current.copy(
+                    pairingCode = pairingCode,
+                    cloudPairingRegistrationStatus =
+                        cloudPairingRegistrationStatus.takeIf { pairingCode != null },
+                    cloudPairingPublicationEpoch = null,
+                )
+            } else {
+                current
+            }
+        }
+    }
+
+    /** Updates only the current code's cloud readiness; LAN pairing remains independently usable. */
+    fun updateCloudPairingRegistration(update: CloudPairingRegistrationUpdate) {
+        mutableState.update { current ->
+            if (current.phase != SessionPhase.READY || current.pairingCode == null) return@update current
+            val currentEpoch = current.cloudPairingPublicationEpoch
+            if (currentEpoch != null && update.publicationEpoch < currentEpoch) return@update current
+            if (
+                currentEpoch == update.publicationEpoch &&
+                !current.cloudPairingRegistrationStatus.canTransitionTo(update.status)
+            ) return@update current
+            current.copy(
+                cloudPairingRegistrationStatus = update.status,
+                cloudPairingPublicationEpoch = update.publicationEpoch,
+            )
         }
     }
 

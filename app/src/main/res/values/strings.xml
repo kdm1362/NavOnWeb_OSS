@@ -11,7 +11,7 @@
     <string name="premium_status_free">Premium features are locked.</string>
     <string name="premium_status_active">Premium features are unlocked.</string>
     <string name="premium_unlock_features">Unlock Premium features</string>
-    <string name="premium_already_unlocked">Premium unlocked</string>
+    <string name="premium_already_unlocked">Premium in use</string>
     <string name="premium_purchase_in_progress">Processing purchase…</string>
     <string name="premium_refresh_purchases">Check purchase</string>
     <string name="premium_refresh_in_progress">Checking purchase…</string>
@@ -29,6 +29,12 @@
     <string name="billing_product_unavailable">The Premium product is not available yet. Check the Play Console product and test track.</string>
     <string name="billing_purchase_failed">Google Play could not complete the purchase.</string>
     <string name="billing_check_failed">Google Play could not check the purchase record.</string>
+    <string name="billing_confirmation_title">Payment confirmation</string>
+    <string name="billing_confirmation_verifying">Checking your payment.</string>
+    <string name="billing_confirmation_delayed">Payment confirmation is taking longer than expected.\n\nIf you close this popup, you can check manually from Settings &gt; Check purchase.</string>
+    <string name="billing_confirmation_failed">Payment failed. Please check your payment method.\n\nIf the payment was completed normally, you can check again from Settings &gt; Check purchase.</string>
+    <string name="billing_license_confirmed_title">Premium activated</string>
+    <string name="billing_license_confirmed_message">Your license has been confirmed.</string>
     <string name="billing_debug_bench_active">Premium debug-bench access is active. This is not a Google Play purchase.</string>
     <string name="service_automation_premium_required">Automatic service start and stop is available with Premium.</string>
     <string name="automation_notification_channel">Automatic service start</string>
@@ -45,8 +51,9 @@
     <string name="service_automation_bluetooth">Selected Bluetooth device</string>
     <string name="service_automation_selected_device">%1$s · %2$s</string>
     <string name="service_automation_select_device_first">Choose one paired device first</string>
-    <string name="service_automation_choose_device">Choose device</string>
-    <string name="service_automation_change_device">Change device</string>
+    <string name="service_automation_clear_device">Clear selection</string>
+    <string name="service_automation_device_cleared">The selected Bluetooth device was cleared.</string>
+    <string name="service_automation_device_cleared_and_disabled">The selected Bluetooth device was cleared. Automatic start and stop is now off.</string>
     <string name="service_automation_hotspot">Wi-Fi hotspot</string>
     <string name="service_automation_hotspot_detail">A persistent notification keeps the Android 16 event callback active</string>
     <string name="service_automation_hotspot_unsupported">Available on Android 16 or later</string>
@@ -75,6 +82,11 @@
     <string name="browser_open_title">Open in a browser</string>
     <string name="browser_pairing_code_title">8-digit browser registration code</string>
     <string name="browser_pairing_code_hint">This one-time code expires after 10 minutes. A used code is not published again.</string>
+    <string name="browser_pairing_preparing_title">Preparing pairing</string>
+    <string name="browser_pairing_preparing_hint">The secure one-time code will appear after cloud registration completes.</string>
+    <string name="browser_pairing_retry_hint">Pairing registration is being retried. Keep the app open and check the network connection.</string>
+    <string name="browser_pairing_throttled_hint">Pairing registration is temporarily delayed and will retry automatically.</string>
+    <string name="browser_pairing_refreshing_hint">Refreshing the code so its full validity period is available.</string>
     <string name="browser_pairing_remembered_hint">Previously registered browsers reconnect automatically. Open a temporary code only when adding or recovering a browser.</string>
     <string name="browser_pairing_new_button">Pair a new browser</string>
     <string name="browser_pairing_refresh_button">Generate a new pairing code</string>

@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.pebble.tecomheadunit.MainActivity
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.billing.PremiumAccessGate
+import com.pebble.tecomheadunit.notification.NavOnWebNotificationAssets
 import com.pebble.tecomheadunit.service.ProjectionService
 import com.pebble.tecomheadunit.session.SessionController
 import com.pebble.tecomheadunit.session.SessionPhase
@@ -152,7 +153,7 @@ class AndroidAutomationStartFallback(context: Context) : AutomationStartFallback
         notificationManager.notify(
             NOTIFICATION_ID,
             NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_warning)
+                .setSmallIcon(NavOnWebNotificationAssets.smallIcon)
                 .setContentTitle(applicationContext.getString(R.string.automation_start_required))
                 .setContentText(text)
                 .setContentIntent(openApp)

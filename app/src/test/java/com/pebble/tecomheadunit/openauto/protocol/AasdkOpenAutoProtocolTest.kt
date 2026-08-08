@@ -68,6 +68,10 @@ class AasdkOpenAutoProtocolTest {
             assertEquals(resolutionEnum, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 1))
             assertNull(AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 3))
             assertNull(AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 4))
+            assertEquals(
+                profile.dpi.toLong(),
+                AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5),
+            )
 
             val inputDescriptor = descriptors.single {
                 AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
@@ -80,6 +84,47 @@ class AasdkOpenAutoProtocolTest {
             )
             assertEquals(
                 profile.height.toLong(),
+                AasdkOpenAutoProtocol.readFirstVarintField(touchConfig, 2),
+            )
+        }
+    }
+
+    @Test
+    fun `portrait resolutions advertise matching enum and touch geometry`() {
+        val expected = listOf(
+            Triple(ProjectionVideoProfile.FREE_800X480, VideoViewport(720, 1280), 6L),
+            Triple(ProjectionVideoProfile.PREMIUM_720P, VideoViewport(720, 1280), 6L),
+            Triple(ProjectionVideoProfile.PREMIUM_1080P, VideoViewport(1080, 1920), 7L),
+        )
+
+        expected.forEach { (profile, viewport, resolutionEnum) ->
+            val config = profile.toOpenAutoConfig(viewport)
+            val response = AasdkOpenAutoProtocol.serviceDiscoveryResponse(
+                config,
+            )
+            val descriptors = lengthDelimitedFields(AasdkOpenAutoProtocol.protobuf(response), 1)
+            val videoDescriptor = descriptors.single {
+                AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 3L
+            }
+            val videoChannel = lengthDelimitedFields(videoDescriptor, 3).single()
+            val videoConfig = lengthDelimitedFields(videoChannel, 4).single()
+            assertEquals(resolutionEnum, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 1))
+            assertEquals(
+                config.dpi.toLong(),
+                AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5),
+            )
+
+            val inputDescriptor = descriptors.single {
+                AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
+            }
+            val inputChannel = lengthDelimitedFields(inputDescriptor, 4).single()
+            val touchConfig = lengthDelimitedFields(inputChannel, 2).single()
+            assertEquals(
+                viewport.width.toLong(),
+                AasdkOpenAutoProtocol.readFirstVarintField(touchConfig, 1),
+            )
+            assertEquals(
+                viewport.height.toLong(),
                 AasdkOpenAutoProtocol.readFirstVarintField(touchConfig, 2),
             )
         }
@@ -102,7 +147,7 @@ class AasdkOpenAutoProtocolTest {
         assertEquals(2L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 1))
         assertEquals(280L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 3))
         assertEquals(120L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 4))
-        assertEquals(140L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5))
+        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5))
 
         val inputDescriptor = descriptors.single {
             AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
@@ -114,8 +159,11 @@ class AasdkOpenAutoProtocolTest {
     }
 
     @Test
-    fun `browser viewport density reaches video config while encoded geometry stays fixed`() {
+    fun `browser portrait uses portrait protocol frame with resolution aware density`() {
         val base = ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig()
+        val portraitBase = ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig(
+            ProjectionVideoProfile.FREE_800X480.portraitViewport,
+        )
         val landscape = ProjectionViewportResolver.resolve(
             encodedViewport = base.viewport,
             browserWidth = 1920,
@@ -124,28 +172,28 @@ class AasdkOpenAutoProtocolTest {
             browserDevicePixelRatio = 1.0,
         ).applyTo(base)
         val portrait = ProjectionViewportResolver.resolve(
-            encodedViewport = base.viewport,
+            encodedViewport = portraitBase.viewport,
             browserWidth = 576,
             browserHeight = 976,
-            baseDensityDpi = base.dpi,
+            baseDensityDpi = portraitBase.dpi,
             browserDevicePixelRatio = 3.0,
-        ).applyTo(base)
+        ).applyTo(portraitBase)
         val mobilePortrait = ProjectionViewportResolver.resolve(
-            encodedViewport = base.viewport,
+            encodedViewport = portraitBase.viewport,
             browserWidth = 360,
             browserHeight = 800,
-            baseDensityDpi = base.dpi,
+            baseDensityDpi = portraitBase.dpi,
             browserDevicePixelRatio = 3.0,
-        ).applyTo(base)
+        ).applyTo(portraitBase)
 
         assertEquals(140, landscape.dpi)
         assertEquals(0, landscape.totalMarginWidth)
         assertEquals(32, landscape.totalMarginHeight)
-        assertEquals(92, portrait.dpi)
-        assertEquals(520, portrait.totalMarginWidth)
-        assertEquals(0, portrait.totalMarginHeight)
-        assertEquals(72, mobilePortrait.dpi)
-        assertEquals(584, mobilePortrait.totalMarginWidth)
+        assertEquals(220, portrait.dpi)
+        assertEquals(0, portrait.totalMarginWidth)
+        assertEquals(64, portrait.totalMarginHeight)
+        assertEquals(220, mobilePortrait.dpi)
+        assertEquals(144, mobilePortrait.totalMarginWidth)
         assertEquals(0, mobilePortrait.totalMarginHeight)
 
         val portraitDescriptors = lengthDelimitedFields(
@@ -159,17 +207,17 @@ class AasdkOpenAutoProtocolTest {
         }
         val portraitVideoChannel = lengthDelimitedFields(portraitVideoDescriptor, 3).single()
         val portraitVideoConfig = lengthDelimitedFields(portraitVideoChannel, 4).single()
-        assertEquals(1L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 1))
-        assertEquals(520L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 3))
-        assertEquals(92L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 5))
+        assertEquals(6L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 1))
+        assertEquals(64L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 4))
+        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 5))
 
         val portraitInputDescriptor = portraitDescriptors.single {
             AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
         }
         val portraitInputChannel = lengthDelimitedFields(portraitInputDescriptor, 4).single()
         val portraitTouchConfig = lengthDelimitedFields(portraitInputChannel, 2).single()
-        assertEquals(800L, AasdkOpenAutoProtocol.readFirstVarintField(portraitTouchConfig, 1))
-        assertEquals(480L, AasdkOpenAutoProtocol.readFirstVarintField(portraitTouchConfig, 2))
+        assertEquals(720L, AasdkOpenAutoProtocol.readFirstVarintField(portraitTouchConfig, 1))
+        assertEquals(1280L, AasdkOpenAutoProtocol.readFirstVarintField(portraitTouchConfig, 2))
 
         val mobileDescriptors = lengthDelimitedFields(
             AasdkOpenAutoProtocol.protobuf(
@@ -182,22 +230,28 @@ class AasdkOpenAutoProtocolTest {
         }
         val mobileVideoChannel = lengthDelimitedFields(mobileVideoDescriptor, 3).single()
         val mobileVideoConfig = lengthDelimitedFields(mobileVideoChannel, 4).single()
-        assertEquals(584L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 3))
-        assertEquals(72L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 5))
+        assertEquals(144L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 3))
+        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 5))
     }
 
     @Test
-    fun `service discovery rejects browser supplied or unquantized density`() {
+    fun `service discovery accepts app selected density and rejects unsafe density`() {
         val base = ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig()
-
-        assertThrows(AasdkProtocolException::class.java) {
-            AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 91))
+        val response = AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 78))
+        val descriptors = lengthDelimitedFields(response.copyOfRange(4, response.size), 1)
+        val videoDescriptor = descriptors.single {
+            AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 3L
         }
+        val videoChannel = lengthDelimitedFields(videoDescriptor, 3).single()
+        val videoConfig = lengthDelimitedFields(videoChannel, 4).single()
+        assertEquals(78L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5))
+
         assertThrows(AasdkProtocolException::class.java) {
             AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 68))
         }
+        AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 141))
         assertThrows(AasdkProtocolException::class.java) {
-            AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 144))
+            AasdkOpenAutoProtocol.serviceDiscoveryResponse(base.copy(dpi = 324))
         }
     }
 

@@ -14,6 +14,8 @@ data class BluetoothDeviceOptionUi(
 
 data class ServiceAutomationUiState(
     val mode: AutomationTriggerMode = AutomationTriggerMode.NONE,
+    /** App-private selection key used only to mark the current item in the picker. */
+    val selectedBluetoothDeviceId: String? = null,
     val selectedBluetoothDeviceName: String? = null,
     val selectedBluetoothAddressHint: String? = null,
     val bluetoothDevices: List<BluetoothDeviceOptionUi> = emptyList(),

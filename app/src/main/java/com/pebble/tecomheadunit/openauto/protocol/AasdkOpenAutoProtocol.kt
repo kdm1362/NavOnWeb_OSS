@@ -6,7 +6,7 @@ package com.pebble.tecomheadunit.openauto.protocol
 import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import com.pebble.tecomheadunit.core.TouchPhase
 import com.pebble.tecomheadunit.openauto.OpenAutoConfig
-import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
+import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 
 internal enum class AasdkVoiceSessionStatus {
     START,
@@ -132,22 +132,24 @@ internal object AasdkOpenAutoProtocol {
     )
 
     /**
-     * Advertises exactly one of the audited OpenAuto 480p/720p/1080p encoded profiles. Optional
-     * total margins describe a centred, browser-shaped content viewport without changing the
-     * encoded frame size. Unsupported dimensions, FPS or DPI fail closed.
+     * Advertises exactly one of the audited landscape or portrait OpenAuto encoded profiles.
+     * Optional total margins describe a centred, browser-shaped content viewport without changing
+     * the selected encoded frame size. Unsupported dimensions, FPS or DPI fail closed.
      */
     fun serviceDiscoveryResponse(config: OpenAutoConfig): ByteArray {
-        val supportedDensity =
-            config.dpi in ProjectionViewportResolver.MIN_DYNAMIC_DENSITY_DPI..SAFE_VIDEO_DPI &&
-                (SAFE_VIDEO_DPI - config.dpi) % ProjectionViewportResolver.DENSITY_QUANTUM_DPI == 0
-        if (config.fps != SAFE_VIDEO_FPS || !supportedDensity) {
-            throw AasdkProtocolException("unsupported projection FPS or DPI")
-        }
-        val resolution = when (config.viewport.width to config.viewport.height) {
+        val resolution = when (
+            config.viewport.width to config.viewport.height
+        ) {
             800 to 480 -> VIDEO_RESOLUTION_480P
             1280 to 720 -> VIDEO_RESOLUTION_720P
             1920 to 1080 -> VIDEO_RESOLUTION_1080P
+            720 to 1280 -> VIDEO_RESOLUTION_720X1280
+            1080 to 1920 -> VIDEO_RESOLUTION_1080X1920
             else -> throw AasdkProtocolException("unsupported projection resolution")
+        }
+        val supportedDensity = ProjectionVideoProfile.isSupportedDensityDpi(config.dpi)
+        if (config.fps != SAFE_VIDEO_FPS || !supportedDensity) {
+            throw AasdkProtocolException("unsupported projection FPS or DPI")
         }
         val videoConfigParts = mutableListOf(
             encodeVarintField(fieldNumber = 1, value = resolution.toLong()),
@@ -188,7 +190,7 @@ internal object AasdkOpenAutoProtocol {
         )
 
         // The input channel's TouchConfig must describe the same viewport used by the video
-        // channel and local TouchMapper. All three audited profiles encode each dimension in two
+        // channel and local TouchMapper. All audited profiles encode each dimension in two
         // varint bytes, preserving the pinned outer protobuf lengths.
         val width = encodeVarint(config.viewport.width.toLong())
         val height = encodeVarint(config.viewport.height.toLong())
@@ -542,10 +544,11 @@ internal object AasdkOpenAutoProtocol {
     private const val TOUCH_ACTION_DRAG = 2L
     private const val TOUCH_ACTION_CANCEL = 3L
     private const val SAFE_VIDEO_FPS = 60
-    private const val SAFE_VIDEO_DPI = 140
     private const val VIDEO_RESOLUTION_480P = 1
     private const val VIDEO_RESOLUTION_720P = 2
     private const val VIDEO_RESOLUTION_1080P = 3
+    private const val VIDEO_RESOLUTION_720X1280 = 6
+    private const val VIDEO_RESOLUTION_1080X1920 = 7
     private const val VIDEO_STREAM_TYPE = 3L
     private const val VIDEO_FPS_60_ENUM = 2L
     private const val TOUCH_WIDTH_OFFSET_IN_MARKER = 3
