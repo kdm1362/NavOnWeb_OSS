@@ -8,6 +8,7 @@ import android.view.Surface as AndroidSurface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -15,6 +16,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,12 +57,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +77,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -79,11 +92,15 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -93,6 +110,7 @@ import com.pebble.tecomheadunit.BuildConfig
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.automation.AutomationTriggerMode
 import com.pebble.tecomheadunit.browser.cloud.CloudPairingRegistrationStatus
+import com.pebble.tecomheadunit.billing.ReviewPromoSubmissionResult
 import com.pebble.tecomheadunit.diagnostics.DiagnosticLogSummary
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadConsentGate
 import com.pebble.tecomheadunit.diagnostics.upload.DiagnosticUploadStatusSnapshot
@@ -102,7 +120,10 @@ import com.pebble.tecomheadunit.session.SessionController
 import com.pebble.tecomheadunit.session.SessionPhase
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
+import com.pebble.tecomheadunit.session.BrowserDevicePermission
+import com.pebble.tecomheadunit.session.PairedBrowserDevice
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.text.DateFormat
 import java.text.NumberFormat
@@ -113,6 +134,7 @@ import kotlin.math.sin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val AppColors = darkColorScheme(
     primary = Color(0xFF67E8F9),
@@ -129,20 +151,113 @@ private val PremiumGoldContent = Color(0xFF2A1B00)
 
 private const val MAX_DIAGNOSTIC_DESCRIPTION_CODE_POINTS = 500
 private const val MAX_DIAGNOSTIC_DESCRIPTION_BYTES = 2 * 1_024
+internal const val MAX_PAIRED_BROWSER_DISPLAY_NAME_CODE_POINTS = 64
 internal const val SETTINGS_CLOSE_HIGHLIGHT_INTERVAL_MILLIS = 1_000L
+internal const val REVIEW_PROMO_HOLD_MILLIS = 10_000L
+internal const val LOCAL_BROWSER_URL_REVEAL_HOLD_MILLIS = 3_000L
 internal const val PREMIUM_UNLOCK_CELEBRATION_MILLIS = 1_800L
 
 internal fun shouldHighlightSettingsCloseAfterOnboarding(settingsVisible: Boolean): Boolean =
     settingsVisible
 
+internal fun shouldDispatchReviewPromoHold(releaseBeforeThreshold: Boolean?): Boolean =
+    releaseBeforeThreshold == null
+
+internal data class BrowserLinkPresentation(
+    val url: String,
+    val isDebugLocal: Boolean,
+)
+
+internal fun numericLocalBrowserUrlOrNull(url: String?): String? {
+    val candidate = url?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    val parsed = runCatching { URI(candidate) }.getOrNull() ?: return null
+    if (!parsed.scheme.equals("http", ignoreCase = true) ||
+        parsed.userInfo != null || parsed.query != null || parsed.fragment != null ||
+        parsed.port !in 1..65_535 || (parsed.rawPath.orEmpty() !in setOf("", "/"))
+    ) {
+        return null
+    }
+    val octets = parsed.host?.split('.') ?: return null
+    if (octets.size != 4 || octets.any { octet ->
+            octet.toIntOrNull()?.let { it in 0..255 } != true
+        }
+    ) {
+        return null
+    }
+    return candidate
+}
+
+internal fun shouldRevealLocalBrowserUrl(
+    releaseBeforeThreshold: Boolean?,
+    localBrowserUrl: String?,
+): Boolean = releaseBeforeThreshold == null && numericLocalBrowserUrlOrNull(localBrowserUrl) != null
+
+internal fun browserLinkPresentation(
+    normalBrowserUrl: String,
+    localBrowserUrl: String?,
+    revealLocalUrl: Boolean,
+): BrowserLinkPresentation {
+    val safeLocalUrl = numericLocalBrowserUrlOrNull(localBrowserUrl)
+    return if (revealLocalUrl && safeLocalUrl != null) {
+        BrowserLinkPresentation(url = safeLocalUrl, isDebugLocal = true)
+    } else {
+        BrowserLinkPresentation(url = normalBrowserUrl, isDebugLocal = false)
+    }
+}
+
+internal enum class PairedBrowserDisplayNameFailure {
+    EMPTY,
+    CONTROL_CHARACTER,
+    TOO_MANY_CODE_POINTS,
+}
+
+internal data class PairedBrowserDisplayNameValidation(
+    val normalizedName: String,
+    val failure: PairedBrowserDisplayNameFailure? = null,
+) {
+    val isValid: Boolean get() = failure == null
+}
+
+internal fun validatePairedBrowserDisplayName(
+    candidate: String,
+): PairedBrowserDisplayNameValidation {
+    if (candidate.any(Char::isISOControl)) {
+        return PairedBrowserDisplayNameValidation(
+            normalizedName = candidate,
+            failure = PairedBrowserDisplayNameFailure.CONTROL_CHARACTER,
+        )
+    }
+    val normalized = candidate.trim().replace(Regex("\\s+"), " ")
+    if (normalized.isBlank()) {
+        return PairedBrowserDisplayNameValidation(
+            normalizedName = normalized,
+            failure = PairedBrowserDisplayNameFailure.EMPTY,
+        )
+    }
+    if (
+        normalized.codePointCount(0, normalized.length) >
+        MAX_PAIRED_BROWSER_DISPLAY_NAME_CODE_POINTS
+    ) {
+        return PairedBrowserDisplayNameValidation(
+            normalizedName = normalized,
+            failure = PairedBrowserDisplayNameFailure.TOO_MANY_CODE_POINTS,
+        )
+    }
+    return PairedBrowserDisplayNameValidation(normalizedName = normalized)
+}
+
 @Composable
-fun TecomHeadUnitApp(
+internal fun TecomHeadUnitApp(
     projectionControl: ProjectionControlUiState,
     diagnosticLogs: DiagnosticLogSummary,
     diagnosticLogMessage: String,
     diagnosticUploadAvailable: Boolean,
     diagnosticUploadStatus: DiagnosticUploadStatusSnapshot,
     serviceAutomation: ServiceAutomationUiState,
+    pairedBrowserDevices: List<PairedBrowserDevice> = emptyList(),
+    connectedBrowserDeviceIds: Set<String> = emptySet(),
+    pairedBrowserDeviceMessage: String = "",
+    pairedBrowserManagementReady: Boolean = false,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRequestNewBrowserPairing: () -> Unit,
@@ -157,16 +272,25 @@ fun TecomHeadUnitApp(
     onBluetoothDeviceSelected: (String) -> Unit,
     onClearBluetoothDeviceSelection: () -> Unit,
     onDismissBluetoothPicker: () -> Unit,
+    onPairedBrowserRenamed: (String, String) -> Unit = { _, _ -> },
+    onPairedBrowserReadOnlyChanged: (String, Boolean) -> Unit = { _, _ -> },
+    onPreferredMainBrowserSelected: (String) -> Unit = {},
+    onPairedBrowserDeleted: (String) -> Unit = {},
     onProjectionSurfaceAvailable: (AndroidSurface) -> Unit,
     onProjectionSurfaceDestroyed: (AndroidSurface) -> Unit,
     firstRunOnboardingRequired: Boolean = false,
     onFirstRunOnboardingCompleted: () -> Unit = {},
     onOpenAndroidAutoSettings: () -> Unit = {},
+    onOpenBrowserUrl: (String) -> Unit = {},
     premiumPurchase: PremiumPurchaseUiState = PremiumPurchaseUiState(),
     onUnlockPremium: () -> Unit = {},
     onRefreshPurchases: () -> Unit = {},
     onDismissPremiumPurchaseConfirmation: () -> Unit = {},
     onPremiumLicenseConfirmationPresented: () -> Unit = {},
+    onReviewPromoCodeSubmitted: (
+        String,
+        (ReviewPromoSubmissionResult) -> Unit,
+    ) -> Unit = { _, callback -> callback(ReviewPromoSubmissionResult.NotConfigured) },
     onProjectionDpiChanged: (String, Int) -> Unit = { _, _ -> },
     onProjectionDpiReset: (String) -> Unit = {},
 ) {
@@ -176,6 +300,7 @@ fun TecomHeadUnitApp(
         mutableStateOf(firstRunOnboardingRequired)
     }
     var highlightSettingsClose by rememberSaveable { mutableStateOf(false) }
+    var showReviewPromoDialog by remember { mutableStateOf(false) }
     var showPremiumLicenseConfirmedDialog by rememberSaveable { mutableStateOf(false) }
     var celebratePremiumUnlock by rememberSaveable { mutableStateOf(false) }
     val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
@@ -237,6 +362,7 @@ fun TecomHeadUnitApp(
                     Column(modifier = Modifier.fillMaxSize()) {
                         AppHeader(
                             onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                            onReviewPromoRequested = { showReviewPromoDialog = true },
                         )
                         HomeScreen(
                             running = running,
@@ -245,6 +371,7 @@ fun TecomHeadUnitApp(
                             onStart = onStart,
                             onStop = onStop,
                             onRequestNewBrowserPairing = onRequestNewBrowserPairing,
+                            onOpenBrowserUrl = onOpenBrowserUrl,
                             premiumPurchase = premiumPurchase,
                             onUnlockPremium = onUnlockPremium,
                             celebratePremiumUnlock = celebratePremiumUnlock,
@@ -269,6 +396,10 @@ fun TecomHeadUnitApp(
                 diagnosticUploadAvailable = diagnosticUploadAvailable,
                 diagnosticUploadStatus = diagnosticUploadStatus,
                 serviceAutomation = serviceAutomation,
+                pairedBrowserDevices = pairedBrowserDevices,
+                connectedBrowserDeviceIds = connectedBrowserDeviceIds,
+                pairedBrowserDeviceMessage = pairedBrowserDeviceMessage,
+                pairedBrowserManagementReady = pairedBrowserManagementReady,
                 premiumPurchase = premiumPurchase,
                 highlightCloseButton = highlightSettingsClose,
                 onSettingsScrolled = { highlightSettingsClose = false },
@@ -289,6 +420,10 @@ fun TecomHeadUnitApp(
                 onBluetoothDeviceSelected = onBluetoothDeviceSelected,
                 onClearBluetoothDeviceSelection = onClearBluetoothDeviceSelection,
                 onDismissBluetoothPicker = onDismissBluetoothPicker,
+                onPairedBrowserRenamed = onPairedBrowserRenamed,
+                onPairedBrowserReadOnlyChanged = onPairedBrowserReadOnlyChanged,
+                onPreferredMainBrowserSelected = onPreferredMainBrowserSelected,
+                onPairedBrowserDeleted = onPairedBrowserDeleted,
                 onUnlockPremium = onUnlockPremium,
                 onRefreshPurchases = onRefreshPurchases,
                 onOpenFirstRunOnboarding = {
@@ -308,6 +443,13 @@ fun TecomHeadUnitApp(
                     )
                     onFirstRunOnboardingCompleted()
                 },
+            )
+        }
+
+        if (showReviewPromoDialog) {
+            ReviewPromoCodeDialog(
+                onSubmit = onReviewPromoCodeSubmitted,
+                onDismiss = { showReviewPromoDialog = false },
             )
         }
 
@@ -336,8 +478,10 @@ fun TecomHeadUnitApp(
 @Composable
 private fun AppHeader(
     onOpenDrawer: () -> Unit,
+    onReviewPromoRequested: () -> Unit,
 ) {
     val openDrawerDescription = stringResource(R.string.ui_nav_open_drawer)
+    val currentOnReviewPromoRequested by rememberUpdatedState(onReviewPromoRequested)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -361,6 +505,19 @@ private fun AppHeader(
         Column(modifier = Modifier.padding(horizontal = 6.dp)) {
             Text(
                 text = stringResource(R.string.app_name),
+                modifier = Modifier.pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            val releaseBeforeThreshold =
+                                withTimeoutOrNull(REVIEW_PROMO_HOLD_MILLIS) {
+                                    tryAwaitRelease()
+                                }
+                            if (shouldDispatchReviewPromoHold(releaseBeforeThreshold)) {
+                                currentOnReviewPromoRequested()
+                            }
+                        },
+                    )
+                },
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
@@ -373,6 +530,95 @@ private fun AppHeader(
 }
 
 @Composable
+private fun ReviewPromoCodeDialog(
+    onSubmit: (String, (ReviewPromoSubmissionResult) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    var submissionResult by remember { mutableStateOf<ReviewPromoSubmissionResult?>(null) }
+    var verifying by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!verifying) onDismiss() },
+        title = { Text(stringResource(R.string.review_promo_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = {
+                        code = it
+                        submissionResult = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.review_promo_code_label)) },
+                    isError = submissionResult != null && !verifying,
+                    singleLine = true,
+                    enabled = !verifying,
+                )
+                if (verifying) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = stringResource(R.string.review_promo_verifying),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                } else {
+                    submissionResult?.let { result ->
+                        Text(
+                            text = stringResource(result.reviewPromoErrorString()),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    verifying = true
+                    submissionResult = null
+                    onSubmit(code) { result ->
+                        verifying = false
+                        if (result is ReviewPromoSubmissionResult.Activated) {
+                            code = ""
+                            onDismiss()
+                        } else {
+                            submissionResult = result
+                        }
+                    }
+                },
+                enabled = code.isNotEmpty() && !verifying,
+            ) {
+                Text(stringResource(R.string.ui_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !verifying) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+private fun ReviewPromoSubmissionResult.reviewPromoErrorString(): Int = when (this) {
+    ReviewPromoSubmissionResult.InvalidCode -> R.string.review_promo_invalid_code
+    ReviewPromoSubmissionResult.RateLimited -> R.string.review_promo_rate_limited
+    ReviewPromoSubmissionResult.RequestExpired -> R.string.review_promo_request_expired
+    ReviewPromoSubmissionResult.DeviceBindingUnavailable ->
+        R.string.review_promo_binding_unavailable
+    ReviewPromoSubmissionResult.NetworkUnavailable -> R.string.review_promo_network_unavailable
+    ReviewPromoSubmissionResult.ServerUnavailable -> R.string.review_promo_server_unavailable
+    ReviewPromoSubmissionResult.InvalidServerResponse -> R.string.review_promo_invalid_response
+    ReviewPromoSubmissionResult.NotConfigured -> R.string.review_promo_not_configured
+    is ReviewPromoSubmissionResult.Activated -> R.string.review_promo_status_active
+}
+
+@Composable
 private fun HomeScreen(
     running: Boolean,
     projectionControl: ProjectionControlUiState,
@@ -380,6 +626,7 @@ private fun HomeScreen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRequestNewBrowserPairing: () -> Unit,
+    onOpenBrowserUrl: (String) -> Unit,
     premiumPurchase: PremiumPurchaseUiState,
     onUnlockPremium: () -> Unit,
     celebratePremiumUnlock: Boolean,
@@ -435,9 +682,11 @@ private fun HomeScreen(
         if (session.phase == SessionPhase.READY) {
             ConnectionCard(
                 browserUrl = session.browserUrl.orEmpty(),
+                localBrowserUrl = session.localBrowserUrl,
                 pairingCode = session.pairingCode,
                 cloudPairingRegistrationStatus = session.cloudPairingRegistrationStatus,
                 onRequestNewBrowserPairing = onRequestNewBrowserPairing,
+                onOpenBrowserUrl = onOpenBrowserUrl,
             )
         }
     }
@@ -561,6 +810,12 @@ private fun PremiumPurchaseConfirmationAlert(
     )
 }
 
+private enum class SettingsSubpage {
+    ROOT,
+    PAIRED_BROWSER_DEVICES,
+    OPEN_SOURCE_LICENSES,
+}
+
 @Composable
 private fun SettingsDialog(
     projectionControl: ProjectionControlUiState,
@@ -569,6 +824,10 @@ private fun SettingsDialog(
     diagnosticUploadAvailable: Boolean,
     diagnosticUploadStatus: DiagnosticUploadStatusSnapshot,
     serviceAutomation: ServiceAutomationUiState,
+    pairedBrowserDevices: List<PairedBrowserDevice>,
+    connectedBrowserDeviceIds: Set<String>,
+    pairedBrowserDeviceMessage: String,
+    pairedBrowserManagementReady: Boolean,
     premiumPurchase: PremiumPurchaseUiState,
     highlightCloseButton: Boolean,
     onSettingsScrolled: () -> Unit,
@@ -586,13 +845,24 @@ private fun SettingsDialog(
     onBluetoothDeviceSelected: (String) -> Unit,
     onClearBluetoothDeviceSelection: () -> Unit,
     onDismissBluetoothPicker: () -> Unit,
+    onPairedBrowserRenamed: (String, String) -> Unit,
+    onPairedBrowserReadOnlyChanged: (String, Boolean) -> Unit,
+    onPreferredMainBrowserSelected: (String) -> Unit,
+    onPairedBrowserDeleted: (String) -> Unit,
     onUnlockPremium: () -> Unit,
     onRefreshPurchases: () -> Unit,
     onOpenFirstRunOnboarding: () -> Unit,
 ) {
     val settingsScrollState = rememberScrollState()
+    val pairedBrowserScrollState = rememberScrollState()
     val openSourceScrollState = rememberScrollState()
-    var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
+    var settingsSubpageName by rememberSaveable {
+        mutableStateOf(SettingsSubpage.ROOT.name)
+    }
+    val settingsSubpage = runCatching {
+        SettingsSubpage.valueOf(settingsSubpageName)
+    }.getOrDefault(SettingsSubpage.ROOT)
+    val returnToSettingsRoot = { settingsSubpageName = SettingsSubpage.ROOT.name }
     var closeButtonEmphasized by remember { mutableStateOf(false) }
     LaunchedEffect(highlightCloseButton) {
         closeButtonEmphasized = highlightCloseButton
@@ -625,10 +895,14 @@ private fun SettingsDialog(
         animationSpec = tween(durationMillis = 250),
         label = "settings-close-highlight-content",
     )
+    BackHandler(
+        enabled = settingsSubpage != SettingsSubpage.ROOT,
+        onBack = returnToSettingsRoot,
+    )
     Dialog(
         onDismissRequest = {
-            if (showOpenSourceLicenses) {
-                showOpenSourceLicenses = false
+            if (settingsSubpage != SettingsSubpage.ROOT) {
+                returnToSettingsRoot()
             } else {
                 onDismiss()
             }
@@ -648,17 +922,19 @@ private fun SettingsDialog(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (showOpenSourceLicenses) {
-                        TextButton(onClick = { showOpenSourceLicenses = false }) {
+                    if (settingsSubpage != SettingsSubpage.ROOT) {
+                        TextButton(onClick = returnToSettingsRoot) {
                             Text(stringResource(R.string.ui_back))
                         }
                     }
                     Text(
                         text = stringResource(
-                            if (showOpenSourceLicenses) {
-                                R.string.ui_open_source_title
-                            } else {
-                                R.string.ui_settings_title
+                            when (settingsSubpage) {
+                                SettingsSubpage.ROOT -> R.string.ui_settings_title
+                                SettingsSubpage.PAIRED_BROWSER_DEVICES ->
+                                    R.string.ui_paired_browser_title
+                                SettingsSubpage.OPEN_SOURCE_LICENSES ->
+                                    R.string.ui_open_source_title
                             },
                         ),
                         modifier = Modifier.weight(1f),
@@ -675,8 +951,28 @@ private fun SettingsDialog(
                         Text(stringResource(R.string.ui_close))
                     }
                 }
-                if (showOpenSourceLicenses) {
-                    Column(
+                when (settingsSubpage) {
+                    SettingsSubpage.PAIRED_BROWSER_DEVICES -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(pairedBrowserScrollState)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                    ) {
+                        PairedBrowserDevicesManagementCard(
+                            devices = pairedBrowserDevices,
+                            connectedDeviceIds = connectedBrowserDeviceIds,
+                            message = pairedBrowserDeviceMessage,
+                            managementReady = pairedBrowserManagementReady,
+                            premiumEntitled = premiumPurchase.entitled,
+                            onRename = onPairedBrowserRenamed,
+                            onReadOnlyChanged = onPairedBrowserReadOnlyChanged,
+                            onPreferredMainSelected = onPreferredMainBrowserSelected,
+                            onDelete = onPairedBrowserDeleted,
+                        )
+                    }
+
+                    SettingsSubpage.OPEN_SOURCE_LICENSES -> Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(openSourceScrollState)
@@ -685,8 +981,8 @@ private fun SettingsDialog(
                     ) {
                         OpenSourceLicensesCard()
                     }
-                } else {
-                    Column(
+
+                    SettingsSubpage.ROOT -> Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(settingsScrollState)
@@ -699,6 +995,18 @@ private fun SettingsDialog(
                             state = premiumPurchase,
                             onUnlockPremium = onUnlockPremium,
                             onRefreshPurchases = onRefreshPurchases,
+                        )
+                        PairedBrowserDevicesEntryCard(
+                            deviceCount = pairedBrowserDevices.size,
+                            connectedDeviceCount = pairedBrowserDevices.count { device ->
+                                device.deviceId in connectedBrowserDeviceIds
+                            },
+                            managementReady = pairedBrowserManagementReady,
+                            onOpen = {
+                                onSettingsScrolled()
+                                settingsSubpageName =
+                                    SettingsSubpage.PAIRED_BROWSER_DEVICES.name
+                            },
                         )
                         ServiceAutomationCard(
                             state = serviceAutomation,
@@ -728,7 +1036,7 @@ private fun SettingsDialog(
                         OpenSourceLicensesEntryCard(
                             onOpen = {
                                 onSettingsScrolled()
-                                showOpenSourceLicenses = true
+                                settingsSubpageName = SettingsSubpage.OPEN_SOURCE_LICENSES.name
                             },
                         )
                     }
@@ -746,6 +1054,529 @@ private fun SettingsDialog(
             onDismiss = onDismissBluetoothPicker,
         )
     }
+}
+
+internal fun canSelectPairedBrowserAsMain(
+    device: PairedBrowserDevice,
+    premiumEntitled: Boolean,
+    managementReady: Boolean = true,
+): Boolean = managementReady &&
+    premiumEntitled &&
+    device.permission == BrowserDevicePermission.CONTROL
+
+internal fun pairedBrowserPublicId(deviceId: String): String = deviceId
+    .removePrefix("browser_")
+    .takeLast(6)
+    .uppercase(Locale.ROOT)
+
+@Composable
+private fun PairedBrowserDevicesEntryCard(
+    deviceCount: Int,
+    connectedDeviceCount: Int,
+    managementReady: Boolean,
+    onOpen: () -> Unit,
+) {
+    val openLabel = stringResource(R.string.ui_paired_browser_manage)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClickLabel = openLabel,
+                onClick = onOpen,
+            ),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF121922)),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_title),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.ui_paired_browser_overview_counts,
+                        deviceCount,
+                        connectedDeviceCount,
+                    ),
+                    color = Color(0xFFAAB7C7),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (!managementReady) {
+                    Text(
+                        text = stringResource(R.string.ui_paired_browser_waiting_for_service),
+                        color = Color(0xFFFFC98B),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Text(
+                text = "\u203A",
+                modifier = Modifier.clearAndSetSemantics {},
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PairedBrowserDevicesManagementCard(
+    devices: List<PairedBrowserDevice>,
+    connectedDeviceIds: Set<String>,
+    message: String,
+    managementReady: Boolean,
+    premiumEntitled: Boolean,
+    onRename: (String, String) -> Unit,
+    onReadOnlyChanged: (String, Boolean) -> Unit,
+    onPreferredMainSelected: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val configuration = LocalConfiguration.current
+    val locale = configuration.locales[0]
+    var pendingDeleteDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRenameDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(devices, pendingDeleteDeviceId, managementReady) {
+        if (!managementReady || devices.none { it.deviceId == pendingDeleteDeviceId }) {
+            pendingDeleteDeviceId = null
+        }
+    }
+    LaunchedEffect(devices, pendingRenameDeviceId, managementReady) {
+        if (!managementReady || devices.none { it.deviceId == pendingRenameDeviceId }) {
+            pendingRenameDeviceId = null
+        }
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF121922)),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.ui_paired_browser_title),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.ui_paired_browser_summary),
+                color = Color(0xFFAAB7C7),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!managementReady) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_waiting_for_service),
+                    color = Color(0xFFFFC98B),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (devices.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_empty),
+                    color = Color(0xFFAAB7C7),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                devices.forEachIndexed { index, device ->
+                    if (index > 0) HorizontalDivider(color = Color(0xFF263341))
+                    key(device.deviceId) {
+                        PairedBrowserDeviceRow(
+                            device = device,
+                            connected = device.deviceId in connectedDeviceIds,
+                            locale = locale,
+                            premiumEntitled = premiumEntitled,
+                            managementReady = managementReady,
+                            onRename = { pendingRenameDeviceId = device.deviceId },
+                            onReadOnlyChanged = { readOnly ->
+                                onReadOnlyChanged(device.deviceId, readOnly)
+                            },
+                            onPreferredMainSelected = {
+                                onPreferredMainSelected(device.deviceId)
+                            },
+                            onDelete = { pendingDeleteDeviceId = device.deviceId },
+                        )
+                    }
+                }
+            }
+            if (!premiumEntitled && devices.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_main_premium_hint),
+                    color = Color(0xFFFFC98B),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (message.isNotBlank()) {
+                Text(
+                    text = message,
+                    color = Color(0xFFFFC98B),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+
+    val pendingDelete = devices.firstOrNull { it.deviceId == pendingDeleteDeviceId }
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteDeviceId = null },
+            title = { Text(stringResource(R.string.ui_paired_browser_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.ui_paired_browser_delete_body,
+                        pendingDelete.displayName,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteDeviceId = null
+                        onDelete(pendingDelete.deviceId)
+                    },
+                    enabled = managementReady,
+                ) {
+                    Text(stringResource(R.string.ui_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteDeviceId = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    val pendingRename = devices.firstOrNull { it.deviceId == pendingRenameDeviceId }
+    if (pendingRename != null) {
+        PairedBrowserRenameDialog(
+            device = pendingRename,
+            managementReady = managementReady,
+            onRename = { normalizedName ->
+                pendingRenameDeviceId = null
+                onRename(pendingRename.deviceId, normalizedName)
+            },
+            onDismiss = { pendingRenameDeviceId = null },
+        )
+    }
+}
+
+@Composable
+private fun PairedBrowserDeviceRow(
+    device: PairedBrowserDevice,
+    connected: Boolean,
+    locale: Locale,
+    premiumEntitled: Boolean,
+    managementReady: Boolean,
+    onRename: () -> Unit,
+    onReadOnlyChanged: (Boolean) -> Unit,
+    onPreferredMainSelected: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val publicId = pairedBrowserPublicId(device.deviceId)
+    val maySelectMain = canSelectPairedBrowserAsMain(
+        device = device,
+        premiumEntitled = premiumEntitled,
+        managementReady = managementReady,
+    )
+    val color = when (device.colorSlot) {
+        0 -> Color(0xFFFF6B6B)
+        1 -> Color(0xFF35C7F0)
+        else -> Color(0xFFFFC857)
+    }
+    val colorName = stringResource(
+        when (device.colorSlot) {
+            0 -> R.string.ui_paired_browser_color_red
+            1 -> R.string.ui_paired_browser_color_cyan
+            else -> R.string.ui_paired_browser_color_yellow
+        },
+    )
+    val colorDescription = stringResource(
+        R.string.ui_paired_browser_color,
+        device.displayName,
+        colorName,
+    )
+    val renameDescription = stringResource(
+        R.string.ui_paired_browser_rename_accessibility,
+        device.displayName,
+        publicId,
+    )
+    val mainDescription = stringResource(
+        R.string.ui_paired_browser_main_accessibility,
+        device.displayName,
+        publicId,
+    )
+    val readOnlyDescription = stringResource(
+        R.string.ui_paired_browser_read_only_accessibility,
+        device.displayName,
+        publicId,
+    )
+    val deleteDescription = stringResource(
+        R.string.ui_paired_browser_delete_accessibility,
+        device.displayName,
+        publicId,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(color, RoundedCornerShape(50))
+                    .semantics { contentDescription = colorDescription },
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(device.displayName, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (device.preferredMain) {
+                        Text(
+                            text = stringResource(R.string.ui_paired_browser_main_badge),
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    if (device.permission == BrowserDevicePermission.READ_ONLY) {
+                        Text(
+                            text = stringResource(R.string.ui_paired_browser_read_only_badge),
+                            color = Color(0xFFFFC98B),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (connected) {
+                                R.string.ui_paired_browser_connected_badge
+                            } else {
+                                R.string.ui_paired_browser_disconnected_badge
+                            },
+                        ),
+                        color = if (connected) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            Color(0xFF8292A5)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Text(
+                    text = stringResource(
+                        R.string.ui_paired_browser_public_id,
+                        publicId,
+                    ),
+                    color = Color(0xFF8292A5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.ui_paired_browser_last_seen,
+                        formatDateTime(device.lastSeenAtEpochMillis, locale),
+                    ),
+                    color = Color(0xFF8292A5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(
+                onClick = onRename,
+                enabled = managementReady,
+                modifier = Modifier.semantics {
+                    contentDescription = renameDescription
+                },
+            ) {
+                Text(stringResource(R.string.ui_paired_browser_rename))
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = device.preferredMain,
+                    enabled = maySelectMain,
+                    role = Role.RadioButton,
+                    onClick = onPreferredMainSelected,
+                )
+                .semantics { contentDescription = mainDescription },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(
+                selected = device.preferredMain,
+                onClick = null,
+                enabled = maySelectMain,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_main_session),
+                    color = if (maySelectMain || device.preferredMain) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        Color(0xFF8995A3)
+                    },
+                )
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_main_summary),
+                    color = Color(0xFF8292A5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = device.permission == BrowserDevicePermission.READ_ONLY,
+                    enabled = managementReady,
+                    role = Role.Switch,
+                    onValueChange = onReadOnlyChanged,
+                )
+                .semantics { contentDescription = readOnlyDescription },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.ui_paired_browser_read_only))
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_read_only_summary),
+                    color = Color(0xFF8292A5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(
+                checked = device.permission == BrowserDevicePermission.READ_ONLY,
+                onCheckedChange = null,
+                enabled = managementReady,
+            )
+        }
+        TextButton(
+            onClick = onDelete,
+            enabled = managementReady,
+            modifier = Modifier
+                .align(Alignment.End)
+                .semantics { contentDescription = deleteDescription },
+        ) {
+            Text(stringResource(R.string.ui_paired_browser_delete))
+        }
+    }
+}
+
+@Composable
+private fun PairedBrowserRenameDialog(
+    device: PairedBrowserDevice,
+    managementReady: Boolean,
+    onRename: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var displayName by rememberSaveable(device.deviceId) {
+        mutableStateOf(device.displayName)
+    }
+    val validation = remember(displayName) {
+        validatePairedBrowserDisplayName(displayName)
+    }
+    val originalName = remember(device.displayName) {
+        validatePairedBrowserDisplayName(device.displayName).normalizedName
+    }
+    val codePointCount = validation.normalizedName.codePointCount(
+        0,
+        validation.normalizedName.length,
+    )
+    val canRename = managementReady &&
+        validation.isValid &&
+        validation.normalizedName != originalName
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val submitRename = {
+        if (canRename) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            onRename(validation.normalizedName)
+        }
+    }
+    val validationMessage = when (validation.failure) {
+        PairedBrowserDisplayNameFailure.EMPTY ->
+            R.string.ui_paired_browser_name_error_required
+        PairedBrowserDisplayNameFailure.CONTROL_CHARACTER ->
+            R.string.ui_paired_browser_name_error_control
+        PairedBrowserDisplayNameFailure.TOO_MANY_CODE_POINTS ->
+            R.string.ui_paired_browser_name_error_too_long
+        null -> null
+    }
+    val locale = LocalConfiguration.current.locales[0]
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ui_paired_browser_rename_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.ui_paired_browser_name_help),
+                    color = Color(0xFFAAB7C7),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = managementReady,
+                    singleLine = true,
+                    isError = validationMessage != null,
+                    label = { Text(stringResource(R.string.ui_paired_browser_name_label)) },
+                    supportingText = {
+                        Column {
+                            if (validationMessage != null) {
+                                Text(stringResource(validationMessage))
+                            }
+                            Text(
+                                stringResource(
+                                    R.string.ui_paired_browser_name_counter,
+                                    NumberFormat.getIntegerInstance(locale).format(codePointCount),
+                                    NumberFormat.getIntegerInstance(locale).format(
+                                        MAX_PAIRED_BROWSER_DISPLAY_NAME_CODE_POINTS,
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submitRename() }),
+                )
+                if (!managementReady) {
+                    Text(
+                        text = stringResource(R.string.ui_paired_browser_waiting_for_service),
+                        color = Color(0xFFFFC98B),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = submitRename,
+                enabled = canRename,
+            ) {
+                Text(stringResource(R.string.ui_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -2231,10 +3062,29 @@ private fun AndroidAutoConnectionCard(connection: AndroidAutoConnectionStatus) {
 @Composable
 private fun ConnectionCard(
     browserUrl: String,
+    localBrowserUrl: String?,
     pairingCode: String?,
     cloudPairingRegistrationStatus: CloudPairingRegistrationStatus?,
     onRequestNewBrowserPairing: () -> Unit,
+    onOpenBrowserUrl: (String) -> Unit,
 ) {
+    var revealLocalUrl by rememberSaveable(localBrowserUrl) { mutableStateOf(false) }
+    var browserLinkFocused by remember { mutableStateOf(false) }
+    val presentation = browserLinkPresentation(
+        normalBrowserUrl = browserUrl,
+        localBrowserUrl = localBrowserUrl,
+        revealLocalUrl = revealLocalUrl,
+    )
+    val openActionLabel = stringResource(R.string.browser_open_action, presentation.url)
+    val linkDescription = if (presentation.isDebugLocal) {
+        stringResource(R.string.browser_debug_local_link_action, presentation.url)
+    } else {
+        openActionLabel
+    }
+    val activateCurrentLink = {
+        onOpenBrowserUrl(presentation.url)
+        if (presentation.isDebugLocal) revealLocalUrl = false
+    }
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2A2F)),
         shape = RoundedCornerShape(18.dp),
@@ -2245,10 +3095,64 @@ private fun ConnectionCard(
         ) {
             Text(stringResource(R.string.browser_open_title), fontWeight = FontWeight.SemiBold)
             Text(
-                text = browserUrl,
-                color = MaterialTheme.colorScheme.primary,
+                text = presentation.url,
+                color = if (presentation.isDebugLocal) Color(0xFFFFD54F) else MaterialTheme.colorScheme.primary,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodyLarge,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier
+                    .background(
+                        color = if (browserLinkFocused) Color(0x3322D3EE) else Color.Transparent,
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                    .padding(4.dp)
+                    .onFocusChanged { browserLinkFocused = it.isFocused }
+                    .onKeyEvent { event ->
+                        val activationKey = event.key == Key.Enter ||
+                            event.key == Key.NumPadEnter || event.key == Key.Spacebar
+                        if (activationKey && event.type == KeyEventType.KeyUp) {
+                            activateCurrentLink()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    .focusable()
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = linkDescription
+                        onClick(label = openActionLabel) {
+                            activateCurrentLink()
+                            true
+                        }
+                    }
+                    .pointerInput(browserUrl, localBrowserUrl, revealLocalUrl) {
+                        detectTapGestures(
+                            onPress = {
+                                val canRevealLocalUrl = !revealLocalUrl &&
+                                    numericLocalBrowserUrlOrNull(localBrowserUrl) != null
+                                val releaseBeforeThreshold = if (canRevealLocalUrl) {
+                                    withTimeoutOrNull(LOCAL_BROWSER_URL_REVEAL_HOLD_MILLIS) {
+                                        tryAwaitRelease()
+                                    }
+                                } else {
+                                    tryAwaitRelease()
+                                }
+                                when {
+                                    canRevealLocalUrl && shouldRevealLocalBrowserUrl(
+                                        releaseBeforeThreshold = releaseBeforeThreshold,
+                                        localBrowserUrl = localBrowserUrl,
+                                    ) -> {
+                                        revealLocalUrl = true
+                                        // Consume the release that ends the hidden hold. The next
+                                        // independent activation opens the yellow IP link once.
+                                        tryAwaitRelease()
+                                    }
+                                    releaseBeforeThreshold == true -> activateCurrentLink()
+                                }
+                            },
+                        )
+                    },
             )
             Spacer(Modifier.height(4.dp))
             if (

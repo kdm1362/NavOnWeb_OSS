@@ -180,7 +180,7 @@ class ProjectionControlUiModelsTest {
         val session = SessionUiState(
             phase = SessionPhase.READY,
             message = "ready",
-            browserUrl = "http://10.0.0.101:8787",
+            browserUrl = "http://192.168.50.101:8787",
             pairingCode = PAIRING_SECRET,
             nativeStatus = "-----BEGIN PRIVATE KEY----- $PRIVATE_KEY_SECRET",
             androidAutoConnection = AndroidAutoConnectionStatus(

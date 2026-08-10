@@ -33,7 +33,7 @@ internal data class AasdkAvMediaAck(
  * - f1xpl/openauto aa90412bf93b5a5078495ea85ac9270c6297d369
  *
  * This intentionally does not pretend to be a general protobuf runtime. The
- * full OpenAuto default ServiceDiscoveryResponse is kept as an audited fixture
+ * full OpenAuto default ServiceDiscoveryResponse is kept as a stable protocol fixture
  * so a modern phone can be tested with Android MediaCodec video, browser audio
  * output, and the browser-backed AV-input microphone path.
  */
@@ -132,7 +132,7 @@ internal object AasdkOpenAutoProtocol {
     )
 
     /**
-     * Advertises exactly one of the audited landscape or portrait OpenAuto encoded profiles.
+     * Advertises exactly one of the supported landscape or portrait OpenAuto encoded profiles.
      * Optional total margins describe a centred, browser-shaped content viewport without changing
      * the selected encoded frame size. Unsupported dimensions, FPS or DPI fail closed.
      */
@@ -190,7 +190,7 @@ internal object AasdkOpenAutoProtocol {
         )
 
         // The input channel's TouchConfig must describe the same viewport used by the video
-        // channel and local TouchMapper. All audited profiles encode each dimension in two
+        // channel and local TouchMapper. All supported profiles encode each dimension in two
         // varint bytes, preserving the pinned outer protobuf lengths.
         val width = encodeVarint(config.viewport.width.toLong())
         val height = encodeVarint(config.viewport.height.toLong())

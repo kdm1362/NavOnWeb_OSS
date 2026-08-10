@@ -9,6 +9,71 @@ import org.junit.Test
 
 class BrowserWebRtcSignalingTest {
     @Test
+    fun browserCredentialOwnerKeyIsOpaqueStableAndBounded() {
+        val credential = "a".repeat(43)
+        val ownerKey = browserWebRtcOwnerKey(credential)
+
+        assertEquals(ownerKey, browserWebRtcOwnerKey(credential))
+        assertEquals(43, ownerKey.length)
+        assertTrue(Regex("^[A-Za-z0-9_-]{43}$").matches(ownerKey))
+        assertFalse(ownerKey.contains(credential))
+        assertFalse(ownerKey == browserWebRtcOwnerKey("b".repeat(43)))
+        assertThrows(IllegalArgumentException::class.java) {
+            BrowserWebRtcOffer(
+                preferredCodec = BrowserWebRtcCodec.AUTO,
+                sdp = "v=0\r\n",
+                ownerKey = "not-a-sha256-owner-key",
+            )
+        }
+    }
+
+    @Test
+    fun sameAuthenticatedBrowserCanReplaceSessionBeforeStaleDeleteArrives() {
+        val ownerKey = browserWebRtcOwnerKey("a".repeat(43))
+
+        assertEquals(
+            BrowserWebRtcSessionAdmission.Open,
+            browserWebRtcSessionAdmission(
+                activeSessionId = null,
+                activeOwnerKey = null,
+                requestedOwnerKey = ownerKey,
+            ),
+        )
+        assertEquals(
+            BrowserWebRtcSessionAdmission.Replace("old_session_123"),
+            browserWebRtcSessionAdmission(
+                activeSessionId = "old_session_123",
+                activeOwnerKey = ownerKey,
+                requestedOwnerKey = ownerKey,
+            ),
+        )
+        assertFalse(
+            browserWebRtcSessionCloseMatches(
+                activeSessionId = "new_session_456",
+                requestedSessionId = "old_session_123",
+            ),
+        )
+        assertTrue(
+            browserWebRtcSessionCloseMatches(
+                activeSessionId = "new_session_456",
+                requestedSessionId = "new_session_456",
+            ),
+        )
+    }
+
+    @Test
+    fun differentAuthenticatedBrowserRemainsBusy() {
+        assertEquals(
+            BrowserWebRtcSessionAdmission.Busy,
+            browserWebRtcSessionAdmission(
+                activeSessionId = "active_session_123",
+                activeOwnerKey = browserWebRtcOwnerKey("a".repeat(43)),
+                requestedOwnerKey = browserWebRtcOwnerKey("b".repeat(43)),
+            ),
+        )
+    }
+
+    @Test
     fun rewritesOnlyMdnsUdpHostCandidateAddressFromDirectLanPeer() {
         val offer =
             "v=0\r\n" +
@@ -18,12 +83,12 @@ class BrowserWebRtcSignalingTest {
                 "a=end-of-candidates\r\n"
         val expected = offer.replace(
             "7cdb74ee-1234-5678-abcd-123456789abc.local",
-            "10.0.0.220",
+            "192.168.50.12",
         )
 
         assertEquals(
             expected,
-            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "10.0.0.220"),
+            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "192.168.50.12"),
         )
         assertTrue(expected.contains("54400 typ host generation 0 ufrag browserUfrag network-cost 999"))
         assertTrue(expected.endsWith("a=end-of-candidates\r\n"))
@@ -34,12 +99,12 @@ class BrowserWebRtcSignalingTest {
         val offer =
             "a=candidate:tcp 1 tcp 1518280447 browser.local 9 typ host tcptype active\r\n" +
                 "a=candidate:srflx 1 udp 1686052607 browser.local 40000 typ srflx raddr 0.0.0.0 rport 0\r\n" +
-                "a=candidate:ipv4 1 udp 2122260223 10.0.0.220 54400 typ host generation 0\r\n" +
+                "a=candidate:ipv4 1 udp 2122260223 192.168.50.12 54400 typ host generation 0\r\n" +
                 "a=ice-ufrag:browserUfrag\r\n"
 
         assertEquals(
             offer,
-            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "10.0.0.220"),
+            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "192.168.50.12"),
         )
     }
 
@@ -47,12 +112,12 @@ class BrowserWebRtcSignalingTest {
     fun numericUdpHostCandidateDisablesMdnsRewriteForEntireOffer() {
         val offer =
             "a=candidate:mdns 1 udp 2122260223 browser.local 54400 typ host generation 0\r\n" +
-                "a=candidate:numeric 1 udp 2122194687 10.0.0.220 54401 typ host " +
+                "a=candidate:numeric 1 udp 2122194687 192.168.50.12 54401 typ host " +
                 "generation 0 ufrag alreadyReachable\r\n"
 
         assertEquals(
             offer,
-            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "10.0.0.220"),
+            BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, "192.168.50.12"),
         )
         assertTrue(offer.contains("browser.local 54400"))
     }
@@ -61,32 +126,32 @@ class BrowserWebRtcSignalingTest {
     fun cloudOfferInfersOnePrivateSrflxAddressFromMatchingMdnsPorts() {
         val offer =
             "a=candidate:host-video 1 udp 2122260223 video.local 54400 typ host generation 0\r\n" +
-                "a=candidate:srflx-video 1 udp 1686052607 192.168.31.220 54400 typ srflx " +
+                "a=candidate:srflx-video 1 udp 1686052607 192.168.50.12 54400 typ srflx " +
                 "raddr 0.0.0.0 rport 0\r\n" +
                 "a=candidate:host-data 1 udp 2122260223 data.local 54401 typ host generation 0\r\n" +
-                "a=candidate:srflx-data 1 udp 1686052607 192.168.31.220 54401 typ srflx " +
+                "a=candidate:srflx-data 1 udp 1686052607 192.168.50.12 54401 typ srflx " +
                 "raddr 0.0.0.0 rport 0\r\n" +
                 "a=candidate:host-bundled 1 udp 2122260223 bundled.local 54402 typ host generation 0\r\n"
 
         val inferred = BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(offer)
 
-        assertEquals("192.168.31.220", inferred)
+        assertEquals("192.168.50.12", inferred)
         val rewritten = BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, inferred)
         assertFalse(rewritten.contains("video.local"))
         assertFalse(rewritten.contains("data.local"))
         assertFalse(rewritten.contains("bundled.local"))
-        assertEquals(5, Regex("192\\.168\\.31\\.220").findAll(rewritten).count())
+        assertEquals(5, Regex("192\\.168\\.50\\.12").findAll(rewritten).count())
     }
 
     @Test
     fun cloudOfferDoesNotInferAddressFromAmbiguousOrPortMismatchedSrflxCandidates() {
         val missingPortMatch =
             "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n" +
-                "a=candidate:srflx 1 udp 1686052607 192.168.31.220 54401 typ srflx\r\n"
+                "a=candidate:srflx 1 udp 1686052607 192.168.50.12 54401 typ srflx\r\n"
         val conflictingAddresses =
             "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n" +
-                "a=candidate:srflx-a 1 udp 1686052607 192.168.31.220 54400 typ srflx\r\n" +
-                "a=candidate:srflx-b 1 udp 1686052606 10.0.0.8 54400 typ srflx\r\n"
+                "a=candidate:srflx-a 1 udp 1686052607 192.168.50.12 54400 typ srflx\r\n" +
+                "a=candidate:srflx-b 1 udp 1686052606 192.168.50.8 54400 typ srflx\r\n"
 
         assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(missingPortMatch))
         assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(conflictingAddresses))
@@ -95,7 +160,7 @@ class BrowserWebRtcSignalingTest {
     @Test
     fun cloudOfferDoesNotInferPublicLoopbackOrMalformedSrflxAddress() {
         val host = "a=candidate:host 1 udp 2122260223 browser.local 54400 typ host\r\n"
-        listOf("203.0.113.10", "127.0.0.1", "192.168.031.220").forEach { address ->
+        listOf("203.0.113.10", "127.0.0.1", "192.168.050.12").forEach { address ->
             val offer = host +
                 "a=candidate:srflx 1 udp 1686052607 $address 54400 typ srflx\r\n"
             assertNull(BrowserProbeServer.inferDirectPeerIpv4FromPrivateSrflx(offer))
@@ -114,7 +179,7 @@ class BrowserWebRtcSignalingTest {
             "239.255.255.250",
             "::1",
             "10.00.0.220",
-            "10.0.0.256",
+            "192.168.50.256",
             "8.8.8.8",
             "203.0.113.10",
         )
@@ -123,7 +188,7 @@ class BrowserWebRtcSignalingTest {
             assertFalse(BrowserProbeServer.isEligibleDirectPeerIpv4(peer))
             assertEquals(offer, BrowserProbeServer.rewriteMdnsHostCandidateAddresses(offer, peer))
         }
-        assertTrue(BrowserProbeServer.isEligibleDirectPeerIpv4("10.0.0.220"))
+        assertTrue(BrowserProbeServer.isEligibleDirectPeerIpv4("192.168.50.12"))
         assertTrue(BrowserProbeServer.isEligibleDirectPeerIpv4("10.0.0.2"))
         assertTrue(BrowserProbeServer.isEligibleDirectPeerIpv4("172.16.0.2"))
         assertTrue(BrowserProbeServer.isEligibleDirectPeerIpv4("172.31.255.254"))

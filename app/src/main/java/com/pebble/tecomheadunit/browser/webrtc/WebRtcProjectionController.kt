@@ -13,9 +13,19 @@ import com.pebble.tecomheadunit.browser.BrowserWebRtcOffer
 import com.pebble.tecomheadunit.browser.BrowserWebRtcOpenResult
 import com.pebble.tecomheadunit.browser.BrowserWebRtcSessionSnapshot
 import com.pebble.tecomheadunit.browser.BrowserWebRtcSessionState
+import com.pebble.tecomheadunit.browser.BrowserWebRtcSessionTombstones
 import com.pebble.tecomheadunit.browser.BrowserWebRtcSignaling
+import com.pebble.tecomheadunit.browser.BrowserWebRtcSessionAdmission
 import com.pebble.tecomheadunit.browser.BrowserRelayRequest
 import com.pebble.tecomheadunit.browser.BrowserRelayResponse
+import com.pebble.tecomheadunit.browser.BrowserSessionAccessMode
+import com.pebble.tecomheadunit.browser.BrowserTouchPresenceEvent
+import com.pebble.tecomheadunit.browser.browserWebRtcSessionAdmission
+import com.pebble.tecomheadunit.browser.browserWebRtcEffectiveColorSlot
+import com.pebble.tecomheadunit.browser.browserWebRtcSessionLimit
+import com.pebble.tecomheadunit.browser.browserWebRtcSessionsToCloseForLimit
+import com.pebble.tecomheadunit.browser.withDeviceDisplayName
+import com.pebble.tecomheadunit.billing.PremiumAccessGate
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioStreamHub
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioTrack
 import com.pebble.tecomheadunit.browser.audio.BrowserMicrophonePcmSource
@@ -43,6 +53,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
@@ -61,6 +72,7 @@ import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.VideoSource
+import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
 /**
@@ -77,7 +89,11 @@ class WebRtcProjectionController(
     private val config: WebRtcProjectionConfig = WebRtcProjectionConfig(),
     microphoneSource: BrowserMicrophonePcmSource? = null,
     private val audioStreams: BrowserAudioStreamHub? = null,
-    private val controlRequestHandler: ((BrowserRelayRequest) -> BrowserRelayResponse)? = null,
+    private val controlRequestHandler: ((String, BrowserRelayRequest) -> BrowserRelayResponse)? = null,
+    sessionLimitProvider: (() -> Int)? = null,
+    private val preferredMainDeviceId: () -> String? = { null },
+    private val claimMainDeviceIfUnset: (String) -> Boolean = { false },
+    private val sessionAdmissionLock: Any = Any(),
 ) : BrowserWebRtcSignaling, Closeable {
     private val appContext = context.applicationContext
     private val lifecycleLock = Any()
@@ -90,10 +106,17 @@ class WebRtcProjectionController(
     private val secureRandom = SecureRandom()
     private val codecProbe = AndroidMediaCodecCapabilityProbe()
     private val codecPolicy = WebRtcCodecSelectionPolicy()
-    private val microphoneFrameDispatcher = microphoneSource?.let(::MicrophoneFrameDispatcher)
+    private val microphoneFrameDispatcher = microphoneSource?.let { source ->
+        MicrophoneFrameDispatcher(source, sessionAdmissionLock)
+    }
+    private val sessionLimitProvider: () -> Int = sessionLimitProvider ?: {
+        browserWebRtcSessionLimit(PremiumAccessGate.isPremium(appContext))
+    }
+    private val connectionSequence = AtomicLong(0L)
 
     private var resources: CoreResources? = null
-    private var activeSession: SessionRuntime? = null
+    private val sessions = linkedMapOf<String, SessionRuntime>()
+    private val terminalSessions = BrowserWebRtcSessionTombstones()
     private var closed = false
 
     /** Initializes libwebrtc, the shared EGL context, texture source and encoder/decoder factories. */
@@ -151,9 +174,6 @@ class WebRtcProjectionController(
                     local = localCapabilities,
                     factoryCodecs = factoryCodecs,
                 )
-                check(orderedAvailableCodecs.isNotEmpty()) {
-                    "No usable WebRTC video encoder for ${config.width}x${config.height}"
-                }
                 resources = CoreResources(
                     eglBase = createdEgl,
                     factory = createdFactory,
@@ -166,7 +186,8 @@ class WebRtcProjectionController(
                 Log.i(
                     LOG_TAG,
                     "WEBRTC_CORE_STARTED size=${config.width}x${config.height} " +
-                        "fps=${config.framesPerSecond} codecs=${orderedAvailableCodecs.joinToString()}",
+                        "fps=${config.framesPerSecond} codecs=" +
+                        orderedAvailableCodecs.joinToString().ifEmpty { "JPEG_ONLY" },
                 )
             } catch (error: Throwable) {
                 createdBridge?.close()
@@ -185,26 +206,36 @@ class WebRtcProjectionController(
     }
 
     /** Fan-outs the same texture frame to the existing app preview Surface. */
-    fun attachPreviewSurface(surface: Surface): Result<Unit> = runCatching {
+    fun attachPreviewSurface(surface: Surface, generation: Long): Result<Unit> = runCatching {
         val current = synchronized(lifecycleLock) {
             check(!closed) { "WebRTC projection controller is closed" }
             checkNotNull(resources) { "WebRTC projection controller is not started" }
         }
-        current.bridge.attachPreviewSurface(surface, current.eglBase.eglBaseContext)
+        current.bridge.attachPreviewSurface(
+            surface = surface,
+            generation = generation,
+            sharedContext = current.eglBase.eglBaseContext,
+        )
     }
 
-    fun detachPreviewSurface() {
-        synchronized(lifecycleLock) { resources?.bridge }?.detachPreviewSurface()
+    fun detachPreviewSurface(generation: Long? = null) {
+        synchronized(lifecycleLock) { resources?.bridge }?.detachPreviewSurface(generation)
+    }
+
+    /** Fan-outs decoder frames to the subscriber-gated service JPEG encoder. */
+    fun setBrowserFrameSink(sink: VideoSink?) {
+        synchronized(lifecycleLock) { resources?.bridge }?.setAuxiliaryFrameSink(sink)
     }
 
     override fun capabilities(): BrowserWebRtcCapabilities {
+        reconcileSessionLimit(currentSessionLimit(), preferredMainDeviceId())
         val current = synchronized(lifecycleLock) { resources }
             ?: return BrowserWebRtcCapabilities(
                 available = false,
                 detail = if (closed) "Native WebRTC sender is closed" else "Native WebRTC sender is not started",
             )
         return BrowserWebRtcCapabilities(
-            available = true,
+            available = current.availableCodecs.isNotEmpty(),
             codecs = current.availableCodecs.map { it.toBrowserCodec() },
             iceServers = config.iceServers.map { server ->
                 BrowserWebRtcIceServer(
@@ -224,11 +255,22 @@ class WebRtcProjectionController(
     }
 
     override fun openSession(offer: BrowserWebRtcOffer): BrowserWebRtcOpenResult {
+        reconcileSessionLimit(currentSessionLimit(), preferredMainDeviceId())
         val current = synchronized(lifecycleLock) {
             if (closed) return BrowserWebRtcOpenResult.Rejected("Native WebRTC sender is closed")
             val readyResources = resources
                 ?: return BrowserWebRtcOpenResult.Rejected("Native WebRTC sender is not started")
-            if (activeSession?.snapshot?.state in ACTIVE_SESSION_STATES) {
+            if (readyResources.availableCodecs.isEmpty()) {
+                return BrowserWebRtcOpenResult.Rejected("Native WebRTC video encoder is unavailable")
+            }
+            val active = activeSessionsLocked()
+            if (
+                browserWebRtcSessionAdmission(
+                    activeOwnersBySessionId = active.associate { it.snapshot.sessionId to it.ownerKey },
+                    requestedOwnerKey = offer.ownerKey,
+                    maximumSessions = currentSessionLimit(),
+                ) == BrowserWebRtcSessionAdmission.Busy
+            ) {
                 return BrowserWebRtcOpenResult.Busy
             }
             readyResources
@@ -270,46 +312,224 @@ class WebRtcProjectionController(
             selectedCodec = selected.codec.toBrowserCodec(),
             detail = selectionDetail(selected.usedFallback, selected.warnings),
         )
+        val connectedSequence = connectionSequence.incrementAndGet()
+        val publicMetadata = com.pebble.tecomheadunit.browser.BrowserWebRtcSessionPublicMetadata(
+            sessionId = initialSnapshot.sessionId,
+            deviceId = offer.deviceId,
+            accessMode = offer.accessMode,
+            colorSlot = offer.colorSlot,
+            displayName = offer.displayName,
+            isMain = preferredMainDeviceId() == offer.deviceId,
+            connectedSequence = connectedSequence,
+        )
         val runtime = SessionRuntime(
-            snapshot = initialSnapshot,
+            snapshot = initialSnapshot.copy(publicMetadata = publicMetadata),
+            ownerKey = offer.ownerKey,
             selectedCodec = selected.codec,
             preferredCodecs = preferredCodecs,
+            connectedSequence = connectedSequence,
         )
+        var replacedRuntime: SessionRuntime? = null
         synchronized(lifecycleLock) {
             if (closed || resources !== current) {
                 return BrowserWebRtcOpenResult.Rejected("Native WebRTC sender stopped")
             }
-            if (activeSession?.snapshot?.state in ACTIVE_SESSION_STATES) {
-                return BrowserWebRtcOpenResult.Busy
+            val active = activeSessionsLocked()
+            when (
+                val admission = browserWebRtcSessionAdmission(
+                    activeOwnersBySessionId = active.associate { it.snapshot.sessionId to it.ownerKey },
+                    requestedOwnerKey = offer.ownerKey,
+                    maximumSessions = currentSessionLimit(),
+                )
+            ) {
+                BrowserWebRtcSessionAdmission.Open -> Unit
+                BrowserWebRtcSessionAdmission.Busy -> return BrowserWebRtcOpenResult.Busy
+                is BrowserWebRtcSessionAdmission.Replace -> {
+                    val replaced = sessions.remove(admission.sessionId)
+                        ?: return BrowserWebRtcOpenResult.Rejected("WebRTC session changed")
+                    replaced.snapshot = replaced.snapshot.copy(
+                        state = BrowserWebRtcSessionState.CLOSED,
+                        answerSdp = null,
+                        detail = "Replaced by the same browser credential",
+                    )
+                    replacedRuntime = replaced
+                }
             }
-            activeSession = runtime
+            val usedColorSlots = activeSessionsLocked()
+                .asSequence()
+                .filter { it.ownerKey != offer.ownerKey }
+                .mapNotNull { it.snapshot.publicMetadata?.colorSlot }
+                .toSet()
+            val effectiveColorSlot = checkNotNull(
+                browserWebRtcEffectiveColorSlot(offer.colorSlot, usedColorSlots),
+            ) { "No live session color slot remains" }
+            runtime.snapshot = runtime.snapshot.copy(
+                publicMetadata = runtime.snapshot.publicMetadata?.copy(colorSlot = effectiveColorSlot),
+            )
+            sessions[runtime.snapshot.sessionId] = runtime
         }
 
-        if (!post { createPeerConnection(runtime, current, offer.sdp) }) {
+        if (
+            offer.accessMode == BrowserSessionAccessMode.CONTROL &&
+            preferredMainDeviceId() == null &&
+            runCatching { claimMainDeviceIfUnset(offer.deviceId) }.getOrDefault(false)
+        ) {
+            synchronized(lifecycleLock) {
+                if (isCurrentLocked(runtime)) {
+                    runtime.snapshot = runtime.snapshot.copy(
+                        publicMetadata = runtime.snapshot.publicMetadata?.copy(isMain = true),
+                    )
+                }
+            }
+        }
+
+        val replaced = replacedRuntime
+        if (!post {
+                replaced?.let(::disposePeer)
+                if (isActive(runtime)) createPeerConnection(runtime, current, offer.sdp)
+            }
+        ) {
             failSession(runtime, "WebRTC worker is closed")
             return BrowserWebRtcOpenResult.Rejected("Native WebRTC sender stopped")
         }
-        return BrowserWebRtcOpenResult.Accepted(initialSnapshot)
+        replaced?.let {
+            Log.i(
+                LOG_TAG,
+                "WEBRTC_SESSION_REPLACED old=${it.snapshot.sessionId} new=${runtime.snapshot.sessionId}",
+            )
+        }
+        return BrowserWebRtcOpenResult.Accepted(runtime.snapshot)
     }
 
-    override fun session(sessionId: String): BrowserWebRtcSessionSnapshot? = synchronized(lifecycleLock) {
-        activeSession?.takeIf { it.snapshot.sessionId == sessionId }?.snapshot
-    }
+    override fun session(sessionId: String, ownerKey: String): BrowserWebRtcSessionSnapshot? =
+        synchronized(lifecycleLock) {
+            val active = sessions[sessionId]
+                ?.takeIf { it.ownerKey == ownerKey }
+                ?.let { runtime ->
+                    runtime.snapshot.copy(
+                        publicMetadata = runtime.snapshot.publicMetadata?.copy(
+                            isMain = preferredMainDeviceId() == runtime.snapshot.publicMetadata?.deviceId,
+                        ),
+                    )
+                }
+            active ?: terminalSessions.get(sessionId, ownerKey)
+        }
 
-    override fun closeSession(sessionId: String): Boolean {
+    override fun closeSession(sessionId: String, ownerKey: String): Boolean {
         val runtime = synchronized(lifecycleLock) {
-            activeSession?.takeIf { it.snapshot.sessionId == sessionId }
+            sessions[sessionId]?.takeIf { it.ownerKey == ownerKey }
         } ?: return false
         return closeRuntime(runtime, "Closed by browser")
     }
 
-    override fun revokeActiveSessionForCredentialChange(): Boolean {
-        val runtime = synchronized(lifecycleLock) { activeSession } ?: return false
-        val revoked = closeRuntime(runtime, "Browser credential replaced")
-        if (revoked) {
-            Log.i(LOG_TAG, "WEBRTC_SESSION_CREDENTIAL_REVOKED id=${runtime.snapshot.sessionId}")
+    override fun closeSessionsForOwner(ownerKey: String): Int {
+        val owned = synchronized(lifecycleLock) {
+            sessions.values.filter { it.ownerKey == ownerKey }
         }
-        return revoked
+        return owned.count { runtime ->
+            closeRuntime(runtime, "Paired device revoked")
+        }
+    }
+
+    override fun closeSessionsForDevice(deviceId: String): Int {
+        val owned = synchronized(lifecycleLock) {
+            sessions.values.filter { it.snapshot.publicMetadata?.deviceId == deviceId }
+        }
+        return owned.count { runtime -> closeRuntime(runtime, "Paired-device permission changed") }
+    }
+
+    override fun updateDeviceDisplayName(deviceId: String, displayName: String): Int =
+        synchronized(lifecycleLock) {
+            var updatedSessions = 0
+            activeSessionsLocked().forEach { runtime ->
+                val renamed = runtime.snapshot.withDeviceDisplayName(deviceId, displayName)
+                if (renamed !== runtime.snapshot) {
+                    runtime.snapshot = renamed
+                    updatedSessions += 1
+                }
+            }
+            updatedSessions
+        }
+
+    override fun activeSessionMetadata(ownerKey: String) = synchronized(lifecycleLock) {
+        val metadata = activeSessionsLocked()
+            .firstOrNull { it.ownerKey == ownerKey }
+            ?.snapshot
+            ?.publicMetadata
+            ?: return@synchronized null
+        metadata.copy(isMain = preferredMainDeviceId() == metadata.deviceId)
+    }
+
+    override fun oldestInteractiveDeviceId(): String? = synchronized(lifecycleLock) {
+        activeSessionsLocked()
+            .asSequence()
+            .filter { it.accessMode == BrowserSessionAccessMode.CONTROL }
+            .sortedBy { it.connectedSequence }
+            .mapNotNull { it.snapshot.publicMetadata?.deviceId }
+            .firstOrNull()
+    }
+
+    override fun connectedDeviceIds(): Set<String> = synchronized(lifecycleLock) {
+        activeSessionsLocked().mapNotNullTo(linkedSetOf()) { it.snapshot.publicMetadata?.deviceId }
+    }
+
+    override fun connectedSessionMetadata() = synchronized(lifecycleLock) {
+        activeSessionsLocked()
+            .sortedBy { it.connectedSequence }
+            .mapNotNull { runtime ->
+                runtime.snapshot.publicMetadata?.let { metadata ->
+                    metadata.copy(isMain = preferredMainDeviceId() == metadata.deviceId)
+                }
+            }
+    }
+
+    override fun publishTouchPresence(
+        sourceOwnerKey: String,
+        event: BrowserTouchPresenceEvent,
+    ): Int {
+        val encoded = event.toJsonString()
+        val targets = synchronized(lifecycleLock) {
+            activeSessionsLocked().filter { runtime ->
+                runtime.ownerKey != sourceOwnerKey && runtime.controlDataChannel != null
+            }
+        }
+        if (targets.isEmpty()) return 0
+        if (!post {
+                targets.forEach { runtime ->
+                    val attachment = synchronized(lifecycleLock) { runtime.controlDataChannel }
+                        ?: return@forEach
+                    if (!sendControlText(runtime, attachment, encoded)) {
+                        releaseControlDataChannel(runtime, expectedChannel = attachment.channel)
+                    }
+                }
+            }
+        ) return 0
+        return targets.size
+    }
+
+    override fun reconcileSessionLimit(
+        maximumSessions: Int,
+        preferredMainDeviceId: String?,
+    ): Int {
+        val boundedLimit = maximumSessions.coerceIn(
+            com.pebble.tecomheadunit.browser.MAX_FREE_BROWSER_SESSIONS,
+            com.pebble.tecomheadunit.browser.MAX_PREMIUM_BROWSER_SESSIONS,
+        )
+        val toClose = synchronized(lifecycleLock) {
+            val active = activeSessionsLocked()
+            val metadata = active.mapNotNull { runtime ->
+                runtime.snapshot.publicMetadata?.copy(connectedSequence = runtime.connectedSequence)
+            }
+            val ids = browserWebRtcSessionsToCloseForLimit(
+                sessions = metadata,
+                maximumSessions = boundedLimit,
+                preferredMainDeviceId = preferredMainDeviceId,
+            ).toSet()
+            active.filter { it.snapshot.sessionId in ids }
+        }
+        return toClose.count { runtime ->
+            closeRuntime(runtime, "Concurrent session entitlement changed")
+        }
     }
 
     /**
@@ -317,20 +537,26 @@ class WebRtcProjectionController(
      * the codec preference stored by the phone app. The AA decoder and HTTP pairing stay alive.
      */
     fun closeActiveSessionForReconfiguration(): Boolean {
-        val sessionId = synchronized(lifecycleLock) { activeSession?.snapshot?.sessionId }
-            ?: return false
-        val closedSession = closeSession(sessionId)
-        if (closedSession) {
-            Log.i(LOG_TAG, "WEBRTC_SESSION_RECONFIGURE id=$sessionId")
+        val active = synchronized(lifecycleLock) { activeSessionsLocked() }
+        val closedCount = active.count { runtime ->
+            closeRuntime(runtime, "Projection media reconfiguring").also { closed ->
+                if (closed) Log.i(
+                    LOG_TAG,
+                    "WEBRTC_SESSION_RECONFIGURE id=${runtime.snapshot.sessionId}",
+                )
+            }
         }
-        return closedSession
+        return closedCount > 0
     }
 
     private fun closeRuntime(runtime: SessionRuntime, detail: String): Boolean {
         val accepted = synchronized(lifecycleLock) {
-            if (activeSession !== runtime || runtime.snapshot.state == BrowserWebRtcSessionState.CLOSED) {
+            if (sessions[runtime.snapshot.sessionId] !== runtime ||
+                runtime.snapshot.state == BrowserWebRtcSessionState.CLOSED
+            ) {
                 false
             } else {
+                sessions.remove(runtime.snapshot.sessionId)
                 runtime.snapshot = runtime.snapshot.copy(
                     state = BrowserWebRtcSessionState.CLOSED,
                     answerSdp = null,
@@ -348,15 +574,20 @@ class WebRtcProjectionController(
     }
 
     fun collectStats(callback: RTCStatsCollectorCallback): Boolean {
-        val runtime = synchronized(lifecycleLock) { activeSession }
-            ?.takeIf { it.snapshot.state == BrowserWebRtcSessionState.READY }
+        val runtime = synchronized(lifecycleLock) {
+            sessions.values
+                .asSequence()
+                .filter { it.snapshot.state == BrowserWebRtcSessionState.READY }
+                .sortedBy { it.connectedSequence }
+                .firstOrNull()
+        }
             ?: return false
         return post { runtime.peer?.getStats(callback) }
     }
 
     private fun startVideoStatsSampling(runtime: SessionRuntime) {
         synchronized(lifecycleLock) {
-            if (closed || activeSession !== runtime || runtime.videoStatsTask != null) return
+            if (!isCurrentLocked(runtime) || runtime.videoStatsTask != null) return
             val requestStats = Runnable {
                 if (!isActive(runtime)) return@Runnable
                 post {
@@ -387,7 +618,7 @@ class WebRtcProjectionController(
         val current = WebRtcOutboundVideoStatsParser.parse(report) ?: return
         var previous: WebRtcOutboundVideoStats? = null
         val accepted = synchronized(lifecycleLock) {
-            if (closed || activeSession !== runtime || runtime.snapshot.state !in ACTIVE_SESSION_STATES) {
+            if (!isCurrentLocked(runtime) || runtime.snapshot.state !in ACTIVE_SESSION_STATES) {
                 false
             } else {
                 previous = runtime.lastVideoStats
@@ -406,20 +637,20 @@ class WebRtcProjectionController(
         val detached = synchronized(lifecycleLock) {
             if (closed) return
             closed = true
-            val runtime = activeSession
-            if (runtime != null) {
+            val runtimes = sessions.values.toList()
+            runtimes.forEach { runtime ->
                 runtime.snapshot = runtime.snapshot.copy(
                     state = BrowserWebRtcSessionState.CLOSED,
                     answerSdp = null,
                     detail = "Native WebRTC sender closed",
                 )
             }
-            resources to runtime
+            resources to runtimes
         }
         microphoneFrameDispatcher?.close()
         statsScheduler.shutdownNow()
         val releaseFuture = runCatching {
-            worker.submit { detached.second?.let(::disposePeer) }
+            worker.submit { detached.second.forEach(::disposePeer) }
         }.getOrNull()
         runCatching { releaseFuture?.get(RELEASE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS) }
 
@@ -432,7 +663,8 @@ class WebRtcProjectionController(
         }
         synchronized(lifecycleLock) {
             resources = null
-            activeSession = null
+            sessions.clear()
+            terminalSessions.clear()
         }
         worker.shutdownNow()
         runCatching { worker.awaitTermination(RELEASE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS) }
@@ -607,6 +839,10 @@ class WebRtcProjectionController(
     }
 
     private fun capabilityDetail(current: CoreResources): String {
+        if (current.availableCodecs.isEmpty()) {
+            return "GPU decoder bridge ${config.width}x${config.height}@" +
+                "${config.framesPerSecond}; WebRTC encoder unavailable; JPEG fallback active"
+        }
         val accelerationByCodec = current.localCapabilities.encoders
             .filter { it.isUsable && it.codec in current.availableCodecs }
             .groupBy { it.codec }
@@ -640,14 +876,25 @@ class WebRtcProjectionController(
     }
 
     private fun failSession(runtime: SessionRuntime, detail: String) {
-        if (!isCurrent(runtime)) return
+        if (!markSessionTerminal(runtime, BrowserWebRtcSessionState.FAILED, detail)) return
+        disposePeer(runtime)
+        Log.w(LOG_TAG, "WEBRTC_SESSION_FAILED id=${runtime.snapshot.sessionId} ${runtime.snapshot.detail}")
+    }
+
+    private fun markSessionTerminal(
+        runtime: SessionRuntime,
+        state: BrowserWebRtcSessionState,
+        detail: String,
+    ): Boolean = synchronized(lifecycleLock) {
+        if (!isCurrentLocked(runtime)) return@synchronized false
         runtime.snapshot = runtime.snapshot.copy(
-            state = BrowserWebRtcSessionState.FAILED,
+            state = state,
             answerSdp = null,
             detail = sanitizeDetail(detail),
         )
-        disposePeer(runtime)
-        Log.w(LOG_TAG, "WEBRTC_SESSION_FAILED id=${runtime.snapshot.sessionId} ${runtime.snapshot.detail}")
+        sessions.remove(runtime.snapshot.sessionId)
+        terminalSessions.put(runtime.ownerKey, runtime.snapshot)
+        true
     }
 
     private fun disposePeer(runtime: SessionRuntime) {
@@ -678,7 +925,7 @@ class WebRtcProjectionController(
         val attachment = ControlDataChannelAttachment(channel, observer, codec)
         val accepted = synchronized(lifecycleLock) {
             if (
-                closed || activeSession !== runtime ||
+                !isCurrentLocked(runtime) ||
                 runtime.snapshot.state !in ACTIVE_SESSION_STATES ||
                 runtime.controlDataChannel != null
             ) {
@@ -708,18 +955,23 @@ class WebRtcProjectionController(
     private fun dispatchControlRequest(
         runtime: SessionRuntime,
         attachment: ControlDataChannelAttachment,
-        handler: (BrowserRelayRequest) -> BrowserRelayResponse,
+        handler: (String, BrowserRelayRequest) -> BrowserRelayResponse,
         accepted: WebRtcControlDecodeResult.Accepted,
     ) {
         if (!isCurrentControlDataChannel(runtime, attachment.channel, attachment.observer)) {
             attachment.codec.abandonRequest(accepted.requestId)
             return
         }
-        val response = if (isAllowedControlRequest(accepted.request)) {
-            runCatching { handler(accepted.request) }.getOrElse { error ->
+        val routeAllowed = isAllowedControlRoute(accepted.request)
+        val accessDenied = runtime.accessMode == BrowserSessionAccessMode.READ_ONLY &&
+            accepted.request.method == "POST"
+        val response = if (routeAllowed && !accessDenied) {
+            runCatching { handler(runtime.ownerKey, accepted.request) }.getOrElse { error ->
                 Log.w(LOG_TAG, "WEBRTC_CONTROL_REQUEST_FAILED ${safeErrorName(error)}")
                 controlErrorResponse(status = 500, error = "relay_request_failed")
             }
+        } else if (accessDenied) {
+            controlErrorResponse(status = 403, error = "read_only_session")
         } else {
             controlErrorResponse(status = 403, error = "control_route_forbidden")
         }
@@ -775,13 +1027,13 @@ class WebRtcProjectionController(
         channel: DataChannel,
         observer: DataChannel.Observer,
     ): Boolean = synchronized(lifecycleLock) {
-        !closed && activeSession === runtime &&
+        isCurrentLocked(runtime) &&
             runtime.snapshot.state in ACTIVE_SESSION_STATES &&
             runtime.controlDataChannel?.channel === channel &&
             runtime.controlDataChannel?.observer === observer
     }
 
-    private fun isAllowedControlRequest(request: BrowserRelayRequest): Boolean {
+    private fun isAllowedControlRoute(request: BrowserRelayRequest): Boolean {
         val path = request.target.substringBefore('?')
         return when (request.method) {
             "GET" -> path in CONTROL_GET_TARGETS
@@ -801,6 +1053,10 @@ class WebRtcProjectionController(
         if (runCatching(channel::label).getOrNull() != WebRtcMicrophoneFrameCodec.DATA_CHANNEL_LABEL) {
             return
         }
+        if (runtime.accessMode == BrowserSessionAccessMode.READ_ONLY) {
+            releaseDataChannel(channel, observer = null)
+            return
+        }
         val dispatcher = microphoneFrameDispatcher
         if (dispatcher == null) {
             releaseDataChannel(channel, observer = null)
@@ -810,7 +1066,7 @@ class WebRtcProjectionController(
         val observer = MicrophoneDataChannelObserver(runtime, channel, dispatcher)
         val accepted = synchronized(lifecycleLock) {
             if (
-                closed || activeSession !== runtime ||
+                !isCurrentLocked(runtime) ||
                 runtime.snapshot.state !in ACTIVE_SESSION_STATES ||
                 runtime.microphoneDataChannel != null
             ) {
@@ -856,7 +1112,7 @@ class WebRtcProjectionController(
         val attachment = AudioDataChannelAttachment(channel, observer, sender)
         val accepted = synchronized(lifecycleLock) {
             if (
-                closed || activeSession !== runtime ||
+                !isCurrentLocked(runtime) ||
                 runtime.snapshot.state !in ACTIVE_SESSION_STATES ||
                 runtime.audioDataChannels.containsKey(track)
             ) {
@@ -948,7 +1204,7 @@ class WebRtcProjectionController(
         channel: DataChannel,
         observer: DataChannel.Observer,
     ): Boolean = synchronized(lifecycleLock) {
-        !closed && activeSession === runtime &&
+        isCurrentLocked(runtime) &&
             runtime.microphoneDataChannel === channel &&
             runtime.microphoneDataChannelObserver === observer
     }
@@ -958,18 +1214,32 @@ class WebRtcProjectionController(
         track: BrowserAudioTrack,
         channel: DataChannel,
     ): Boolean = synchronized(lifecycleLock) {
-        !closed && activeSession === runtime &&
+        isCurrentLocked(runtime) &&
             runtime.snapshot.state in ACTIVE_SESSION_STATES &&
             runtime.audioDataChannels[track]?.channel === channel
     }
 
     private fun isActive(runtime: SessionRuntime): Boolean = synchronized(lifecycleLock) {
-        !closed && activeSession === runtime && runtime.snapshot.state in ACTIVE_SESSION_STATES
+        isCurrentLocked(runtime) && runtime.snapshot.state in ACTIVE_SESSION_STATES
     }
 
     private fun isCurrent(runtime: SessionRuntime): Boolean = synchronized(lifecycleLock) {
-        activeSession === runtime
+        isCurrentLocked(runtime)
     }
+
+    private fun activeSessionsLocked(): List<SessionRuntime> = sessions.values.filter {
+        it.snapshot.state in ACTIVE_SESSION_STATES
+    }
+
+    private fun isCurrentLocked(runtime: SessionRuntime): Boolean =
+        !closed && sessions[runtime.snapshot.sessionId] === runtime
+
+    private fun currentSessionLimit(): Int = runCatching(sessionLimitProvider)
+        .getOrDefault(com.pebble.tecomheadunit.browser.MAX_FREE_BROWSER_SESSIONS)
+        .coerceIn(
+            com.pebble.tecomheadunit.browser.MAX_FREE_BROWSER_SESSIONS,
+            com.pebble.tecomheadunit.browser.MAX_PREMIUM_BROWSER_SESSIONS,
+        )
 
     private fun postFor(runtime: SessionRuntime, action: () -> Unit) {
         if (!post { if (isActive(runtime)) action() }) {
@@ -1120,12 +1390,14 @@ class WebRtcProjectionController(
                 PeerConnection.PeerConnectionState.CLOSED -> {
                     stopVideoStatsSampling(runtime)
                     postFor(runtime) {
-                        if (runtime.snapshot.state in ACTIVE_SESSION_STATES) {
-                            runtime.snapshot = runtime.snapshot.copy(
-                                state = BrowserWebRtcSessionState.CLOSED,
-                                answerSdp = null,
-                                detail = "PeerConnection closed",
+                        if (
+                            markSessionTerminal(
+                                runtime,
+                                BrowserWebRtcSessionState.CLOSED,
+                                "PeerConnection closed",
                             )
+                        ) {
+                            disposePeer(runtime)
                         }
                     }
                 }
@@ -1138,7 +1410,7 @@ class WebRtcProjectionController(
         private val runtime: SessionRuntime,
         private val channel: DataChannel,
         private val codec: WebRtcControlDataChannelCodec,
-        private val handler: (BrowserRelayRequest) -> BrowserRelayResponse,
+        private val handler: (String, BrowserRelayRequest) -> BrowserRelayResponse,
     ) : DataChannel.Observer {
         override fun onBufferedAmountChange(previousAmount: Long) = Unit
 
@@ -1208,7 +1480,20 @@ class WebRtcProjectionController(
             val ownedBytes = ByteArray(byteCount)
             runCatching { data.slice().get(ownedBytes) }.getOrElse { return }
             val frame = WebRtcMicrophoneFrameCodec.decode(ownedBytes) ?: return
-            dispatcher.dispatch(frame)
+            if (!post {
+                    if (
+                        isCurrentMicrophoneDataChannel(runtime, channel, this) &&
+                        runtime.accessMode == BrowserSessionAccessMode.CONTROL
+                    ) {
+                        dispatcher.dispatch(frame) {
+                            isCurrentMicrophoneDataChannel(runtime, channel, this) &&
+                                runtime.accessMode == BrowserSessionAccessMode.CONTROL
+                        }
+                    }
+                }
+            ) {
+                releaseMicrophoneDataChannel(runtime, expectedChannel = channel)
+            }
         }
     }
 
@@ -1246,8 +1531,10 @@ class WebRtcProjectionController(
 
     private data class SessionRuntime(
         @Volatile var snapshot: BrowserWebRtcSessionSnapshot,
+        val ownerKey: String,
         val selectedCodec: WebRtcVideoCodec,
         val preferredCodecs: List<WebRtcVideoCodec>,
+        val connectedSequence: Long,
         var peer: PeerConnection? = null,
         var videoTransceiver: RtpTransceiver? = null,
         var controlDataChannel: ControlDataChannelAttachment? = null,
@@ -1257,7 +1544,10 @@ class WebRtcProjectionController(
         var lastVideoStats: WebRtcOutboundVideoStats? = null,
         val audioDataChannels: MutableMap<BrowserAudioTrack, AudioDataChannelAttachment> =
             mutableMapOf(),
-    )
+    ) {
+        val accessMode: BrowserSessionAccessMode
+            get() = snapshot.publicMetadata?.accessMode ?: BrowserSessionAccessMode.CONTROL
+    }
 
     private data class AudioDataChannelAttachment(
         val channel: DataChannel,
@@ -1353,6 +1643,7 @@ internal object WebRtcLocalNetworkPolicy {
 /** Keeps libwebrtc callbacks non-blocking and favors recent speech under receiver pressure. */
 private class MicrophoneFrameDispatcher(
     private val source: BrowserMicrophonePcmSource,
+    private val sessionAdmissionLock: Any,
 ) : Closeable {
     private val closed = AtomicBoolean(false)
     private val firstAcceptedFrameLogged = AtomicBoolean(false)
@@ -1366,18 +1657,22 @@ private class MicrophoneFrameDispatcher(
         ThreadPoolExecutor.DiscardOldestPolicy(),
     )
 
-    fun dispatch(frame: WebRtcMicrophoneFrame) {
+    fun dispatch(frame: WebRtcMicrophoneFrame, stillOwned: () -> Boolean) {
         if (closed.get()) return
         runCatching {
             executor.execute {
-                if (!closed.get()) {
-                    val accepted = source.acceptPcm16LittleEndian(
-                        frame.format,
-                        frame.pcm16LittleEndian,
-                    )
-                    if (accepted && firstAcceptedFrameLogged.compareAndSet(false, true)) {
-                        Log.i(LOG_TAG, "WEBRTC_MICROPHONE_FRAME_RECEIVED")
-                    }
+                val accepted = dispatchOwnedMicrophoneFrameWithAdmissionLock(
+                    lock = sessionAdmissionLock,
+                    stillOwned = stillOwned,
+                ) {
+                    !closed.get() &&
+                        source.acceptPcm16LittleEndian(
+                            frame.format,
+                            frame.pcm16LittleEndian,
+                        )
+                }
+                if (accepted && firstAcceptedFrameLogged.compareAndSet(false, true)) {
+                    Log.i(LOG_TAG, "WEBRTC_MICROPHONE_FRAME_RECEIVED")
                 }
             }
         }
@@ -1393,6 +1688,22 @@ private class MicrophoneFrameDispatcher(
         const val MICROPHONE_DISPATCH_QUEUE_CAPACITY = 8
         const val THREAD_NAME = "TecomWebRtcMicrophone"
     }
+}
+
+internal fun dispatchOwnedMicrophoneFrameIfCurrent(
+    stillOwned: () -> Boolean,
+    dispatch: () -> Boolean,
+): Boolean {
+    if (!runCatching(stillOwned).getOrDefault(false)) return false
+    return runCatching(dispatch).getOrDefault(false)
+}
+
+internal fun dispatchOwnedMicrophoneFrameWithAdmissionLock(
+    lock: Any,
+    stillOwned: () -> Boolean,
+    dispatch: () -> Boolean,
+): Boolean = synchronized(lock) {
+    dispatchOwnedMicrophoneFrameIfCurrent(stillOwned, dispatch)
 }
 
 private object WebRtcLibraryInitializer {

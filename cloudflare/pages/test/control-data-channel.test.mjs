@@ -47,11 +47,11 @@ function loadCloudRelayReconnectDelayPolicy() {
   return vm.runInNewContext(`(${source})`);
 }
 
-function createControlChannel({ bufferedAmount = 0, send } = {}) {
+function createControlChannel({ bufferedAmount = 0, readyState = "open", send } = {}) {
   const listeners = new Map();
   return {
     bufferedAmount,
-    readyState: "open",
+    readyState,
     sent: [],
     addEventListener(type, listener) {
       const entries = listeners.get(type) ?? [];
@@ -59,6 +59,8 @@ function createControlChannel({ bufferedAmount = 0, send } = {}) {
       listeners.set(type, entries);
     },
     emit(type, data) {
+      if (type === "open") this.readyState = "open";
+      if (type === "close") this.readyState = "closed";
       for (const listener of listeners.get(type) ?? []) listener({ data });
     },
     send(envelope) {
@@ -75,10 +77,12 @@ function createControlChannel({ bufferedAmount = 0, send } = {}) {
 function loadControlRuntime({
   maxBufferedAmount = 4096,
   maxInFlight = 2,
+  openTimeoutMillis = 25,
   requestTimeoutMillis = 25,
+  starting = false,
 } = {}) {
   const source = extractAppSource(
-    "class WebRtcControlTransport {",
+    "function cancelControlWebRtcOpenWatchdog",
     "\n  function updateMicrophoneState",
   );
   const cloudRequests = [];
@@ -102,6 +106,7 @@ function loadControlRuntime({
     CLOUD_RELAY_REQUEST_ID_PATTERN: /^[A-Za-z0-9_-]{16,64}$/u,
     CONTROL_WEBRTC_MAX_IN_FLIGHT_REQUESTS: maxInFlight,
     CONTROL_WEBRTC_MAX_MESSAGE_BYTES: maxBufferedAmount,
+    CONTROL_WEBRTC_OPEN_TIMEOUT_MILLIS: openTimeoutMillis,
     CONTROL_WEBRTC_REQUEST_TIMEOUT_MILLIS: requestTimeoutMillis,
     VIEWPORT_CLIENT_ID: "viewport-client",
     cloudRequest(pathname, options) {
@@ -114,16 +119,26 @@ function loadControlRuntime({
     let browserCredential = "browser-credential";
     let cloudRelayTransport = null;
     let webRtcControlTransport = null;
+    let webRtcControlOpenTimer = 0;
+    let webRtcControlNegotiatingGeneration = 0;
     let webRtcGeneration = 1;
     let webRtcPeer = null;
-    let webRtcStarting = false;
+    let webRtcStarting = ${starting};
     let localControlCutover = false;
     let streamStateKey = "";
+    let failWebRtcCalls = 0;
 
     function setStreamState(key) { streamStateKey = key; }
     function cancelNoticeRequestForRetry() {}
     function ensureNoticesLoaded() {}
-    function failWebRtc() {}
+    function failWebRtc() {
+      failWebRtcCalls += 1;
+      webRtcGeneration += 1;
+      webRtcStarting = false;
+      webRtcPeer = null;
+      cancelControlWebRtcOpenWatchdog();
+      webRtcControlTransport = null;
+    }
 
     class CloudRelayTransport {
       request(pathname, options) {
@@ -142,11 +157,23 @@ function loadControlRuntime({
     globalThis.createDirectTransport = channel => {
       const transport = new WebRtcControlTransport(channel, webRtcGeneration);
       webRtcControlTransport = transport;
+      beginControlWebRtcChannelNegotiation(transport);
+      if (channel.readyState === "open") channel.emit("open");
       return transport;
     };
     globalThis.invokeApi = (pathname, options, credential) =>
       api(pathname, options, credential);
     globalThis.normalizeRelayHeaders = value => relayHeaders(value);
+    globalThis.failureCount = () => failWebRtcCalls;
+    globalThis.setPeer = value => { webRtcPeer = value; };
+    globalThis.setStarting = value => { webRtcStarting = value; };
+    globalThis.markPeerConnected = () => {
+      if (webRtcPeer) webRtcPeer.connectionState = "connected";
+      armControlWebRtcOpenWatchdog(webRtcGeneration);
+      webRtcStarting = false;
+    };
+    globalThis.setLocalControlCutover = value => { localControlCutover = value; };
+    globalThis.advanceGeneration = () => { webRtcGeneration += 1; };
   `, context);
 
   return {
@@ -154,6 +181,12 @@ function loadControlRuntime({
     createDirectTransport: context.createDirectTransport,
     invokeApi: context.invokeApi,
     normalizeRelayHeaders: context.normalizeRelayHeaders,
+    failureCount: context.failureCount,
+    setPeer: context.setPeer,
+    setStarting: context.setStarting,
+    markPeerConnected: context.markPeerConnected,
+    setLocalControlCutover: context.setLocalControlCutover,
+    advanceGeneration: context.advanceGeneration,
   };
 }
 
@@ -168,6 +201,13 @@ test("WebRTC control channel is ordered and reliable by default", () => {
   assert.doesNotMatch(setup, /maxRetransmits|maxPacketLifeTime/u);
   assert.match(appScript, /capabilities\.controlDataChannelV1/u);
   assert.match(appScript, /cloudRelayTransport\.request\(path, requestOptions\)/u);
+  assert.match(appScript, /const CONTROL_WEBRTC_OPEN_TIMEOUT_MILLIS = AUDIO_WEBRTC_OPEN_TIMEOUT_MILLIS;/u);
+  assert.match(setup, /beginControlWebRtcChannelNegotiation\(transport\)/u);
+  assert.doesNotMatch(setup, /armControlWebRtcOpenWatchdog\(transport\)/u);
+  assert.match(
+    appScript,
+    /cancelWebRtcRecovery\(true\);\s+armControlWebRtcOpenWatchdog\(generation\);/u,
+  );
 });
 
 test("cloud relay reconnect uses bounded equal jitter", () => {
@@ -295,6 +335,106 @@ test("touch without an open direct channel is rejected locally", async () => {
     runtime.invokeApi("/api/touch", { method: "POST", body: "touch" }, "credential"),
     /Local WebRTC control channel unavailable/u,
   );
+  assert.equal(runtime.cloudRequests.length, 0);
+});
+
+test("connected peer preserves local-only requests until its delayed control channel opens", async () => {
+  const runtime = loadControlRuntime({ openTimeoutMillis: 30, starting: true });
+  const channel = createControlChannel({ readyState: "connecting" });
+  runtime.setPeer({ connectionState: "connecting" });
+  runtime.setLocalControlCutover(true);
+  runtime.createDirectTransport(channel);
+  runtime.markPeerConnected();
+
+  await assert.rejects(
+    runtime.invokeApi(
+      "/api/projection/viewport?width=1920&height=1080",
+      { method: "POST" },
+      "credential",
+    ),
+    /Local WebRTC control channel unavailable/u,
+  );
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(runtime.failureCount(), 0);
+  assert.equal(runtime.cloudRequests.length, 0);
+  channel.emit("open");
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.equal(runtime.failureCount(), 0);
+});
+
+test("control channel open watchdog starts after peer connection and fails exactly once", async () => {
+  const runtime = loadControlRuntime({ openTimeoutMillis: 5, starting: true });
+  const channel = createControlChannel({ readyState: "connecting" });
+  runtime.setPeer({ connectionState: "connecting" });
+  runtime.setLocalControlCutover(true);
+  runtime.createDirectTransport(channel);
+  runtime.markPeerConnected();
+
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(runtime.failureCount(), 1);
+  assert.equal(runtime.cloudRequests.length, 0);
+
+  channel.emit("open");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(runtime.failureCount(), 1);
+});
+
+test("slow pre-connect signaling does not consume the control channel open budget", async () => {
+  const runtime = loadControlRuntime({ openTimeoutMillis: 5, starting: true });
+  const channel = createControlChannel({ readyState: "connecting" });
+  runtime.setPeer({ connectionState: "connecting" });
+  runtime.setLocalControlCutover(true);
+  runtime.createDirectTransport(channel);
+
+  // This represents ICE gathering and answer exchange taking longer than the post-connect budget.
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(runtime.failureCount(), 0);
+
+  runtime.markPeerConnected();
+  channel.emit("open");
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(runtime.failureCount(), 0);
+});
+
+test("stale generation control watchdog cannot fail the replacement peer", async () => {
+  const runtime = loadControlRuntime({ openTimeoutMillis: 5, starting: true });
+  const channel = createControlChannel({ readyState: "connecting" });
+  runtime.setPeer({ connectionState: "connecting" });
+  runtime.createDirectTransport(channel);
+  runtime.markPeerConnected();
+  runtime.advanceGeneration();
+
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(runtime.failureCount(), 0);
+});
+
+test("opened control channel close remains an immediate fail-closed error", async () => {
+  const runtime = loadControlRuntime({ openTimeoutMillis: 30, starting: true });
+  const channel = createControlChannel({ readyState: "connecting" });
+  runtime.setPeer({ connectionState: "connecting" });
+  runtime.createDirectTransport(channel);
+  runtime.markPeerConnected();
+  channel.emit("open");
+  channel.emit("close");
+
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(runtime.failureCount(), 1);
+  assert.equal(runtime.cloudRequests.length, 0);
+});
+
+test("missing direct channel after an established cutover still restarts WebRTC", async () => {
+  const runtime = loadControlRuntime();
+  runtime.setPeer({ connectionState: "connected" });
+  runtime.setLocalControlCutover(true);
+
+  await assert.rejects(
+    runtime.invokeApi("/api/touch", { method: "POST", body: "touch" }, "credential"),
+    /Local WebRTC control channel unavailable/u,
+  );
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(runtime.failureCount(), 1);
   assert.equal(runtime.cloudRequests.length, 0);
 });
 

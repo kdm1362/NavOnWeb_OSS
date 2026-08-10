@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Exercises lifecycle and input boundaries without claiming to speak the AA
- * protocol. This is the default until the audited AASDK native port is linked.
+ * protocol. This is the default until the optional AASDK native port is linked.
  */
 class BenchOpenAutoEngine : OpenAutoEngine {
     private val snapshot = AtomicReference(

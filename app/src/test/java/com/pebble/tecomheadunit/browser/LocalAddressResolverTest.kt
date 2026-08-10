@@ -10,8 +10,8 @@ class LocalAddressResolverTest {
     @Test
     fun `LAN address remains preferred when available`() {
         assertEquals(
-            "10.0.0.231",
-            LocalAddressResolver.advertisedAddress("10.0.0.231"),
+            "192.168.50.10",
+            LocalAddressResolver.advertisedAddress("192.168.50.10"),
         )
     }
 

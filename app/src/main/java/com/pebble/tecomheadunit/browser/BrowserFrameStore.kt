@@ -102,6 +102,13 @@ class BrowserFrameStore(
         listener?.invoke(count)
     }
 
+    /** Clears only the listener installed by the closing producer. */
+    internal fun clearSubscriberListener(expected: (Int) -> Unit) {
+        lock.withLock {
+            if (subscriberListener === expected) subscriberListener = null
+        }
+    }
+
     override fun close() {
         val listener: ((Int) -> Unit)?
         lock.withLock {

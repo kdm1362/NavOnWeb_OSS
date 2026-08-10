@@ -123,7 +123,7 @@ internal class ProjectionViewportManager(
 
     /**
      * Permanently disables portrait protocol enums for this manager/session and immediately
-     * schedules the audited landscape+margin fallback for the last valid browser geometry.
+     * schedules the supported landscape+margin fallback for the last valid browser geometry.
      * Repeated calls are idempotent, so a browser resize cannot start a portrait retry loop.
      */
     internal fun disablePortraitEncodedViewportsForSession(): ProjectionViewportSnapshot {

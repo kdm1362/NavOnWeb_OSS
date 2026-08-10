@@ -19,6 +19,7 @@ import com.pebble.tecomheadunit.MainActivity
 import com.pebble.tecomheadunit.R
 import com.pebble.tecomheadunit.billing.PremiumAccessGate
 import com.pebble.tecomheadunit.notification.NavOnWebNotificationAssets
+import com.pebble.tecomheadunit.service.ProjectionService
 
 /**
  * Keeps Android 16's public tethering callback registered while hotspot automation is selected.
@@ -33,6 +34,10 @@ class HotspotAutomationMonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_DISABLE_HOTSPOT_AUTOMATION) {
+            disableHotspotAutomation()
+            return START_NOT_STICKY
+        }
         if (!PremiumAccessGate.isPremium(applicationContext)) {
             stopMonitoringAndSelf()
             return START_NOT_STICKY
@@ -94,6 +99,13 @@ class HotspotAutomationMonitorService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val disableAutomation = PendingIntent.getService(
+            this,
+            DISABLE_AUTOMATION_REQUEST_CODE,
+            Intent(this, HotspotAutomationMonitorService::class.java)
+                .setAction(ACTION_DISABLE_HOTSPOT_AUTOMATION),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val text = if (waitingForBaseline) {
             getString(R.string.hotspot_automation_waiting)
         } else {
@@ -104,6 +116,11 @@ class HotspotAutomationMonitorService : Service() {
             .setContentTitle(getString(R.string.hotspot_automation_title))
             .setContentText(text)
             .setContentIntent(openSettings)
+            .addAction(
+                NavOnWebNotificationAssets.smallIcon,
+                getString(R.string.hotspot_automation_disable_action),
+                disableAutomation,
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -120,6 +137,21 @@ class HotspotAutomationMonitorService : Service() {
         )
     }
 
+    private fun disableHotspotAutomation() {
+        val result = AutomationServiceControllerProvider.get(applicationContext)
+            .disableModeIfSelected(AutomationTriggerMode.HOTSPOT)
+        if (result is AutomationDispatchResult.ModeDisabled) {
+            ProjectionService.stopIfStartedByAutomation(
+                context = applicationContext,
+                owner = AutomationProjectionOwner(
+                    source = result.disabledSource,
+                    generation = result.disabledGeneration,
+                ),
+            )
+        }
+        stopMonitoringAndSelf()
+    }
+
     private fun stopMonitoringAndSelf() {
         source?.stop()
         source = null
@@ -131,8 +163,11 @@ class HotspotAutomationMonitorService : Service() {
     companion object {
         const val ACTION_OPEN_AUTOMATION_SETTINGS =
             "com.eigenkodex.navonweb.action.OPEN_AUTOMATION_SETTINGS"
+        const val ACTION_DISABLE_HOTSPOT_AUTOMATION =
+            "com.eigenkodex.navonweb.action.DISABLE_HOTSPOT_AUTOMATION"
         private const val CHANNEL_ID = "hotspot_automation_monitor"
         private const val NOTIFICATION_ID = 5282
+        private const val DISABLE_AUTOMATION_REQUEST_CODE = 5283
 
         /** Applies the persisted mutually-exclusive mode after a user setting change. */
         fun refresh(context: Context): Boolean {

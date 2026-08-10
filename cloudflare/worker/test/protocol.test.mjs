@@ -30,12 +30,12 @@ const OTHER_SECRET = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 const ZERO_SECRET_ROOM = "DwBzhbb51LfusnSGBa_hqY";
 const ROUTE_NONCE_A = "CCCCCCCCCCCCCCCCCCCCCC";
 const ROUTE_NONCE_B = "DDDDDDDDDDDDDDDDDDDDDD";
+const ROUTE_NONCE_C = "HHHHHHHHHHHHHHHHHHHHHH";
+const ROUTE_NONCE_D = "IIIIIIIIIIIIIIIIIIIIII";
 const PAIRING_GENERATION_A = "E".repeat(43);
 const PAIRING_GENERATION_B = "F".repeat(43);
-const PAIRING_GENERATION_C = "G".repeat(43);
 const PAIRING_EPOCH_A = 1;
 const PAIRING_EPOCH_B = 2;
-const PAIRING_EPOCH_C = 3;
 
 test("matches Android ASCII-secret SHA-256 base64url room derivation", async () => {
   assert.equal(await deriveRoomIdFromDeviceSecret(ZERO_SECRET), ZERO_SECRET_ROOM);
@@ -151,17 +151,36 @@ test("pairing slot object names are keyed, opaque, and network scoped", async ()
   assert.equal(first.includes("192.0.2.9"), false);
 });
 
-test("v2 signed route cookie binds its room and revocable route nonce", async () => {
+test("v3 route cookie authenticates issuance while legacy v2 remains reconnect-only", async () => {
   const secret = "test-bootstrap-secret-32-bytes-minimum";
   const now = 1_800_000_000_000;
   const value = await createRouteCookieValue(secret, ZERO_SECRET_ROOM, ROUTE_NONCE_A, now, 60);
   assert.deepEqual(await verifyRouteCookieValue(secret, value, now + 30_000), {
+    version: "v3",
     roomId: ZERO_SECRET_ROOM,
     routeNonce: ROUTE_NONCE_A,
+    issuedAtSeconds: 1_800_000_000,
+    expiresAtSeconds: 1_800_000_060,
+  });
+  const legacy = await createRouteCookieValue(
+    secret,
+    ZERO_SECRET_ROOM,
+    ROUTE_NONCE_B,
+    now,
+    60,
+    "v2",
+  );
+  assert.deepEqual(await verifyRouteCookieValue(secret, legacy, now + 30_000), {
+    version: "v2",
+    roomId: ZERO_SECRET_ROOM,
+    routeNonce: ROUTE_NONCE_B,
+    issuedAtSeconds: null,
     expiresAtSeconds: 1_800_000_060,
   });
   assert.equal(await verifyRouteCookieValue(secret, value, now + 60_000), null);
   assert.equal(await verifyRouteCookieValue(secret, `${value.slice(0, -1)}A`, now), null);
+  const issuedAtTampered = value.replace(".1800000000.", ".1800000001.");
+  assert.equal(await verifyRouteCookieValue(secret, issuedAtTampered, now), null);
   assert.equal(
     await verifyRouteCookieValue(
       secret,
@@ -274,14 +293,14 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   const bootstrapBinding = new InMemoryBootstrapBinding();
   const signalRooms = new CapturingSignalBinding();
   const env = {
-    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
+    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: bootstrapBinding,
     SIGNAL_ROOMS: signalRooms,
   };
   const networkHeaders = { "CF-Connecting-IP": "2001:db8:abcd:12::9" };
 
-  const registration = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
+  const registration = await worker.fetch(new Request("https://signal.example/bootstrap/device", {
     method: "POST",
     headers: {
       ...networkHeaders,
@@ -294,7 +313,7 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   }), env);
   assert.equal(registration.status, 204);
 
-  const collision = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
+  const collision = await worker.fetch(new Request("https://signal.example/bootstrap/device", {
     method: "POST",
     headers: {
       ...networkHeaders,
@@ -307,17 +326,17 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   }), env);
   assert.equal(collision.status, 409);
 
-  const exchange = await worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
+  const exchange = await worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
     method: "POST",
     headers: {
       ...networkHeaders,
-      Origin: "https://navonweb.com",
+      Origin: "https://viewer.example",
       "Content-Type": "text/plain; charset=utf-8",
     },
     body: "12345678",
   }), env);
   assert.equal(exchange.status, 204);
-  assert.equal(exchange.headers.get("access-control-allow-origin"), "https://navonweb.com");
+  assert.equal(exchange.headers.get("access-control-allow-origin"), "https://viewer.example");
   assert.equal(exchange.headers.get("access-control-allow-credentials"), "true");
   const setCookies = exchange.headers.getSetCookie();
   const clientCookie = setCookies.find((value) => value.startsWith("__Host-navonweb_client="));
@@ -325,11 +344,11 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   assert.match(clientCookie, /; HttpOnly; Secure; SameSite=Strict$/u);
   assert.match(routeCookie, /; HttpOnly; Secure; SameSite=Strict$/u);
 
-  const consumedAgain = await worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
+  const consumedAgain = await worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
     method: "POST",
     headers: {
       ...networkHeaders,
-      Origin: "https://navonweb.com",
+      Origin: "https://viewer.example",
       "Content-Type": "text/plain; charset=utf-8",
     },
     body: "12345678",
@@ -347,27 +366,30 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   )).status, 409);
 
   const cookie = routeCookie.split(";", 1)[0];
-  const routed = await worker.fetch(new Request("https://navonweb.com/_nw/ws/browser", {
+  const routed = await worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
     headers: {
       ...networkHeaders,
       Cookie: cookie,
-      Origin: "https://navonweb.com",
+      Origin: "https://viewer.example",
       Upgrade: "websocket",
     },
   }), env);
   assert.equal(routed.status, 200);
   assert.equal(signalRooms.lastRoomId, ZERO_SECRET_ROOM);
   assert.equal(signalRooms.lastRole, "browser");
+  const signedRoute = await signedRouteFromCookie(env, cookie);
+  assert.equal(signedRoute.version, "v3");
+  assert.equal(signalRooms.lastRouteIssuedAt, String(signedRoute.issuedAtSeconds));
 });
 
 test("bootstrap lookup is unavailable from a different egress network", async () => {
   const env = {
-    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
+    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: new InMemoryBootstrapBinding(),
     SIGNAL_ROOMS: new CapturingSignalBinding(),
   };
-  await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
+  await worker.fetch(new Request("https://signal.example/bootstrap/device", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": "192.0.2.10",
@@ -378,11 +400,11 @@ test("bootstrap lookup is unavailable from a different egress network", async ()
     },
     body: "65432109",
   }), env);
-  const response = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/pair", {
+  const response = await worker.fetch(new Request("https://signal.example/bootstrap/pair", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": "192.0.2.11",
-      Origin: "https://navonweb.com",
+      Origin: "https://viewer.example",
       "Content-Type": "text/plain",
     },
     body: "65432109",
@@ -402,7 +424,7 @@ test("device pairing publication epoch must be a positive safe integer", async (
     };
     if (epoch !== undefined) headers["X-NavOnWeb-Pairing-Epoch"] = epoch;
     const response = await worker.fetch(new Request(
-      "https://signal.navonweb.com/bootstrap/device",
+      "https://signal.example/bootstrap/device",
       { method: "POST", headers, body: "65432109" },
     ), env);
     assert.equal(response.status, 400);
@@ -421,14 +443,14 @@ test("pairing protocol v2 requires a strictly bounded remaining TTL", async () =
     };
     if (ttl !== undefined) headers["X-NavOnWeb-Pairing-Ttl-Millis"] = ttl;
     const response = await worker.fetch(new Request(
-      "https://signal.navonweb.com/bootstrap/device",
+      "https://signal.example/bootstrap/device",
       { method: "POST", headers, body: "65432109" },
     ), env);
     assert.equal(response.status, 400);
   }
 });
 
-test("delayed first registration uses remaining TTL and retries never extend it", async () => {
+test("delayed first registration uses remaining TTL and retries never extend its bootstrap slot", async () => {
   const env = bootstrapEnvironment();
   const network = "192.0.2.14";
   const before = Date.now();
@@ -452,7 +474,7 @@ test("delayed first registration uses remaining TTL and retries never extend it"
   assert.ok(firstSlot.expiresAt <= after + 1_000);
 
   // Even a compromised retry claiming a fresh ten minutes receives the
-  // canonical first-reserve expiry and cannot extend SignalRoom state.
+  // canonical first-reserve expiry. No SignalRoom registry is touched.
   assert.equal((await deviceRegistration(
     env,
     network,
@@ -462,10 +484,7 @@ test("delayed first registration uses remaining TTL and retries never extend it"
     600_000,
   )).status, 204);
   assert.equal((await env.PAIRING_BOOTSTRAP.storedSlot(slotName)).expiresAt, firstSlot.expiresAt);
-  assert.equal(
-    env.SIGNAL_ROOMS.activePairingExpiresAt.get(ZERO_SECRET_ROOM),
-    firstSlot.expiresAt,
-  );
+  assert.equal(env.SIGNAL_ROOMS.fetchCount, 0);
 });
 
 test("bootstrap durable object limits browser and device credential attempts", async () => {
@@ -667,38 +686,20 @@ test("device registration limits are credential-scoped before the high CGNAT cei
   );
 });
 
-test("identical downstream-failure retries do not exhaust the publication budget", async () => {
+test("pairing bootstrap does not depend on SignalRoom storage or availability", async () => {
   const env = {
     ...bootstrapEnvironment(),
     SIGNAL_ROOMS: new AlwaysFailingSignalBinding(),
   };
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    assert.equal(
-      (await deviceRegistration(env, "192.0.2.56", ZERO_SECRET, "44444444")).status,
-      503,
-    );
-  }
-
-  const distinctEnv = {
-    ...bootstrapEnvironment(),
-    SIGNAL_ROOMS: new AlwaysFailingSignalBinding(),
-  };
-  for (let publication = 1; publication <= 12; publication += 1) {
-    assert.equal((await deviceRegistration(
-      distinctEnv,
-      "192.0.2.57",
-      ZERO_SECRET,
-      String(10_000_000 + publication),
-      publication,
-    )).status, 503);
-  }
-  assert.equal((await deviceRegistration(
-    distinctEnv,
-    "192.0.2.57",
-    ZERO_SECRET,
-    "20000000",
-    13,
-  )).status, 429);
+  assert.equal(
+    (await deviceRegistration(env, "192.0.2.56", ZERO_SECRET, "44444444")).status,
+    204,
+  );
+  const paired = await browserPairAttempt(env, "192.0.2.56", "44444444");
+  assert.equal(paired.status, 204);
+  const routeCookie = responseCookie(paired, ROUTE_COOKIE_NAME);
+  assert.equal((await browserRouteStatus(env, routeCookie)).status, 204);
+  assert.equal(env.SIGNAL_ROOMS.fetchCount, 0);
 });
 
 test("invalid and unknown pairing codes have the same public failure body", async () => {
@@ -710,7 +711,7 @@ test("invalid and unknown pairing codes have the same public failure body", asyn
   assert.deepEqual(await invalid.json(), await unknown.json());
 });
 
-test("same-origin route status validates only the signed current or pending cookie", async () => {
+test("same-origin route status validates only the self-contained signed cookie", async () => {
   const env = bootstrapEnvironment();
   const network = "192.0.2.67";
 
@@ -723,16 +724,63 @@ test("same-origin route status validates only the signed current or pending cook
   assert.equal((await deviceRegistration(env, network, ZERO_SECRET, "12121212")).status, 204);
   const paired = await browserPairAttempt(env, network, "12121212");
   assert.equal(paired.status, 204);
-  const pendingCookie = responseCookie(paired, ROUTE_COOKIE_NAME);
-  assert.equal((await browserRouteStatus(env, pendingCookie)).status, 204);
-  assert.equal((await browserSocket(env, pendingCookie)).status, 200);
-  assert.equal((await browserRouteStatus(env, pendingCookie)).status, 204);
+  const routeCookie = responseCookie(paired, ROUTE_COOKIE_NAME);
+  assert.equal((await browserRouteStatus(env, routeCookie)).status, 204);
+  assert.equal((await browserSocket(env, routeCookie)).status, 200);
+  assert.equal((await browserRouteStatus(env, routeCookie)).status, 204);
 
-  const crossSite = await browserRouteStatus(env, pendingCookie, "cross-site");
+  const route = await signedRouteFromCookie(env, routeCookie);
+  const expiredValue = await createRouteCookieValue(
+    env.BOOTSTRAP_HMAC_KEY,
+    route.roomId,
+    route.routeNonce,
+    Date.now() - 120_000,
+    60,
+  );
+  assert.equal((await browserRouteStatus(
+    env,
+    `${ROUTE_COOKIE_NAME}=${expiredValue}`,
+  )).status, 401);
+  const routeValue = readCookie(routeCookie, ROUTE_COOKIE_NAME);
+  const tamperedValue = `${routeValue.slice(0, -1)}${routeValue.endsWith("A") ? "B" : "A"}`;
+  assert.equal((await browserRouteStatus(
+    env,
+    `${ROUTE_COOKIE_NAME}=${tamperedValue}`,
+  )).status, 401);
+
+  const crossSite = await browserRouteStatus(env, routeCookie, "cross-site");
   assert.equal(crossSite.status, 403);
 });
 
-test("route status distinguishes a revoked cookie from a transient room outage", async () => {
+test("legacy v2 route remains valid while outer routing strips forged internal headers", async () => {
+  const env = bootstrapEnvironment();
+  const legacyValue = await createRouteCookieValue(
+    env.BOOTSTRAP_HMAC_KEY,
+    ZERO_SECRET_ROOM,
+    ROUTE_NONCE_A,
+    Date.now(),
+    60,
+    "v2",
+  );
+  const cookie = `${ROUTE_COOKIE_NAME}=${legacyValue}`;
+  assert.equal((await browserRouteStatus(env, cookie)).status, 204);
+  const routed = await worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
+    headers: {
+      Cookie: cookie,
+      Origin: "https://viewer.example",
+      Upgrade: "websocket",
+      "X-NavOnWeb-Route-Issued-At": String(Math.floor(Date.now() / 1000)),
+      "X-NavOnWeb-Route-Nonce": ROUTE_NONCE_B,
+      "X-NavOnWeb-Legacy-Browser-Route": "1",
+    },
+  }), env);
+  assert.equal(routed.status, 200);
+  assert.equal(env.SIGNAL_ROOMS.lastRouteIssuedAt, null);
+  assert.equal(env.SIGNAL_ROOMS.lastRouteNonce, ROUTE_NONCE_A);
+  assert.equal(env.SIGNAL_ROOMS.lastLegacyBrowserRoute, null);
+});
+
+test("new pairings preserve every signed cookie and route status is independent of room outages", async () => {
   const env = bootstrapEnvironment();
   const network = "192.0.2.68";
 
@@ -751,19 +799,21 @@ test("route status distinguishes a revoked cookie from a transient room outage",
   const second = await browserPairAttempt(env, network, "14141414");
   const secondCookie = responseCookie(second, ROUTE_COOKIE_NAME);
   assert.equal((await browserSocket(env, secondCookie)).status, 200);
-  assert.equal((await browserRouteStatus(env, firstCookie)).status, 401);
+  assert.equal((await browserRouteStatus(env, firstCookie)).status, 204);
   assert.equal((await browserRouteStatus(env, secondCookie)).status, 204);
 
   const unavailable = {
     ...env,
     SIGNAL_ROOMS: new AlwaysFailingSignalBinding(),
   };
-  assert.equal((await browserRouteStatus(unavailable, secondCookie)).status, 503);
+  assert.equal((await browserRouteStatus(unavailable, firstCookie)).status, 204);
+  assert.equal((await browserRouteStatus(unavailable, secondCookie)).status, 204);
+  assert.equal(unavailable.SIGNAL_ROOMS.fetchCount, 0);
 });
 
 test("route status is read-only and rejects unsupported methods", async () => {
   const response = await worker.fetch(new Request(
-    "https://navonweb.com/_nw/bootstrap/route",
+    "https://viewer.example/_nw/bootstrap/route",
     { method: "POST" },
   ), bootstrapEnvironment());
   assert.equal(response.status, 405);
@@ -772,11 +822,11 @@ test("route status is read-only and rejects unsupported methods", async () => {
 
 test("device WebSocket authentication failures expose one uniform response", async () => {
   const missing = await worker.fetch(new Request(
-    `https://signal.navonweb.com/ws/device/${ZERO_SECRET_ROOM}`,
+    `https://signal.example/ws/device/${ZERO_SECRET_ROOM}`,
     { headers: { Upgrade: "websocket" } },
   ), bootstrapEnvironment());
   const mismatched = await worker.fetch(new Request(
-    `https://signal.navonweb.com/ws/device/${ZERO_SECRET_ROOM}`,
+    `https://signal.example/ws/device/${ZERO_SECRET_ROOM}`,
     {
       headers: {
         Authorization: `Bearer ${OTHER_SECRET}`,
@@ -792,10 +842,10 @@ test("device WebSocket authentication failures expose one uniform response", asy
 
 test("legacy browser room-id sockets are opt-in while cookie routing stays production default", async () => {
   const response = await worker.fetch(new Request(
-    `https://navonweb.com/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
+    `https://viewer.example/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
     {
       headers: {
-        Origin: "https://navonweb.com",
+        Origin: "https://viewer.example",
         Upgrade: "websocket",
       },
     },
@@ -803,15 +853,24 @@ test("legacy browser room-id sockets are opt-in while cookie routing stays produ
   assert.equal(response.status, 404);
 });
 
-test("reconnect admission is credential-scoped without extra Durable Object writes", () => {
+test("reconnect admission is isolated by signed route without Durable Object writes", () => {
   const room = new SignalRoom({}, {});
   const now = 1_800_000_000_000;
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    assert.equal(room.consumeConnectionAdmission("browser", now), true);
+    assert.equal(room.consumeConnectionAdmission("browser", ROUTE_NONCE_A, now), true);
   }
-  assert.equal(room.consumeConnectionAdmission("browser", now), false);
-  assert.equal(room.consumeConnectionAdmission("device", now), true);
-  assert.equal(room.consumeConnectionAdmission("browser", now + 10 * 60 * 1000), true);
+  assert.equal(room.consumeConnectionAdmission("browser", ROUTE_NONCE_A, now), false);
+  assert.equal(room.consumeConnectionAdmission("browser", ROUTE_NONCE_B, now), true);
+  assert.equal(room.consumeConnectionAdmission("browser", ROUTE_NONCE_C, now), true);
+  assert.equal(room.consumeConnectionAdmission("device", null, now), true);
+  assert.equal(
+    room.consumeConnectionAdmission(
+      "browser",
+      ROUTE_NONCE_A,
+      now + 10 * 60 * 1000,
+    ),
+    true,
+  );
 });
 
 test("legacy browser room route can be enabled explicitly for local migration", async () => {
@@ -820,11 +879,11 @@ test("legacy browser room route can be enabled explicitly for local migration", 
     ALLOW_LEGACY_BROWSER_ROOM_ROUTE: "true",
   };
   const response = await worker.fetch(new Request(
-    `https://navonweb.com/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
+    `https://viewer.example/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
     {
       headers: {
         "CF-Connecting-IP": "192.0.2.88",
-        Origin: "https://navonweb.com",
+        Origin: "https://viewer.example",
         Upgrade: "websocket",
       },
     },
@@ -832,7 +891,7 @@ test("legacy browser room route can be enabled explicitly for local migration", 
   assert.equal(response.status, 200);
 });
 
-test("pending route preserves the old browser until the new WebSocket promotes it", async () => {
+test("a newly paired browser preserves existing routes and same-route reconnect replaces only itself", async () => {
   const env = bootstrapEnvironment();
   const network = "192.0.2.99";
 
@@ -841,8 +900,8 @@ test("pending route preserves the old browser until the new WebSocket promotes i
   assert.equal(firstPair.status, 204);
   const firstRouteCookie = responseCookie(firstPair, ROUTE_COOKIE_NAME);
   const browserClientCookie = responseCookie(firstPair, "__Host-navonweb_client");
+  const firstRoute = await signedRouteFromCookie(env, firstRouteCookie);
   assert.equal((await browserSocket(env, firstRouteCookie)).status, 200);
-  assert.equal(env.SIGNAL_ROOMS.currentRoutes.get(ZERO_SECRET_ROOM), ROUTE_NONCE_A);
 
   assert.equal((await deviceRegistration(
     env,
@@ -854,159 +913,66 @@ test("pending route preserves the old browser until the new WebSocket promotes i
   const secondPair = await browserPairAttempt(env, network, "22222222", browserClientCookie);
   assert.equal(secondPair.status, 204);
   const secondRouteCookie = responseCookie(secondPair, ROUTE_COOKIE_NAME);
+  const secondRoute = await signedRouteFromCookie(env, secondRouteCookie);
+  assert.notEqual(firstRoute.routeNonce, secondRoute.routeNonce);
 
-  // Preparing and even losing the HTTP response does not revoke the current route. A reconnect
-  // carrying that exact current route may replace its own stale socket without consuming the
-  // pending handoff.
-  assert.equal(env.SIGNAL_ROOMS.currentRoutes.get(ZERO_SECRET_ROOM), ROUTE_NONCE_A);
-  assert.equal(env.SIGNAL_ROOMS.pendingRoutes.get(ZERO_SECRET_ROOM), ROUTE_NONCE_B);
+  // Issuing another signed route does not touch SignalRoom and cannot replace the first socket.
+  assert.equal(env.SIGNAL_ROOMS.fetchCount, 1);
   assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 0);
+  assert.equal((await browserSocket(env, secondRouteCookie)).status, 200);
+  assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 0);
+  assert.deepEqual(
+    [...env.SIGNAL_ROOMS.browserConnections.get(ZERO_SECRET_ROOM)],
+    [firstRoute.routeNonce, secondRoute.routeNonce],
+  );
+
+  // A reconnect carrying the exact same signed nonce replaces only its stale signaling socket.
   assert.equal((await browserSocket(env, firstRouteCookie)).status, 200);
   assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 1);
-
-  // The first connection carrying the pending cookie commits the handoff.
-  assert.equal((await browserSocket(env, secondRouteCookie)).status, 200);
-  assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 2);
-  assert.equal(env.SIGNAL_ROOMS.currentRoutes.get(ZERO_SECRET_ROOM), ROUTE_NONCE_B);
-  assert.equal(env.SIGNAL_ROOMS.pendingRoutes.has(ZERO_SECRET_ROOM), false);
-  assert.equal((await browserSocket(env, firstRouteCookie)).status, 401);
+  assert.equal((await browserRouteStatus(env, firstRouteCookie)).status, 204);
+  assert.equal((await browserRouteStatus(env, secondRouteCookie)).status, 204);
 });
 
-test("SignalRoom persists pending promotion and revokes the old socket before handoff", async () => {
-  const ctx = new FakeSignalContext();
-  const pairingExpiresAt = Date.now() + 600_000;
-  await ctx.storage.put("browserRoute", {
-    activePairingEpoch: PAIRING_EPOCH_A,
-    activePairingGeneration: PAIRING_GENERATION_A,
-    activePairingExpiresAt: pairingExpiresAt,
-    currentRouteNonce: ROUTE_NONCE_A,
-    currentSince: 1_800_000_000_000,
-    pendingRouteNonce: null,
-    pendingExpiresAt: null,
-  });
-  const oldBrowser = new FakeSocket({
-    role: "browser",
-    roomId: ZERO_SECRET_ROOM,
-    routeNonce: ROUTE_NONCE_A,
-    leftNotified: false,
-    inFlightRequestIds: [],
-  });
-  const device = new FakeSocket({
-    role: "device",
-    roomId: ZERO_SECRET_ROOM,
-    leftNotified: false,
-  });
-  ctx.sockets.browser.push(oldBrowser);
-  ctx.sockets.device.push(device);
-  const room = new SignalRoom(ctx, {});
+test("three stale signaling routes cannot block a fourth phone-side admission candidate", async () => {
+  const env = bootstrapEnvironment();
+  const network = "192.0.2.100";
+  const codes = ["41414141", "42424242", "43434343", "44444444"];
+  const routeCookies = [];
+  const routeNonces = [];
 
-  const prepared = await room.fetch(new Request(
-    "https://signal.internal/internal/prepare-browser-route",
-    {
-      method: "POST",
-      headers: {
-        "X-NavOnWeb-Room": ZERO_SECRET_ROOM,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        pairingEpoch: PAIRING_EPOCH_A,
-        pairingGeneration: PAIRING_GENERATION_A,
-        pairingExpiresAt,
-      }),
-    },
-  ));
-  assert.equal(prepared.status, 200);
-  const pendingNonce = (await prepared.json()).routeNonce;
-  assert.equal(oldBrowser.closed, null);
-  assert.equal(await room.classifyBrowserRoute(ROUTE_NONCE_A), "current");
-  assert.equal(oldBrowser.closed, null);
+  for (let index = 0; index < codes.length; index += 1) {
+    assert.equal((await deviceRegistration(
+      env,
+      network,
+      ZERO_SECRET,
+      codes[index],
+      index + 1,
+    )).status, 204);
+    const paired = await browserPairAttempt(env, network, codes[index]);
+    assert.equal(paired.status, 204);
+    const cookie = responseCookie(paired, ROUTE_COOKIE_NAME);
+    routeCookies.push(cookie);
+    routeNonces.push((await signedRouteFromCookie(env, cookie)).routeNonce);
+    const connected = await browserSocket(env, cookie);
+    assert.equal(connected.status, 200);
+  }
+  assert.deepEqual(
+    [...env.SIGNAL_ROOMS.browserConnections.get(ZERO_SECRET_ROOM)],
+    routeNonces,
+  );
 
-  assert.equal(await room.classifyBrowserRoute(pendingNonce), "pending");
-  assert.equal(await room.promoteBrowserRoute(pendingNonce), true);
-  assert.equal(oldBrowser.closed.code, 4001);
-  assert.equal(oldBrowser.attachment.revoked, true);
-  assert.equal(device.sent.length, 1);
-  assert.equal(await room.classifyBrowserRoute(ROUTE_NONCE_A), null);
-
-  // A new Durable Object instance reads the committed current generation.
-  const restoredRoom = new SignalRoom(ctx, {});
-  assert.equal(await restoredRoom.classifyBrowserRoute(pendingNonce), "current");
+  // The Worker has no paired-device/capacity registry. The authenticated phone RPC endpoint is
+  // authoritative for deleted credentials and its actual 1/3 media-session limit.
+  assert.equal(env.SIGNAL_ROOMS.browserConnections.get(ZERO_SECRET_ROOM).size, 4);
+  for (const cookie of routeCookies) {
+    assert.equal((await browserRouteStatus(env, cookie)).status, 204);
+  }
 });
 
-test("new pairing generation clears stale pending without disturbing current browser", async () => {
-  const ctx = new FakeSignalContext();
-  const firstExpiresAt = Date.now() + 300_000;
-  const secondExpiresAt = Date.now() + 600_000;
-  await ctx.storage.put("browserRoute", {
-    activePairingEpoch: PAIRING_EPOCH_A,
-    activePairingGeneration: PAIRING_GENERATION_A,
-    activePairingExpiresAt: firstExpiresAt,
-    currentRouteNonce: ROUTE_NONCE_A,
-    currentSince: 1_800_000_000_000,
-    pendingRouteNonce: null,
-    pendingExpiresAt: null,
-  });
-  const oldBrowser = new FakeSocket({
-    role: "browser",
-    roomId: ZERO_SECRET_ROOM,
-    routeNonce: ROUTE_NONCE_A,
-    leftNotified: false,
-  });
-  ctx.sockets.browser.push(oldBrowser);
-  const room = new SignalRoom(ctx, {});
-
-  const stalePrepare = await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    firstExpiresAt,
-  );
-  assert.equal(stalePrepare.status, 200);
-  const stalePendingNonce = (await stalePrepare.json()).routeNonce;
-
-  // Linearization point for C -> C2: once C2 activates, any C slot that still
-  // exists can no longer create or promote a pending route.
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  )).status, 204);
-  assert.equal(await room.classifyBrowserRoute(stalePendingNonce), null);
-  assert.equal(await room.promoteBrowserRoute(stalePendingNonce), false);
-  assert.equal(await room.classifyBrowserRoute(ROUTE_NONCE_A), "current");
-  assert.equal(oldBrowser.closed, null);
-
-  const staleAfterRefresh = await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    firstExpiresAt,
-  );
-  assert.equal(staleAfterRefresh.status, 409);
-
-  const freshPrepare = await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  );
-  assert.equal(freshPrepare.status, 200);
-  const freshPendingNonce = (await freshPrepare.json()).routeNonce;
-  // A registration retry for the same code/generation is a no-op and must not
-  // erase the pending handoff it already authorized.
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  )).status, 204);
-  assert.equal(await room.classifyBrowserRoute(freshPendingNonce), "pending");
+test("SignalRoom has no durable paired-route, session, or capacity registry", () => {
+  const source = SignalRoom.toString();
+  assert.doesNotMatch(source, /ctx\.storage|rememberedRoutes|browserRouteStateForStorage/u);
+  assert.doesNotMatch(source, /pendingRouteNonce|activePairingGeneration/u);
 });
 
 test("authenticated reconnect replacement is scoped to device auth or the same browser route", () => {
@@ -1029,166 +995,540 @@ test("authenticated reconnect replacement is scoped to device auth or the same b
 
   assert.deepEqual(room.reconnectSockets("device", null), [oldDevice]);
   assert.deepEqual(room.reconnectSockets("browser", ROUTE_NONCE_A), [oldBrowser]);
-  assert.equal(room.reconnectSockets("browser", ROUTE_NONCE_B), null);
-  assert.equal(room.reconnectSockets("browser", null), null);
+  assert.deepEqual(room.reconnectSockets("browser", ROUTE_NONCE_B), []);
+  assert.deepEqual(room.reconnectSockets("browser", null), []);
+
+  const secondBrowser = new FakeSocket({
+    role: "browser",
+    roomId: ZERO_SECRET_ROOM,
+    routeNonce: ROUTE_NONCE_B,
+    leftNotified: false,
+    inFlightRequestIds: ["Request_234567890"],
+  });
+  const thirdBrowser = new FakeSocket({
+    role: "browser",
+    roomId: ZERO_SECRET_ROOM,
+    routeNonce: ROUTE_NONCE_C,
+    leftNotified: false,
+    inFlightRequestIds: ["Request_345678901"],
+  });
+  ctx.sockets.browser.push(secondBrowser, thirdBrowser);
+  assert.deepEqual(room.reconnectSockets("browser", ROUTE_NONCE_D), []);
+  assert.deepEqual(room.reconnectSockets("browser", ROUTE_NONCE_B), [secondBrowser]);
+
+  for (let index = 3; index < 32; index += 1) {
+    ctx.sockets.browser.push(signalBrowserSocket(routeNonceForRotation(index)));
+  }
+  assert.equal(
+    typeof room.reconnectSockets("browser", routeNonceForRotation(32)),
+    "symbol",
+  );
 
   room.supersedeReconnectSockets("device", [oldDevice]);
   assert.deepEqual(oldDevice.closed, { code: 4002, reason: "Connection replaced" });
   assert.equal(oldDevice.attachment.revoked, true);
   assert.equal(oldDevice.attachment.leftNotified, true);
   assert.deepEqual(oldBrowser.attachment.inFlightRequestIds, []);
+  assert.deepEqual(secondBrowser.attachment.inFlightRequestIds, []);
+  assert.deepEqual(thirdBrowser.attachment.inFlightRequestIds, []);
+  assert.equal(oldBrowser.closed, null);
+  assert.equal(secondBrowser.closed, null);
+  assert.equal(thirdBrowser.closed, null);
   assert.equal(oldBrowser.sent.length, 0);
 });
 
-test("pairing publication epoch CAS rejects reverse arrival and conflicting retries", async () => {
+test("phone 401 quarantines only its exact stale route while preserving peers and device", async () => {
   const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const firstBrowser = signalBrowserSocket(ROUTE_NONCE_A);
+  const secondBrowser = signalBrowserSocket(ROUTE_NONCE_B);
+  const thirdBrowser = signalBrowserSocket(ROUTE_NONCE_C);
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(firstBrowser, secondBrowser, thirdBrowser);
   const room = new SignalRoom(ctx, {});
-  const firstExpiresAt = Date.now() + 300_000;
-  const secondExpiresAt = Date.now() + 600_000;
+  const firstRequestId = "Request_123456789";
+  const thirdRequestId = "Request_987654321";
+  const firstRequest = JSON.stringify({
+    type: "rpc_request",
+    requestId: firstRequestId,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+  const thirdRequest = JSON.stringify({
+    type: "rpc_request",
+    requestId: thirdRequestId,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
 
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  )).status, 204);
-  const prepared = await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  );
-  assert.equal(prepared.status, 200);
-  const pendingNonce = (await prepared.json()).routeNonce;
+  room.webSocketMessage(firstBrowser, firstRequest);
+  room.webSocketMessage(secondBrowser, firstRequest);
+  room.webSocketMessage(thirdBrowser, thirdRequest);
+  assert.deepEqual(device.sent, [firstRequest, thirdRequest]);
+  assert.deepEqual(secondBrowser.closed, {
+    code: 1008,
+    reason: "Duplicate cross-browser in-flight requestId",
+  });
 
-  // C2 arrived first. A delayed C request cannot roll the active publication
-  // backwards, nor can it authorize a route from its stale slot.
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    firstExpiresAt,
-  )).status, 409);
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    firstExpiresAt,
-  )).status, 409);
+  // A deleted phone-side credential is represented by the phone's opaque 401 RPC body. The
+  // Worker must preserve it byte-for-byte and route it only to the browser that made the call.
+  const phoneRejection = JSON.stringify({
+    type: "rpc_response",
+    requestId: firstRequestId,
+    status: 401,
+    contentType: "application/json; charset=utf-8",
+    bodyBase64: "eyJlcnJvciI6InBhaXJpbmdfcmVxdWlyZWQifQ==",
+  });
+  room.webSocketMessage(device, phoneRejection);
+  assert.deepEqual(firstBrowser.sent, [phoneRejection]);
+  assert.deepEqual(secondBrowser.sent, []);
+  assert.deepEqual(thirdBrowser.sent, []);
+  assert.deepEqual(firstBrowser.attachment.inFlightRequestIds, []);
+  assert.equal(firstBrowser.attachment.revoked, true);
+  assert.deepEqual(firstBrowser.closed, {
+    code: 4003,
+    reason: "Browser authorization rejected",
+  });
+  assert.deepEqual(thirdBrowser.attachment.inFlightRequestIds, [thirdRequestId]);
+  assert.equal(device.closed, null);
+  assert.equal(thirdBrowser.closed, null);
+  assert.ok(room.routeQuarantineRemainingMillis(ROUTE_NONCE_A) > 0);
+  assert.equal(room.routeQuarantineRemainingMillis(ROUTE_NONCE_C), 0);
 
-  // An exact retry is idempotent and preserves the pending handoff; reusing
-  // the same epoch for different content fails closed.
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_B,
-    secondExpiresAt,
-  )).status, 204);
-  assert.equal(await room.classifyBrowserRoute(pendingNonce), "pending");
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_B,
-    PAIRING_GENERATION_C,
-    secondExpiresAt,
-  )).status, 409);
-  const stored = await ctx.storage.get("browserRoute");
-  assert.equal(stored.activePairingEpoch, PAIRING_EPOCH_B);
-  assert.equal(stored.activePairingGeneration, PAIRING_GENERATION_B);
-  assert.equal(stored.pendingRouteNonce, pendingNonce);
+  const quarantinedReconnect = await room.fetch(new Request(
+    "https://signal.internal/ws/browser",
+    {
+      headers: {
+        Upgrade: "websocket",
+        "X-NavOnWeb-Role": "browser",
+        "X-NavOnWeb-Room": ZERO_SECRET_ROOM,
+        "X-NavOnWeb-Route-Nonce": ROUTE_NONCE_A,
+        "X-NavOnWeb-Route-Issued-At": String(Math.floor(Date.now() / 1000)),
+      },
+    },
+  ));
+  assert.equal(quarantinedReconnect.status, 429);
+  assert.match(quarantinedReconnect.headers.get("retry-after"), /^[1-9][0-9]*$/u);
+
+  const thirdResponse = JSON.stringify({
+    type: "rpc_response",
+    requestId: thirdRequestId,
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    bodyBase64: "e30=",
+  });
+  room.webSocketMessage(device, thirdResponse);
+  assert.deepEqual(thirdBrowser.sent, [thirdResponse]);
+  assert.deepEqual(thirdBrowser.attachment.inFlightRequestIds, []);
+  assert.equal(device.closed, null);
 });
 
-test("near-deadline bootstrap cannot promote a pending route after code expiry", async () => {
-  const expiresAt = Date.now() + 1_000;
-  const slot = new PairingBootstrap({ storage: new MemoryStorage() }, {});
-  const reservation = {
+test("room-wide in-flight cap rejects only the seventeenth RPC and preserves every owner", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const browsers = [
+    signalBrowserSocket(ROUTE_NONCE_A),
+    signalBrowserSocket(ROUTE_NONCE_B),
+    signalBrowserSocket(ROUTE_NONCE_C),
+  ];
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(...browsers);
+  const room = new SignalRoom(ctx, {});
+  const requests = Array.from({ length: 17 }, (_, index) => JSON.stringify({
+    type: "rpc_request",
+    requestId: `Aggregate${String(index).padStart(8, "0")}`,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  }));
+
+  for (let index = 0; index < 16; index += 1) {
+    room.webSocketMessage(browsers[index % browsers.length], requests[index]);
+  }
+  assert.equal(device.sent.length, 16);
+  assert.equal(room.aggregateInFlightRequestCount(), 16);
+
+  const rejectedOwner = browsers[0];
+  room.webSocketMessage(rejectedOwner, requests[16]);
+  assert.equal(device.sent.length, 16);
+  const busy = JSON.parse(rejectedOwner.sent.at(-1));
+  assert.equal(busy.status, 429);
+  assert.deepEqual(JSON.parse(atob(busy.bodyBase64)), { error: "cloud_relay_busy" });
+  assert.equal(device.closed, null);
+  for (const browser of browsers) assert.equal(browser.closed, null);
+  assert.equal(room.aggregateInFlightRequestCount(), 16);
+
+  const firstResponse = JSON.stringify({
+    type: "rpc_response",
+    requestId: "Aggregate00000000",
+    status: 200,
+    contentType: "application/json",
+    bodyBase64: "e30=",
+  });
+  room.webSocketMessage(device, firstResponse);
+  assert.equal(room.aggregateInFlightRequestCount(), 15);
+  room.webSocketMessage(rejectedOwner, requests[16]);
+  assert.equal(device.sent.length, 17);
+  assert.equal(device.sent.at(-1), requests[16]);
+  assert.equal(room.aggregateInFlightRequestCount(), 16);
+  assert.equal(device.closed, null);
+});
+
+test("orphaned owner requests remain inside the room-wide in-flight cap", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const requestIds = Array.from(
+    { length: 16 },
+    (_, index) => `OrphanCap${String(index).padStart(8, "0")}`,
+  );
+  const disconnectedOwner = signalBrowserSocket(ROUTE_NONCE_A, {
+    inFlightRequestIds: requestIds,
+  });
+  const contender = signalBrowserSocket(ROUTE_NONCE_B);
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(disconnectedOwner, contender);
+  const room = new SignalRoom(ctx, {});
+
+  room.supersedeReconnectSockets("browser", [disconnectedOwner]);
+  assert.equal(disconnectedOwner.attachment.revoked, true);
+  assert.equal(device.attachment.orphanedRequestIds.length, 16);
+  assert.equal(room.aggregateInFlightRequestCount(), 16);
+
+  const seventeenth = JSON.stringify({
+    type: "rpc_request",
+    requestId: "OrphanCap00000016",
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+  room.webSocketMessage(contender, seventeenth);
+  assert.equal(device.sent.length, 0);
+  const busy = JSON.parse(contender.sent.at(-1));
+  assert.equal(busy.status, 429);
+  assert.deepEqual(JSON.parse(atob(busy.bodyBase64)), { error: "cloud_relay_busy" });
+  assert.equal(device.closed, null);
+  assert.equal(contender.closed, null);
+
+  room.webSocketMessage(device, JSON.stringify({
+    type: "rpc_response",
+    requestId: requestIds[0],
+    status: 200,
+    contentType: "application/json",
+    bodyBase64: "e30=",
+  }));
+  assert.equal(room.aggregateInFlightRequestCount(), 15);
+  room.webSocketMessage(contender, seventeenth);
+  assert.equal(device.sent.at(-1), seventeenth);
+  assert.equal(room.aggregateInFlightRequestCount(), 16);
+  assert.equal(device.closed, null);
+});
+
+test("only a route issued by the current ten-minute bootstrap may relay api pair", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const freshBrowser = signalBrowserSocket(ROUTE_NONCE_A);
+  const staleBrowser = signalBrowserSocket(ROUTE_NONCE_B, {
+    routeIssuedAtSeconds: Math.floor((Date.now() - 600_001) / 1000),
+  });
+  const legacyBrowser = signalBrowserSocket(ROUTE_NONCE_C, {
+    routeIssuedAtSeconds: null,
+  });
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(freshBrowser, staleBrowser, legacyBrowser);
+  const room = new SignalRoom(ctx, {});
+  const pairRequest = (requestId, method = "POST") => JSON.stringify({
+    type: "rpc_request",
+    requestId,
+    method,
+    target: "/api/pair",
+    headers: { "X-Pairing-Code": "12345678" },
+    bodyBase64: "",
+  });
+
+  room.webSocketMessage(staleBrowser, pairRequest("StalePair1234567", "post"));
+  room.webSocketMessage(legacyBrowser, pairRequest("LegacyPair123456"));
+  assert.equal(device.sent.length, 0);
+  for (const browser of [staleBrowser, legacyBrowser]) {
+    const response = JSON.parse(browser.sent.at(-1));
+    assert.equal(response.status, 428);
+    assert.deepEqual(JSON.parse(atob(response.bodyBase64)), {
+      error: "cloud_relay_fresh_pairing_route_required",
+    });
+    assert.deepEqual(browser.attachment.inFlightRequestIds, []);
+    assert.equal(browser.closed, null);
+  }
+
+  room.webSocketMessage(freshBrowser, pairRequest("FreshPair1234567"));
+  assert.equal(device.sent.length, 1);
+  assert.deepEqual(freshBrowser.attachment.inFlightRequestIds, ["FreshPair1234567"]);
+
+  const oldRouteStatus = JSON.stringify({
+    type: "rpc_request",
+    requestId: "OldStatus1234567",
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+  room.webSocketMessage(staleBrowser, oldRouteStatus);
+  assert.equal(device.sent.at(-1), oldRouteStatus);
+  assert.equal(staleBrowser.closed, null);
+  assert.equal(device.closed, null);
+});
+
+test("32 signaling transports share a bounded phone-facing RPC budget without socket teardown", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const browsers = Array.from(
+    { length: 32 },
+    (_, index) => signalBrowserSocket(routeNonceForRotation(index)),
+  );
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(...browsers);
+  const room = new SignalRoom(ctx, {});
+  const fixedNow = 1_800_000_000_000;
+
+  // Three normal browser bursts fit; the next aggregate request is denied.
+  for (let request = 0; request < 288; request += 1) {
+    assert.equal(room.reserveDeviceRpc(device, fixedNow), true);
+  }
+  assert.equal(room.reserveDeviceRpc(device, fixedNow), false);
+
+  // Hold the already-exhausted bucket without refill and let all 32 transports attempt a burst.
+  device.attachment.aggregateRpcRateTokens = 0;
+  device.attachment.aggregateRpcRateUpdatedAt = Number.MAX_SAFE_INTEGER;
+  for (let index = 0; index < 512; index += 1) {
+    const requestId = `Flood${String(index).padStart(11, "0")}`;
+    room.webSocketMessage(browsers[index % browsers.length], JSON.stringify({
+      type: "rpc_request",
+      requestId,
+      method: "GET",
+      target: "/api/status",
+      headers: {},
+      bodyBase64: "",
+    }));
+  }
+
+  assert.equal(device.sent.length, 0);
+  assert.equal(device.closed, null);
+  assert.equal(browsers.reduce((count, browser) => count + browser.sent.length, 0), 512);
+  for (const browser of browsers) {
+    assert.equal(browser.closed, null);
+    assert.deepEqual(browser.attachment.inFlightRequestIds, []);
+    for (const encoded of browser.sent) {
+      const response = JSON.parse(encoded);
+      assert.equal(response.status, 429);
+      assert.deepEqual(JSON.parse(atob(response.bodyBase64)), {
+        error: "cloud_relay_device_rate_limited",
+      });
+    }
+  }
+});
+
+test("late response for a disconnected browser is consumed without closing the shared device", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const disconnectedBrowser = signalBrowserSocket(ROUTE_NONCE_A);
+  const liveBrowser = signalBrowserSocket(ROUTE_NONCE_B);
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(disconnectedBrowser, liveBrowser);
+  const room = new SignalRoom(ctx, {});
+  const orphanRequestId = "Orphan_123456789";
+  const orphanRequest = JSON.stringify({
+    type: "rpc_request",
+    requestId: orphanRequestId,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+  room.webSocketMessage(disconnectedBrowser, orphanRequest);
+  disconnectedBrowser.readyState = 3;
+  room.webSocketClose(disconnectedBrowser, 1000, "Browser left", true);
+  assert.deepEqual(disconnectedBrowser.attachment.inFlightRequestIds, []);
+  assert.equal(device.attachment.orphanedRequestIds[0].requestId, orphanRequestId);
+
+  const lateResponse = JSON.stringify({
+    type: "rpc_response",
+    requestId: orphanRequestId,
+    status: 200,
+    contentType: "application/json",
+    bodyBase64: "e30=",
+  });
+  room.webSocketMessage(device, lateResponse);
+  assert.equal(device.closed, null);
+  assert.deepEqual(liveBrowser.sent, []);
+  assert.deepEqual(device.attachment.orphanedRequestIds, []);
+
+  const unknownResponse = JSON.stringify({
+    type: "rpc_response",
+    requestId: "Unknown_12345678",
+    status: 200,
+    contentType: "application/json",
+    bodyBase64: "e30=",
+  });
+  room.webSocketMessage(device, unknownResponse);
+  assert.deepEqual(device.closed, {
+    code: 1008,
+    reason: "Unknown rpc_response requestId",
+  });
+});
+
+test("orphaned 401 closes a same-route replacement but preserves peers and device", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const staleBrowser = signalBrowserSocket(ROUTE_NONCE_A);
+  const peerBrowser = signalBrowserSocket(ROUTE_NONCE_B);
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(staleBrowser, peerBrowser);
+  const room = new SignalRoom(ctx, {});
+  const requestId = "Orphan4011234567";
+  const request = JSON.stringify({
+    type: "rpc_request",
+    requestId,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+
+  room.webSocketMessage(staleBrowser, request);
+  room.supersedeReconnectSockets("browser", [staleBrowser]);
+  const replacement = signalBrowserSocket(ROUTE_NONCE_A);
+  ctx.sockets.browser.push(replacement);
+  assert.equal(device.attachment.orphanedRequestIds[0].routeNonce, ROUTE_NONCE_A);
+
+  room.webSocketMessage(device, JSON.stringify({
+    type: "rpc_response",
+    requestId,
+    status: 401,
+    contentType: "application/json",
+    bodyBase64: "eyJlcnJvciI6InBhaXJpbmdfcmVxdWlyZWQifQ==",
+  }));
+  assert.deepEqual(device.attachment.orphanedRequestIds, []);
+  assert.equal(replacement.attachment.revoked, true);
+  assert.deepEqual(replacement.closed, {
+    code: 4003,
+    reason: "Browser authorization rejected",
+  });
+  assert.equal(peerBrowser.closed, null);
+  assert.equal(device.closed, null);
+  assert.ok(room.routeQuarantineRemainingMillis(ROUTE_NONCE_A) > 0);
+  assert.equal(room.routeQuarantineRemainingMillis(ROUTE_NONCE_B), 0);
+});
+
+test("device response racing ahead of the browser close callback is ignored safely", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  const disconnectedBrowser = signalBrowserSocket(ROUTE_NONCE_A);
+  const liveBrowser = signalBrowserSocket(ROUTE_NONCE_B);
+  ctx.sockets.device.push(device);
+  ctx.sockets.browser.push(disconnectedBrowser, liveBrowser);
+  const room = new SignalRoom(ctx, {});
+  const requestId = "Closing_12345678";
+  const request = JSON.stringify({
+    type: "rpc_request",
+    requestId,
+    method: "GET",
+    target: "/api/status",
+    headers: {},
+    bodyBase64: "",
+  });
+  room.webSocketMessage(disconnectedBrowser, request);
+
+  // The WebSocket becomes unavailable before the hibernatable close event is delivered.
+  disconnectedBrowser.readyState = 3;
+  const response = JSON.stringify({
+    type: "rpc_response",
+    requestId,
+    status: 200,
+    contentType: "application/json",
+    bodyBase64: "e30=",
+  });
+  room.webSocketMessage(device, response);
+  assert.equal(device.closed, null);
+  assert.deepEqual(liveBrowser.sent, []);
+  assert.deepEqual(disconnectedBrowser.sent, []);
+  assert.deepEqual(disconnectedBrowser.attachment.inFlightRequestIds, []);
+
+  room.webSocketClose(disconnectedBrowser, 1000, "Browser left", true);
+  assert.deepEqual(device.attachment.orphanedRequestIds, []);
+});
+
+test("orphan response quarantine is bounded and expires after its TTL", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  ctx.sockets.device.push(device);
+  const room = new SignalRoom(ctx, {});
+  const now = 1_800_000_000_000;
+  const requestIds = Array.from(
+    { length: 49 },
+    (_, index) => String(index).padStart(64, "A"),
+  );
+
+  room.addOrphanedRequestIds(device, requestIds, now);
+  assert.equal(device.attachment.orphanedRequestIds.length, 48);
+  assert.equal(device.attachment.orphanResponseGraceUntil, now + 60_000);
+  assert.ok(
+    new TextEncoder().encode(JSON.stringify(device.attachment)).byteLength < 16 * 1024,
+  );
+  assert.equal(room.consumeOrphanedRequestId(device, "UnknownResponse01", now), true);
+  assert.equal(
+    room.consumeOrphanedRequestId(device, requestIds[0], now + 60_001),
+    false,
+  );
+});
+
+test("orphan attachment serialization failure falls back to bounded response grace", () => {
+  const ctx = new FakeSignalContext();
+  const device = signalDeviceSocket();
+  device.serializeAlwaysThrows = true;
+  ctx.sockets.device.push(device);
+  const room = new SignalRoom(ctx, {});
+  const now = 1_800_000_000_000;
+
+  assert.doesNotThrow(() => {
+    room.addOrphanedRequestIds(device, ["Serialize_123456"], now);
+  });
+  assert.equal(room.consumeOrphanedRequestId(device, "Serialize_123456", now), true);
+  assert.equal(
+    room.consumeOrphanedRequestId(device, "Serialize_123456", now + 60_001),
+    false,
+  );
+  assert.equal(device.closed, null);
+});
+
+test("bootstrap alarm deletes expired one-time slots and attempt counters", async () => {
+  const storage = new MemoryStorage();
+  const now = Date.now();
+  await storage.put("slot", {
     roomId: ZERO_SECRET_ROOM,
     pairingEpoch: PAIRING_EPOCH_A,
     pairingGeneration: PAIRING_GENERATION_A,
-    expiresAt,
-  };
-  assert.equal((await slotRequest(slot, "/reserve", reservation)).status, 204);
-  assert.equal((await slotRequest(slot, "/commit", reservation)).status, 204);
-  const consumed = await slotRequest(slot, "/consume");
-  assert.equal(consumed.status, 200);
-  assert.equal((await consumed.json()).expiresAt, expiresAt);
+    expiresAt: now - 1,
+    committed: true,
+    consumed: true,
+  });
+  await storage.put("rate", {
+    windowStartedAt: now - 10 * 60 * 1000,
+    totalCount: 1,
+    identities: {},
+  });
 
-  const ctx = new FakeSignalContext();
-  const room = new SignalRoom(ctx, {});
-  assert.equal((await signalRoomJsonRequest(
-    room,
-    "/internal/activate-pairing-generation",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    expiresAt,
-  )).status, 204);
-  const prepared = await signalRoomJsonRequest(
-    room,
-    "/internal/prepare-browser-route",
-    PAIRING_EPOCH_A,
-    PAIRING_GENERATION_A,
-    expiresAt,
-  );
-  assert.equal(prepared.status, 200);
-  const pendingNonce = (await prepared.json()).routeNonce;
-  assert.equal((await ctx.storage.get("browserRoute")).pendingExpiresAt, expiresAt);
-  assert.equal(await room.classifyBrowserRoute(pendingNonce, expiresAt - 1), "pending");
-  assert.equal(await room.classifyBrowserRoute(pendingNonce, expiresAt), null);
-  assert.equal(await room.promoteBrowserRoute(pendingNonce, expiresAt), false);
-});
-
-test("an old committed code cannot replace current route after a new code activates", async () => {
-  const env = bootstrapEnvironment();
-  const network = "192.0.2.123";
-
-  assert.equal((await deviceRegistration(env, network, ZERO_SECRET, "10101010")).status, 204);
-  const initialPair = await browserPairAttempt(env, network, "10101010");
-  assert.equal(initialPair.status, 204);
-  const currentCookie = responseCookie(initialPair, ROUTE_COOKIE_NAME);
-  assert.equal((await browserSocket(env, currentCookie)).status, 200);
-  const currentNonce = env.SIGNAL_ROOMS.currentRoutes.get(ZERO_SECRET_ROOM);
-
-  assert.equal((await deviceRegistration(
-    env,
-    network,
-    ZERO_SECRET,
-    "20202020",
-    PAIRING_EPOCH_B,
-  )).status, 204);
-  const staleGeneration = env.SIGNAL_ROOMS.activePairingGenerations.get(ZERO_SECRET_ROOM);
-  assert.match(staleGeneration, /^[A-Za-z0-9_-]{43}$/u);
-  assert.equal((await deviceRegistration(
-    env,
-    network,
-    ZERO_SECRET,
-    "30303030",
-    PAIRING_EPOCH_C,
-  )).status, 204);
-  const freshGeneration = env.SIGNAL_ROOMS.activePairingGenerations.get(ZERO_SECRET_ROOM);
-  assert.notEqual(staleGeneration, freshGeneration);
-
-  const stalePair = await browserPairAttempt(env, network, "20202020");
-  assert.equal(stalePair.status, 404);
-  assert.equal(env.SIGNAL_ROOMS.currentRoutes.get(ZERO_SECRET_ROOM), currentNonce);
-  assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 0);
-  assert.equal(env.SIGNAL_ROOMS.pendingRoutes.has(ZERO_SECRET_ROOM), false);
-
-  const freshPair = await browserPairAttempt(env, network, "30303030");
-  assert.equal(freshPair.status, 204);
-  const freshCookie = responseCookie(freshPair, ROUTE_COOKIE_NAME);
-  assert.equal((await browserSocket(env, freshCookie)).status, 200);
-  assert.equal(env.SIGNAL_ROOMS.closedBrowserCount, 1);
-  assert.equal((await browserSocket(env, currentCookie)).status, 401);
+  await new PairingBootstrap({ storage }, {}).alarm();
+  assert.equal(await storage.get("slot"), undefined);
+  assert.equal(await storage.get("rate"), undefined);
 });
 
 function bootstrapEnvironment() {
   return {
-    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
+    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: new InMemoryBootstrapBinding(),
     SIGNAL_ROOMS: new CapturingSignalBinding(),
@@ -1198,11 +1538,11 @@ function bootstrapEnvironment() {
 function browserPairAttempt(env, network, code, cookie = undefined) {
   const headers = {
     "CF-Connecting-IP": network,
-    Origin: "https://navonweb.com",
+    Origin: "https://viewer.example",
     "Content-Type": "text/plain; charset=utf-8",
   };
   if (cookie) headers.Cookie = cookie;
-  return worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
+  return worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
     method: "POST",
     headers,
     body: code,
@@ -1217,7 +1557,7 @@ function deviceRegistration(
   pairingEpoch = PAIRING_EPOCH_A,
   pairingTtlMillis = 600_000,
 ) {
-  return worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
+  return worker.fetch(new Request("https://signal.example/bootstrap/device", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": network,
@@ -1236,11 +1576,18 @@ function responseCookie(response, name) {
   return value.split(";", 1)[0];
 }
 
+async function signedRouteFromCookie(env, cookie) {
+  const value = readCookie(cookie, ROUTE_COOKIE_NAME);
+  const route = await verifyRouteCookieValue(env.BOOTSTRAP_HMAC_KEY, value);
+  assert.ok(route, "expected a valid self-contained signed route cookie");
+  return route;
+}
+
 function browserSocket(env, routeCookie) {
-  return worker.fetch(new Request("https://navonweb.com/_nw/ws/browser", {
+  return worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
     headers: {
       Cookie: routeCookie,
-      Origin: "https://navonweb.com",
+      Origin: "https://viewer.example",
       Upgrade: "websocket",
     },
   }), env);
@@ -1249,7 +1596,7 @@ function browserSocket(env, routeCookie) {
 function browserRouteStatus(env, routeCookie = undefined, fetchSite = "same-origin") {
   const headers = { "Sec-Fetch-Site": fetchSite };
   if (routeCookie) headers.Cookie = routeCookie;
-  return worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/route", {
+  return worker.fetch(new Request("https://viewer.example/_nw/bootstrap/route", {
     headers,
   }), env);
 }
@@ -1259,23 +1606,6 @@ function slotRequest(slot, path, body = undefined) {
     method: "POST",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-  }));
-}
-
-function signalRoomJsonRequest(
-  room,
-  path,
-  pairingEpoch,
-  pairingGeneration,
-  pairingExpiresAt,
-) {
-  return room.fetch(new Request(`https://signal.internal${path}`, {
-    method: "POST",
-    headers: {
-      "X-NavOnWeb-Room": ZERO_SECRET_ROOM,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pairingEpoch, pairingGeneration, pairingExpiresAt }),
   }));
 }
 
@@ -1301,12 +1631,41 @@ class FakeSocket {
   }
 
   deserializeAttachment() { return this.attachment; }
-  serializeAttachment(value) { this.attachment = value; }
+  serializeAttachment(value) {
+    if (this.serializeAlwaysThrows) throw new Error("attachment serialization failed");
+    this.attachment = value;
+  }
   send(value) { this.sent.push(value); }
   close(code, reason) {
     this.closed = { code, reason };
     this.readyState = 3;
   }
+}
+
+function signalBrowserSocket(routeNonce, overrides = {}) {
+  return new FakeSocket({
+    role: "browser",
+    roomId: ZERO_SECRET_ROOM,
+    routeNonce,
+    routeIssuedAtSeconds: Math.floor(Date.now() / 1000),
+    leftNotified: false,
+    rpcRateTokens: 96,
+    rpcRateUpdatedAt: Date.now(),
+    inFlightRequestIds: [],
+    ...overrides,
+  });
+}
+
+function signalDeviceSocket(overrides = {}) {
+  return new FakeSocket({
+    role: "device",
+    roomId: ZERO_SECRET_ROOM,
+    leftNotified: false,
+    orphanedRequestIds: [],
+    orphanResponseGraceUntil: null,
+    routeQuarantines: [],
+    ...overrides,
+  });
 }
 
 class FakeSignalContext {
@@ -1347,25 +1706,23 @@ class InMemoryBootstrapBinding {
 }
 
 class AlwaysFailingSignalBinding {
+  constructor() { this.fetchCount = 0; }
   idFromName(name) { return name; }
   get() {
-    return { fetch: async () => new Response(null, { status: 503 }) };
+    return {
+      fetch: async () => {
+        this.fetchCount += 1;
+        return new Response(null, { status: 503 });
+      },
+    };
   }
 }
 
 class CapturingSignalBinding {
   constructor() {
     this.fetchCount = 0;
-    this.rotationCount = 0;
     this.closedBrowserCount = 0;
-    this.currentRoutes = new Map();
-    this.pendingRoutes = new Map();
-    this.pendingGenerations = new Map();
-    this.pendingExpiresAt = new Map();
-    this.activePairingEpochs = new Map();
-    this.activePairingGenerations = new Map();
-    this.activePairingExpiresAt = new Map();
-    this.browserConnected = new Set();
+    this.browserConnections = new Map();
   }
 
   idFromName(name) { return name; }
@@ -1376,82 +1733,41 @@ class CapturingSignalBinding {
         this.fetchCount += 1;
         this.lastRoomId = id;
         this.lastRole = request.headers.get("X-NavOnWeb-Role");
-        const path = new URL(request.url).pathname;
-        if (path === "/internal/activate-pairing-generation") {
-          const body = await request.json();
-          const activeEpoch = this.activePairingEpochs.get(id);
-          const activeGeneration = this.activePairingGenerations.get(id);
-          const activeExpiresAt = this.activePairingExpiresAt.get(id);
-          if (!Number.isSafeInteger(body.pairingExpiresAt) || body.pairingExpiresAt <= Date.now()) {
-            return new Response(null, { status: 409 });
-          }
-          if (activeEpoch !== undefined && body.pairingEpoch < activeEpoch) {
-            return new Response(null, { status: 409 });
-          }
-          if (body.pairingEpoch === activeEpoch &&
-              (body.pairingGeneration !== activeGeneration ||
-               body.pairingExpiresAt !== activeExpiresAt)) {
-            return new Response(null, { status: 409 });
-          }
-          if (body.pairingEpoch !== activeEpoch) {
-            this.activePairingEpochs.set(id, body.pairingEpoch);
-            this.activePairingGenerations.set(id, body.pairingGeneration);
-            this.activePairingExpiresAt.set(id, body.pairingExpiresAt);
-            this.pendingRoutes.delete(id);
-            this.pendingGenerations.delete(id);
-            this.pendingExpiresAt.delete(id);
-          }
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/internal/prepare-browser-route") {
-          const body = await request.json();
-          if (this.activePairingEpochs.get(id) !== body.pairingEpoch ||
-              this.activePairingGenerations.get(id) !== body.pairingGeneration ||
-              this.activePairingExpiresAt.get(id) !== body.pairingExpiresAt ||
-              body.pairingExpiresAt <= Date.now()) {
-            return new Response(null, { status: 409 });
-          }
-          const routeNonce = this.rotationCount === 0 ? ROUTE_NONCE_A : ROUTE_NONCE_B;
-          this.rotationCount += 1;
-          this.pendingRoutes.set(id, routeNonce);
-          this.pendingGenerations.set(id, body.pairingGeneration);
-          this.pendingExpiresAt.set(id, body.pairingExpiresAt);
-          return new Response(JSON.stringify({ routeNonce }), {
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        if (path === "/internal/check-browser-route") {
-          const routeNonce = request.headers.get("X-NavOnWeb-Route-Nonce");
-          const current = this.currentRoutes.get(id);
-          const pending = this.pendingRoutes.get(id);
-          const pendingAlive = this.pendingExpiresAt.get(id) > Date.now();
-          return new Response(null, {
-            status: routeNonce === current || (routeNonce === pending && pendingAlive)
-              ? 204
-              : 401,
-          });
-        }
+        this.lastRouteNonce = request.headers.get("X-NavOnWeb-Route-Nonce");
+        this.lastRouteIssuedAt = request.headers.get("X-NavOnWeb-Route-Issued-At");
+        this.lastLegacyBrowserRoute = request.headers.get("X-NavOnWeb-Legacy-Browser-Route");
         if (this.lastRole === "browser" &&
             request.headers.get("X-NavOnWeb-Legacy-Browser-Route") !== "1") {
           const routeNonce = request.headers.get("X-NavOnWeb-Route-Nonce");
-          if (routeNonce === this.pendingRoutes.get(id) &&
-              this.pendingExpiresAt.get(id) > Date.now()) {
-            this.pendingRoutes.delete(id);
-            this.pendingGenerations.delete(id);
-            this.pendingExpiresAt.delete(id);
-            this.currentRoutes.set(id, routeNonce);
-            if (this.browserConnected.delete(id)) this.closedBrowserCount += 1;
-          } else if (routeNonce !== this.currentRoutes.get(id)) {
+          if (!/^[A-Za-z0-9_-]{22}$/u.test(routeNonce ?? "")) {
             return new Response(JSON.stringify({ error: "Browser pairing is required" }), {
               status: 401,
               headers: { "Content-Type": "application/json" },
             });
           }
-          if (this.browserConnected.has(id)) this.closedBrowserCount += 1;
-          this.browserConnected.add(id);
+          const connections = this.browserConnections.get(id) ?? new Set();
+          if (!connections.has(routeNonce) && connections.size >= 32) {
+            return new Response(JSON.stringify({
+              error: "Browser signaling transport limit reached",
+            }), {
+              status: 409,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          if (connections.has(routeNonce)) this.closedBrowserCount += 1;
+          connections.add(routeNonce);
+          this.browserConnections.set(id, connections);
         }
         return new Response("routed");
       },
     };
   }
+}
+
+function routeNonceForRotation(index) {
+  if (index === 0) return ROUTE_NONCE_A;
+  if (index === 1) return ROUTE_NONCE_B;
+  if (index === 2) return ROUTE_NONCE_C;
+  if (index === 3) return ROUTE_NONCE_D;
+  return String(index).padStart(22, "0");
 }

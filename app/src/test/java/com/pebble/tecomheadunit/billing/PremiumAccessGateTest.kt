@@ -15,6 +15,7 @@ class PremiumAccessGateTest {
                 debugBenchOverride = false,
                 cachedPlayOwnership = false,
                 livePlayOwnership = false,
+                reviewPromoAccess = false,
             ),
         )
     }
@@ -26,6 +27,7 @@ class PremiumAccessGateTest {
                 debugBenchOverride = false,
                 cachedPlayOwnership = true,
                 livePlayOwnership = false,
+                reviewPromoAccess = false,
             ),
         )
         assertTrue(
@@ -33,6 +35,7 @@ class PremiumAccessGateTest {
                 debugBenchOverride = true,
                 cachedPlayOwnership = false,
                 livePlayOwnership = false,
+                reviewPromoAccess = false,
             ),
         )
         assertTrue(
@@ -40,6 +43,15 @@ class PremiumAccessGateTest {
                 debugBenchOverride = false,
                 cachedPlayOwnership = false,
                 livePlayOwnership = true,
+                reviewPromoAccess = false,
+            ),
+        )
+        assertTrue(
+            resolvePremiumAccess(
+                debugBenchOverride = false,
+                cachedPlayOwnership = false,
+                livePlayOwnership = false,
+                reviewPromoAccess = true,
             ),
         )
     }

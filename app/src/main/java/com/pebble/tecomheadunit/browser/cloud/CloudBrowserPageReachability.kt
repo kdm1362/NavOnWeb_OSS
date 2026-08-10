@@ -16,37 +16,18 @@ internal enum class CloudBrowserPageAvailability {
     UNREACHABLE,
 }
 
-/**
- * Keeps a short network interruption from replacing the public browser address with a LAN address.
- * A successful probe restores the public address immediately.
- */
-internal class CloudBrowserPageAvailabilityTracker(
-    private val failuresBeforeFallback: Int = DEFAULT_FAILURES_BEFORE_FALLBACK,
-) {
-    init {
-        require(failuresBeforeFallback > 0)
-    }
-
+/** Uses the latest completed public-page probe as the displayed-address authority. */
+internal class CloudBrowserPageAvailabilityTracker {
     var availability: CloudBrowserPageAvailability = CloudBrowserPageAvailability.UNKNOWN
         private set
 
-    private var consecutiveFailures = 0
-
     fun record(reachable: Boolean): CloudBrowserPageAvailability {
-        if (reachable) {
-            consecutiveFailures = 0
-            availability = CloudBrowserPageAvailability.REACHABLE
+        availability = if (reachable) {
+            CloudBrowserPageAvailability.REACHABLE
         } else {
-            consecutiveFailures += 1
-            if (consecutiveFailures >= failuresBeforeFallback) {
-                availability = CloudBrowserPageAvailability.UNREACHABLE
-            }
+            CloudBrowserPageAvailability.UNREACHABLE
         }
         return availability
-    }
-
-    private companion object {
-        const val DEFAULT_FAILURES_BEFORE_FALLBACK = 2
     }
 }
 
@@ -55,9 +36,7 @@ internal object BrowserAddressPolicy {
         cloudUrl: String?,
         localUrl: String,
         cloudAvailability: CloudBrowserPageAvailability,
-    ): String = if (
-        cloudUrl != null && cloudAvailability != CloudBrowserPageAvailability.UNREACHABLE
-    ) {
+    ): String = if (cloudUrl != null && cloudAvailability == CloudBrowserPageAvailability.REACHABLE) {
         cloudUrl
     } else {
         localUrl

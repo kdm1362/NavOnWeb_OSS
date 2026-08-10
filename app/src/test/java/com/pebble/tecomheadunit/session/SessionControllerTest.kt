@@ -10,6 +10,32 @@ import org.junit.Test
 
 class SessionControllerTest {
     @Test
+    fun selectedCloudAddressRetainsTheCurrentNumericLanDebugAddress() {
+        SessionController.ready(
+            url = "https://navonweb.com",
+            localUrl = "http://192.168.50.10:8787",
+            pairingCode = "01234567",
+            nativeStatus = "AASDK READY",
+        )
+
+        assertEquals("https://navonweb.com", SessionController.state.value.browserUrl)
+        assertEquals(
+            "http://192.168.50.10:8787",
+            SessionController.state.value.localBrowserUrl,
+        )
+
+        SessionController.updateBrowserAddresses(
+            browserUrl = "https://navonweb.com",
+            localBrowserUrl = "http://192.168.50.11:8787",
+        )
+        assertEquals(
+            "http://192.168.50.11:8787",
+            SessionController.state.value.localBrowserUrl,
+        )
+        SessionController.idle()
+    }
+
+    @Test
     fun pairingCodeRotationPreservesReadySessionState() {
         val touch = OpenAutoTouchEvent(
             phase = TouchPhase.UP,
@@ -19,7 +45,7 @@ class SessionControllerTest {
             timestampNanos = 1L,
         )
         SessionController.ready(
-            url = "http://10.0.0.231:8787",
+            url = "http://192.168.50.10:8787",
             pairingCode = "01234567",
             nativeStatus = "AASDK VIDEO_MEDIA_ACCEPTED frames=1 bytes=100",
         )

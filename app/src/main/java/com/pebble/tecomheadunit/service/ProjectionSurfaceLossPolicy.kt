@@ -13,10 +13,17 @@ internal object ProjectionSurfaceLossPolicy {
     fun decide(
         runtimeUsesNativeWebRtcDecoder: Boolean,
         nativeWebRtcDecoderSurfaceValid: Boolean,
-    ): ProjectionSurfaceDetachAction =
-        if (runtimeUsesNativeWebRtcDecoder && nativeWebRtcDecoderSurfaceValid) {
+        fallbackDecoderSurfaceValid: Boolean,
+    ): ProjectionSurfaceDetachAction {
+        val boundDecoderSurfaceValid = if (runtimeUsesNativeWebRtcDecoder) {
+            nativeWebRtcDecoderSurfaceValid
+        } else {
+            fallbackDecoderSurfaceValid
+        }
+        return if (boundDecoderSurfaceValid) {
             ProjectionSurfaceDetachAction.KEEP_RUNTIME
         } else {
             ProjectionSurfaceDetachAction.STOP_RUNTIME
         }
+    }
 }

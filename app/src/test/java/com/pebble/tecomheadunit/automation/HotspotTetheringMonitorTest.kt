@@ -270,6 +270,9 @@ class HotspotTetheringMonitorTest {
         override fun selectMode(mode: AutomationTriggerMode): AutomationDispatchResult =
             AutomationDispatchResult.NoChange(state)
 
+        override fun disableModeIfSelected(source: AutomationTriggerMode): AutomationDispatchResult =
+            AutomationDispatchResult.NoChange(state)
+
         override fun onTriggerStateChanged(
             source: AutomationTriggerMode,
             generation: Long,

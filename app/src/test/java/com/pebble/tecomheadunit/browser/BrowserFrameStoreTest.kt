@@ -114,6 +114,23 @@ class BrowserFrameStoreTest {
         assertEquals(0, store.activeSubscriberCount)
     }
 
+    @Test
+    fun `closing replaced producer cannot clear current subscriber listener`() {
+        val store = BrowserFrameStore(maxFrameBytes = 64)
+        val previousCounts = CopyOnWriteArrayList<Int>()
+        val currentCounts = CopyOnWriteArrayList<Int>()
+        val previous: (Int) -> Unit = previousCounts::add
+        val current: (Int) -> Unit = currentCounts::add
+        store.setSubscriberListener(previous)
+        store.setSubscriberListener(current)
+
+        store.clearSubscriberListener(previous)
+        store.subscribe().close()
+
+        assertEquals(listOf(0), previousCounts.toList())
+        assertEquals(listOf(0, 1, 0), currentCounts.toList())
+    }
+
     private fun jpeg(value: Int): ByteArray = byteArrayOf(
         0xFF.toByte(),
         0xD8.toByte(),

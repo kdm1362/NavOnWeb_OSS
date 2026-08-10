@@ -38,6 +38,7 @@ data class BrowserRelayRequest(
             "accept",
             "content-type",
             "x-browser-credential",
+            "x-browser-device-name",
             "x-pairing-code",
             "x-viewport-client-id",
         )

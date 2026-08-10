@@ -4,8 +4,14 @@
 package com.pebble.tecomheadunit.browser.webrtc
 
 import com.pebble.tecomheadunit.audio.Pcm16Format
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -80,6 +86,66 @@ class WebRtcMicrophoneFrameCodecTest {
             ),
         )
         assertTrue(WebRtcMicrophoneFrameCodec.HEADER_BYTES == 12)
+    }
+
+    @Test
+    fun `queued frame is discarded after owner downgrade or deletion`() {
+        var ownerIsCurrent = true
+        var dispatched = 0
+        val queuedFrame = {
+            dispatchOwnedMicrophoneFrameIfCurrent(
+                stillOwned = { ownerIsCurrent },
+                dispatch = {
+                    dispatched += 1
+                    true
+                },
+            )
+        }
+
+        ownerIsCurrent = false
+
+        assertFalse(queuedFrame())
+        assertEquals(0, dispatched)
+    }
+
+    @Test
+    fun `committed mutation prevents a queued frame from reaching the microphone source`() {
+        val lock = Any()
+        val ownerIsCurrent = AtomicBoolean(true)
+        val dispatched = AtomicInteger(0)
+        val mutationEntered = CountDownLatch(1)
+        val releaseMutation = CountDownLatch(1)
+        val frameFinished = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val mutation = executor.submit {
+                synchronized(lock) {
+                    ownerIsCurrent.set(false)
+                    mutationEntered.countDown()
+                    assertTrue(releaseMutation.await(2, TimeUnit.SECONDS))
+                }
+            }
+            assertTrue(mutationEntered.await(2, TimeUnit.SECONDS))
+            val frame = executor.submit<Boolean> {
+                dispatchOwnedMicrophoneFrameWithAdmissionLock(
+                    lock = lock,
+                    stillOwned = ownerIsCurrent::get,
+                    dispatch = {
+                        dispatched.incrementAndGet()
+                        true
+                    },
+                ).also { frameFinished.countDown() }
+            }
+            assertFalse(frameFinished.await(100, TimeUnit.MILLISECONDS))
+            releaseMutation.countDown()
+            mutation.get(2, TimeUnit.SECONDS)
+
+            assertFalse(frame.get(2, TimeUnit.SECONDS))
+            assertEquals(0, dispatched.get())
+        } finally {
+            releaseMutation.countDown()
+            executor.shutdownNow()
+        }
     }
 
     private fun frame(sampleRate: Long, channels: Int, pcm: ByteArray): ByteArray =

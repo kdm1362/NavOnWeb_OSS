@@ -109,7 +109,7 @@ class ProjectionProfilesTest {
     }
 
     @Test
-    fun serverPremiumGrantSchedulesAuditedProfileForAutomaticReconnect() {
+    fun serverPremiumGrantSchedulesSupportedProfileForAutomaticReconnect() {
         val store = MemoryStore()
         val scheduled = mutableListOf<ProjectionVideoProfile>()
         val provider = ServerProjectionEntitlementProvider {
@@ -235,7 +235,7 @@ class ProjectionProfilesTest {
     }
 
     @Test
-    fun browserOrientationSelectsOnlyAuditedEncodedViewportsWithResolutionAwareDpi() {
+    fun browserOrientationSelectsOnlySupportedEncodedViewportsWithResolutionAwareDpi() {
         val expectedPortrait = mapOf(
             ProjectionVideoProfile.FREE_800X480 to (VideoViewport(720, 1280) to 220),
             ProjectionVideoProfile.PREMIUM_720P to (VideoViewport(720, 1280) to 220),

@@ -13,6 +13,8 @@
     ? `tecom.browserCredential.v1.${CLOUD_RELAY_CONFIG.roomId}`
     : '';
   const PREMIUM_PROMPT_DISMISSED_KEY = 'navonweb.premiumPromptDismissed.v1';
+  const PRESENTATION_PREFERENCES_KEY = 'navonweb.presentationPreferences.v1';
+  const PRESENTATION_GUIDE_DISMISSED_KEY = 'navonweb.presentationGuideDismissed.v1';
   const FRESH_CLOUD_ROUTE_REQUIRED_KEY = 'navonweb.freshCloudRouteRequired.v1';
   const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
   const FRAME_INTERVAL_MILLIS = 200;
@@ -63,6 +65,7 @@
   const CONTROL_WEBRTC_CHANNEL_LABEL = 'navonweb-control-v1';
   const CONTROL_WEBRTC_MAX_MESSAGE_BYTES = 192 * 1024;
   const CONTROL_WEBRTC_MAX_IN_FLIGHT_REQUESTS = 16;
+  const CONTROL_WEBRTC_OPEN_TIMEOUT_MILLIS = AUDIO_WEBRTC_OPEN_TIMEOUT_MILLIS;
   const CONTROL_WEBRTC_REQUEST_TIMEOUT_MILLIS = 15000;
   const DEVELOPMENT_VIEWPORT_QUERY = 'navonweb-dev-viewport';
   const DEVELOPMENT_TESLA_DRIVING_MODE = 'tesla-driving';
@@ -73,11 +76,21 @@
   const VIEWPORT_REPORT_RETRY_MILLIS = 1500;
   const VIEWPORT_CONTROLLER_BUSY_RETRY_MILLIS = 5000;
   const VIEWPORT_REPORT_TIMEOUT_MILLIS = 5000;
+  const VIEWPORT_REPORT_MAX_TIMEOUT_RETRIES = 2;
+  const VIEWPORT_AUTHORITY_NOTICE_EXPANDED_MILLIS = 3000;
   const MIN_VIEWPORT_DEVICE_PIXEL_RATIO = 0.5;
   const MAX_VIEWPORT_DEVICE_PIXEL_RATIO = 8;
   const PINCH_EXPAND_SCALE = 1.18;
   const PINCH_COLLAPSE_SCALE = 0.82;
+  const PRESENTATION_PAN_LOCK_CSS_PIXELS = 10;
+  const PRESENTATION_PAN_DIRECTION_RATIO = 1.35;
+  const PRESENTATION_SNAP_ENTER_CSS_PIXELS = 24;
+  const PRESENTATION_SNAP_EXIT_CSS_PIXELS = 40;
+  const TOUCH_GESTURE_DECISION_MILLIS = 90;
+  const TOUCH_GESTURE_MOVE_CSS_PIXELS = 6;
   const FULLSCREEN_HINT_DURATION_MILLIS = 5000;
+  const PRESENTATION_GUIDE_AUTO_DISMISS_MILLIS = 10000;
+  const PRESENTATION_GUIDE_COUNTDOWN_INTERVAL_MILLIS = 250;
   const PREMIUM_PROMPT_DURATION_MILLIS = 10000;
   const MAX_NOTICE_COUNT = 20;
   const MAX_NOTICE_RESPONSE_BYTES = 64 * 1024;
@@ -93,9 +106,17 @@
   const CLOUD_RELAY_MAX_BODY_BYTES = 128 * 1024;
   const CLOUD_RELAY_MAX_RESPONSE_BYTES = 160 * 1024;
   const CLOUD_RELAY_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+  const SESSION_DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+  const SESSION_TOUCH_MARKER_RELEASE_MILLIS = 700;
+  const SESSION_TOUCH_MARKER_STALE_MILLIS = 12000;
   const DYNAMIC_ASPECT_BODY_CLASS = 'navonweb-dynamic-aspect';
   const AUTHENTICATED_BODY_CLASS = 'navonweb-authenticated';
   const DEVELOPMENT_TESLA_BODY_CLASS = 'navonweb-development-tesla-driving';
+  const PRESENTATION_ORIENTATIONS = Object.freeze(['auto', 'landscape', 'portrait']);
+  const PRESENTATION_ALIGNMENTS = Object.freeze([
+    'center', 'top', 'bottom', 'left', 'right',
+    'top-left', 'top-right', 'bottom-left', 'bottom-right', 'custom'
+  ]);
 
   function resolveCloudRelayConfig() {
     const raw = window.NAVONWEB_CLOUD_CONFIG;
@@ -135,6 +156,7 @@
       projectionFrameAlt: 'Android Auto projection video',
       androidAutoWaiting: 'Waiting for Android Auto',
       fullscreenEnter: 'Fullscreen',
+      fullscreenExit: 'Exit fullscreen',
       fullscreenEnterLabel: 'View Android Auto in fullscreen',
       fullscreenExitLabel: 'Exit Android Auto fullscreen',
       normalViewState: 'Showing standard view',
@@ -142,6 +164,35 @@
       theaterViewState: 'Showing theater mode',
       fullscreenHintWindows: 'Press Esc to exit fullscreen.',
       fullscreenHintTouch: 'Pinch out/in to toggle fullscreen.',
+      presentationControlsLabel: 'Projection display controls',
+      presentationOrientationLabel: 'Orientation',
+      presentationOrientationAuto: 'Auto',
+      presentationOrientationLandscape: 'Landscape',
+      presentationOrientationPortrait: 'Portrait',
+      presentationAlignmentLabel: 'Alignment',
+      presentationAlignmentTrigger: 'Alignment: {alignment}. Open position picker.',
+      presentationAlignCenter: 'Center',
+      presentationAlignTop: 'Top',
+      presentationAlignBottom: 'Bottom',
+      presentationAlignLeft: 'Left',
+      presentationAlignRight: 'Right',
+      presentationAlignTopLeft: 'Top left',
+      presentationAlignTopRight: 'Top right',
+      presentationAlignBottomLeft: 'Bottom left',
+      presentationAlignBottomRight: 'Bottom right',
+      presentationAlignCustom: 'Custom',
+      presentationGuideTitle: 'Fullscreen display controls',
+      presentationGuideOrientation: 'Choose Auto, Landscape, or Portrait before entering fullscreen.',
+      presentationGuideAlignment: 'Before entering fullscreen, choose where letterboxed video is aligned.',
+      presentationGuideMove: 'Move two fingers together to reposition video inside the available margins.',
+      presentationGuideExit: 'Before movement locks, a clear inward pinch exits fullscreen.',
+      presentationGuideReset: 'Press with three fingers to reset the video position.',
+      presentationGuideDoNotShowAgain: "Don't show again",
+      presentationGuideDismiss: 'OK',
+      presentationGuideAutoDismiss: 'This guide closes automatically in {seconds}s.',
+      presentationGuideAutoDismissStopped: 'Automatic closing has been stopped.',
+      presentationGuideCountdownLabel: 'Time until this guide closes automatically',
+      presentationReset: 'The video position was reset.',
       announcements: 'Announcements',
       noticesLoading: 'Loading announcements…',
       noAnnouncements: 'There are no announcements.',
@@ -164,8 +215,9 @@
       localNetworkAllow: 'Allow local network',
       localNetworkRetry: 'Retry',
       androidAutoReconnecting: 'Reconnecting to Android Auto',
-      serverWaiting: 'Waiting for server',
-      localControlRecovering: 'Recovering the local connection. Control data was not sent through the cloud.',
+      serverWaiting: 'Waiting for video',
+      localControlRecovering: 'Recovering the local control connection.',
+      viewportMainSessionOnly: 'This device is not the main session. The projection aspect ratio and viewport follow the main session selected on your phone.',
       eightDigitRequired: 'Enter an 8-digit number.',
       connecting: 'Connecting…',
       invalidCode: 'The code is not valid.',
@@ -194,8 +246,8 @@
       landingBrowserEyebrow: 'The connected experience',
       landingBrowserTitle: 'Your projection, ready in the browser.',
       landingBrowserLead: 'Once paired, the live Android Auto screen fills the available browser space with video, sound and touch controls.',
-      landingBrowserScreenshotAlt: 'NavOnWeb browser connected to a live projection',
-      landingBrowserCaption: 'A live local-network session shown in a desktop browser',
+      landingBrowserScreenshotAlt: 'Illustrative NavOnWeb browser screen reconstructed with AI',
+      landingBrowserCaption: 'Illustrative screen reconstructed with AI',
       landingBenefitsEyebrow: 'Designed around the screen you already have',
       landingBenefitsTitle: 'A familiar drive, without another vehicle adapter.',
       landingBenefitsLead: 'Keep the supported projection session on your phone and bring it to a compatible vehicle, tablet or desktop browser on the same network.',
@@ -227,6 +279,7 @@
       projectionFrameAlt: 'Android Auto 프로젝션 영상',
       androidAutoWaiting: 'Android Auto 연결 대기',
       fullscreenEnter: '전체 화면',
+      fullscreenExit: '전체 화면 종료',
       fullscreenEnterLabel: 'Android Auto 전체 화면으로 보기',
       fullscreenExitLabel: 'Android Auto 전체 화면 종료',
       normalViewState: '기본 화면으로 표시 중',
@@ -234,6 +287,35 @@
       theaterViewState: '극장 모드로 표시 중',
       fullscreenHintWindows: 'Esc로 전체화면 종료',
       fullscreenHintTouch: '핀치 줌아웃/인으로 전체화면을 전환할 수 있습니다',
+      presentationControlsLabel: '프로젝션 화면 표시 설정',
+      presentationOrientationLabel: '화면 방향',
+      presentationOrientationAuto: '자동',
+      presentationOrientationLandscape: '가로',
+      presentationOrientationPortrait: '세로',
+      presentationAlignmentLabel: '정렬',
+      presentationAlignmentTrigger: '정렬: {alignment}. 위치 선택 열기.',
+      presentationAlignCenter: '가운데',
+      presentationAlignTop: '위',
+      presentationAlignBottom: '아래',
+      presentationAlignLeft: '왼쪽',
+      presentationAlignRight: '오른쪽',
+      presentationAlignTopLeft: '왼쪽 위',
+      presentationAlignTopRight: '오른쪽 위',
+      presentationAlignBottomLeft: '왼쪽 아래',
+      presentationAlignBottomRight: '오른쪽 아래',
+      presentationAlignCustom: '사용자 위치',
+      presentationGuideTitle: '전체 화면 표시 안내',
+      presentationGuideOrientation: '전체 화면으로 전환하기 전에 자동, 가로 또는 세로 방향을 선택할 수 있습니다.',
+      presentationGuideAlignment: '전체 화면으로 전환하기 전에 여백 안에서 영상이 놓일 위치를 선택할 수 있습니다.',
+      presentationGuideMove: '전체 화면에서 두 손가락을 나란히 움직이면 여백 안에서 영상 위치가 이동합니다.',
+      presentationGuideExit: '이동이 시작되기 전에 두 손가락을 확실히 오므리면 전체 화면을 종료합니다.',
+      presentationGuideReset: '세 손가락을 대면 영상 표시 위치가 가운데로 돌아갑니다.',
+      presentationGuideDoNotShowAgain: '다시 보지 않기',
+      presentationGuideDismiss: '확인',
+      presentationGuideAutoDismiss: '{seconds}초 후 자동으로 닫힙니다.',
+      presentationGuideAutoDismissStopped: '자동 닫힘이 중지되었습니다.',
+      presentationGuideCountdownLabel: '안내가 자동으로 닫힐 때까지 남은 시간',
+      presentationReset: '영상 표시 위치를 가운데로 되돌렸습니다.',
       announcements: '공지사항',
       noticesLoading: '공지사항을 불러오는 중…',
       noAnnouncements: '등록된 공지사항이 없습니다.',
@@ -256,8 +338,9 @@
       localNetworkAllow: '로컬 네트워크 허용',
       localNetworkRetry: '다시 시도',
       androidAutoReconnecting: 'Android Auto 다시 연결 중',
-      serverWaiting: '서버 연결 대기',
-      localControlRecovering: '로컬 연결을 복구하는 중입니다. 제어 데이터는 클라우드로 전송되지 않았습니다.',
+      serverWaiting: '영상 연결 대기',
+      localControlRecovering: '로컬 제어 연결을 복구하는 중입니다.',
+      viewportMainSessionOnly: '이 기기는 메인 세션이 아닙니다. 프로젝션 종횡비와 화면 크기는 휴대전화에서 지정한 메인 세션을 따릅니다.',
       eightDigitRequired: '8자리 숫자를 입력하세요.',
       connecting: '연결 중…',
       invalidCode: '코드가 올바르지 않습니다.',
@@ -286,8 +369,8 @@
       landingBrowserEyebrow: '브라우저 연결 모습',
       landingBrowserTitle: '연결되면 차량용 화면이 브라우저에 바로 표시됩니다',
       landingBrowserLead: '한 번 페어링하면 Android Auto 실시간 화면이 브라우저 공간에 맞춰 표시되고 영상·소리·터치 입력을 이용할 수 있습니다.',
-      landingBrowserScreenshotAlt: '실시간 프로젝션에 연결된 NavOnWeb 브라우저 화면',
-      landingBrowserCaption: '같은 로컬 네트워크의 데스크톱 브라우저에서 연결한 실제 화면',
+      landingBrowserScreenshotAlt: 'AI로 재구성한 NavOnWeb 브라우저 예시 화면',
+      landingBrowserCaption: 'AI로 재구성한 예시 화면',
       landingBenefitsEyebrow: '이미 가지고 있는 화면을 중심으로 설계했습니다',
       landingBenefitsTitle: '별도 차량용 어댑터 없이 익숙한 주행 화면을',
       landingBenefitsLead: '휴대전화에서 실행되는 지원 프로젝션 화면을 같은 네트워크의 호환 차량·태블릿·데스크톱 브라우저로 가져옵니다.',
@@ -354,6 +437,7 @@
   const viewer = document.querySelector('#viewer');
   const pad = document.querySelector('#pad');
   const projectionContent = document.querySelector('#projection-content');
+  const sessionTouchOverlay = document.querySelector('#session-touch-overlay');
   const frame = document.querySelector('#frame');
   const webRtcVideo = document.querySelector('#webrtc-video');
   const streamState = document.querySelector('#stream-state');
@@ -368,7 +452,27 @@
   const repairPairingPanel = document.querySelector('#repair-pairing-panel');
   const repairPairingButton = document.querySelector('#repair-pairing');
   const viewerControls = document.querySelector('#viewer-controls');
+  const viewportAuthorityNotice = document.querySelector('#viewport-authority-notice');
   const fullscreenButton = document.querySelector('#fullscreen');
+  const presentationOrientationInputs = Array.from(
+    document.querySelectorAll('input[name="presentation-orientation"]')
+  );
+  const presentationAlignmentLabel = document.querySelector('#presentation-alignment-label');
+  const presentationAlignmentTrigger = document.querySelector('#presentation-alignment-trigger');
+  const presentationAlignmentPicker = document.querySelector('#presentation-alignment-picker');
+  const presentationAlignmentSelect = document.querySelector('#presentation-alignment');
+  const presentationAlignmentInputs = Array.from(
+    document.querySelectorAll('input[name="presentation-alignment-choice"]')
+  );
+  const presentationGuide = document.querySelector('#presentation-guide');
+  const presentationGuideCard = document.querySelector('#presentation-guide-card');
+  const presentationGuideDismissForever = document.querySelector(
+    '#presentation-guide-dismiss-forever'
+  );
+  const presentationGuideDismiss = document.querySelector('#presentation-guide-dismiss');
+  const presentationGuideCountdown = document.querySelector('#presentation-guide-countdown');
+  const presentationGuideCountdownText = document.querySelector('#presentation-guide-countdown-text');
+  const presentationGuideProgress = document.querySelector('#presentation-guide-progress');
   const fullscreenState = document.querySelector('#fullscreen-state');
   const fullscreenHint = document.querySelector('#fullscreen-hint');
   const expandedViewportProbe = document.querySelector('#expanded-viewport-probe');
@@ -376,6 +480,7 @@
   const premiumPromptDismiss = document.querySelector('#premium-prompt-dismiss');
   const premiumPromptConfirm = document.querySelector('#premium-prompt-confirm');
   const noticePanel = document.querySelector('#notice-panel');
+  const noticeSummary = noticePanel.querySelector('summary');
   const noticeStatus = document.querySelector('#notice-status');
   const noticeList = document.querySelector('#notice-list');
 
@@ -403,6 +508,8 @@
   const touchPointers = new Map();
   let pinchGesture = null;
   let suppressAndroidAutoTouch = false;
+  let pendingSingleTouch = null;
+  let pendingSingleTouchTimer = 0;
   const touchControlQueue = [];
   let pendingMoveTouch = null;
   let touchPumpGeneration = null;
@@ -415,6 +522,8 @@
   let projectionProfileRevision = 0;
   let webRtcPeer = null;
   let webRtcControlTransport = null;
+  let webRtcControlOpenTimer = 0;
+  let webRtcControlNegotiatingGeneration = 0;
   let localControlCutover = false;
   const webRtcAudioChannels = new Map();
   const webRtcAudioOpenTimers = new Map();
@@ -427,6 +536,7 @@
   let webRtcRecoveryTimer = 0;
   let webRtcRecoveryAttempts = 0;
   let webRtcRecoveryInFlight = false;
+  let webRtcSessionCloseBarrier = null;
   let webRtcIcePairPublishedGeneration = 0;
   let webRtcVideoStatsTimer = 0;
   let webRtcVideoStatsGeneration = 0;
@@ -437,6 +547,18 @@
   let localNetworkPermissionRequestInFlight = false;
   let androidAutoInteractive = false;
   let androidAutoTouchReady = false;
+  let browserSessionAccess = 'read_only';
+  let browserSessionRole = 'viewer';
+  let browserSessionDeviceId = '';
+  let browserSessionColorSlot = 0;
+  let browserSessionMetadataSupported = false;
+  let viewportAuthorityRejected = false;
+  let viewportAuthorityNoticeState = 'hidden';
+  let viewportAuthorityNoticeTimer = 0;
+  let viewportAuthorityNoticeTimerGeneration = 0;
+  let viewportAuthorityNoticeEligibleState = false;
+  let viewportAuthorityNoticeExpandedState = false;
+  const remoteTouchMarkers = new Map();
   let pageActive = true;
   let theaterMode = false;
   let screenWakeLock = null;
@@ -446,6 +568,20 @@
   let fullscreenEntryPendingGeneration = 0;
   let expandedViewWasActive = false;
   let fullscreenHintTimer = 0;
+  const initialPresentationPreferences = loadPresentationPreferences();
+  let presentationOrientation = initialPresentationPreferences.orientation;
+  let presentationAlignment = initialPresentationPreferences.alignment;
+  let presentationOffset = presentationAlignment === 'custom'
+    ? initialPresentationPreferences.offset
+    : presentationAlignmentOffset(presentationAlignment);
+  let presentationSnapState = presentationSnapStateForOffset(presentationOffset);
+  let currentPresentationLayout = null;
+  let presentationAlignmentPickerOpen = false;
+  let presentationGuideOpen = false;
+  let presentationGuideAutoDismissTimer = 0;
+  let presentationGuideCountdownTimer = 0;
+  let presentationGuideAutoDismissDeadline = 0;
+  let presentationGuideTimerGeneration = 0;
   let premiumPromptOfferedForSession = false;
   let premiumPromptTimer = 0;
   let noticeRequestTask = null;
@@ -457,6 +593,7 @@
   let outputAudioWebRtcRecoveryRequired = false;
   let outputAudioWebRtcUnsupported = false;
   let outputAudioWebRtcRecoveryTimer = 0;
+  let outputAudioWebRtcRecoveryGeneration = 0;
   let outputAudioWebRtcRecoveryAttempts = 0;
   let audioGeneration = 0;
   let audioRecoveryTimer = 0;
@@ -487,12 +624,17 @@
   let viewportResizeObserver = null;
   let activeViewportValue = null;
   let expandedViewportTarget = null;
+  let expandedViewportOrientationAxis = '';
   let developmentViewportMode = '';
   let developmentTeslaDriving = false;
   let developmentTeslaCycleTimer = 0;
   let viewportReportTimer = 0;
   let viewportReportAbortController = null;
+  let viewportReportTask = null;
+  let viewportReportGeneration = 0;
   let pendingViewportReport = null;
+  let pendingViewportReportGeneration = 0;
+  let pendingViewportReportTimeoutAttempts = 0;
   let lastViewportReportKey = '';
 
   function resolveBrowserLanguageCandidates() {
@@ -669,6 +811,75 @@
       if (LEGACY_CLOUD_STORAGE_KEY) window.localStorage.removeItem(LEGACY_CLOUD_STORAGE_KEY);
     } catch (_) {
       // 저장소 접근 실패와 관계없이 현재 연결은 폐기합니다.
+    }
+  }
+
+  function boundedPresentationUnit(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(-1, Math.min(1, numeric));
+  }
+
+  function presentationSnapStateForOffset(offset) {
+    return Object.freeze({
+      x: Math.abs(boundedPresentationUnit(offset && offset.x)) < 0.01,
+      y: Math.abs(boundedPresentationUnit(offset && offset.y)) < 0.01
+    });
+  }
+
+  function normalizePresentationPreferences(value) {
+    const orientation = value && PRESENTATION_ORIENTATIONS.includes(value.orientation)
+      ? value.orientation
+      : 'auto';
+    const alignment = value && PRESENTATION_ALIGNMENTS.includes(value.alignment)
+      ? value.alignment
+      : 'center';
+    const rawOffset = value && typeof value.offset === 'object' ? value.offset : null;
+    return Object.freeze({
+      orientation,
+      alignment,
+      offset: Object.freeze({
+        x: boundedPresentationUnit(rawOffset && rawOffset.x),
+        y: boundedPresentationUnit(rawOffset && rawOffset.y)
+      })
+    });
+  }
+
+  function loadPresentationPreferences() {
+    try {
+      const saved = window.localStorage.getItem(PRESENTATION_PREFERENCES_KEY) || '';
+      if (!saved || saved.length > 512) return normalizePresentationPreferences(null);
+      return normalizePresentationPreferences(JSON.parse(saved));
+    } catch (_) {
+      return normalizePresentationPreferences(null);
+    }
+  }
+
+  function rememberPresentationPreferences() {
+    try {
+      window.localStorage.setItem(PRESENTATION_PREFERENCES_KEY, JSON.stringify({
+        orientation: presentationOrientation,
+        alignment: presentationAlignment,
+        offset: presentationOffset
+      }));
+    } catch (_) {
+      // Presentation preferences remain valid for the current page when storage is unavailable.
+    }
+  }
+
+  function presentationGuideWasDismissed() {
+    try {
+      return window.localStorage.getItem(PRESENTATION_GUIDE_DISMISSED_KEY) === 'true';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function rememberPresentationGuideDismissal() {
+    try {
+      window.localStorage.setItem(PRESENTATION_GUIDE_DISMISSED_KEY, 'true');
+    } catch (_) {
+      // A blocked store shows the guide again on a later page load.
     }
   }
 
@@ -1050,6 +1261,109 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  function visibleViewportBounds() {
+    const visual = window.visualViewport;
+    if (visual && Number.isFinite(visual.width) && Number.isFinite(visual.height) &&
+        visual.width > 0 && visual.height > 0) {
+      const top = Number.isFinite(visual.offsetTop) ? visual.offsetTop : 0;
+      return Object.freeze({
+        width: visual.width,
+        height: visual.height,
+        top,
+        bottom: top + visual.height,
+        source: 'visualViewport'
+      });
+    }
+    const layout = layoutViewportDimensions();
+    const top = Number.isFinite(layout.top) ? layout.top : 0;
+    const bottom = Number.isFinite(layout.bottom) ? layout.bottom : top + layout.height;
+    return Object.freeze({
+      width: layout.width,
+      height: layout.height,
+      top,
+      bottom,
+      source: 'layoutViewport'
+    });
+  }
+
+  function clearStandardProjectionBounds() {
+    for (const property of ['width', 'height', 'aspect-ratio', 'justify-self']) {
+      pad.style.removeProperty(property);
+    }
+    delete pad.dataset.navonwebStandardBounds;
+  }
+
+  function visibleLayoutHeight(element) {
+    if (!element || element.hidden) return 0;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none') return 0;
+    const rect = element.getBoundingClientRect();
+    return Number.isFinite(rect.height) ? Math.max(0, rect.height) : 0;
+  }
+
+  function collapsedNoticePanelHeight() {
+    if (!noticePanel || noticePanel.hidden) return 0;
+    const summaryHeight = visibleLayoutHeight(noticeSummary);
+    if (summaryHeight <= 0) return 0;
+    const style = window.getComputedStyle(noticePanel);
+    return summaryHeight +
+      finiteCssPixels(style.paddingTop) + finiteCssPixels(style.paddingBottom) +
+      finiteCssPixels(style.borderTopWidth) + finiteCssPixels(style.borderBottomWidth);
+  }
+
+  function standardProjectionAspectRatio() {
+    if (document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS) &&
+        browserSessionOwnsViewport()) {
+      const expanded = expectedExpandedProjectionViewport();
+      if (expanded && Number.isFinite(expanded.aspectRatio) && expanded.aspectRatio > 0) {
+        return expanded.aspectRatio;
+      }
+    }
+    const sourceAspectRatio = projectionSourceAspectRatio();
+    return Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 5 / 3;
+  }
+
+  function syncStandardProjectionBounds() {
+    if (viewer.hidden || expandedViewActive()) {
+      clearStandardProjectionBounds();
+      return null;
+    }
+    const viewport = visibleViewportBounds();
+    const padRect = pad.getBoundingClientRect();
+    const padViewportTop = Math.max(viewport.top, padRect.top);
+    const trailingHeights = [
+      localNetworkPanel,
+      mediaPermissionPanel,
+      repairPairingPanel,
+      viewportAuthorityNotice,
+      viewerControls
+    ].map(visibleLayoutHeight).filter(height => height > 0);
+    const viewerStyle = window.getComputedStyle(viewer);
+    const viewerGap = finiteCssPixels(viewerStyle.rowGap || viewerStyle.gap);
+    const noticeHeight = collapsedNoticePanelHeight();
+    const mainStyle = window.getComputedStyle(main);
+    const noticeGap = noticeHeight > 0 ? finiteCssPixels(mainStyle.rowGap || mainStyle.gap) : 0;
+    const reservedHeight = trailingHeights.reduce((total, height) => total + height, 0) +
+      viewerGap * trailingHeights.length + noticeHeight + noticeGap +
+      finiteCssPixels(mainStyle.paddingBottom);
+    const availableHeight = Math.max(1, viewport.bottom - padViewportTop - reservedHeight);
+    const containerWidth = viewer.clientWidth || pad.parentElement.clientWidth || pad.clientWidth;
+    const availableWidth = Math.max(1, Math.min(viewport.width, containerWidth));
+    const aspectRatio = standardProjectionAspectRatio();
+    const height = Math.min(availableHeight, availableWidth / aspectRatio);
+    const width = Math.min(availableWidth, height * aspectRatio);
+    const roundedWidth = Math.max(1, Math.round(width * 100) / 100);
+    const roundedHeight = Math.max(1, Math.round(height * 100) / 100);
+    const widthCss = `${roundedWidth}px`;
+    const heightCss = `${roundedHeight}px`;
+    if (pad.style.getPropertyValue('width') !== widthCss) pad.style.setProperty('width', widthCss);
+    if (pad.style.getPropertyValue('height') !== heightCss) pad.style.setProperty('height', heightCss);
+    pad.style.setProperty('aspect-ratio', 'auto');
+    pad.style.setProperty('justify-self', 'center');
+    pad.dataset.navonwebStandardBounds = `${roundedWidth}x${roundedHeight}`;
+    return Object.freeze({width: roundedWidth, height: roundedHeight, availableHeight});
+  }
+
   function browserDevicePixelRatio() {
     const value = Number(window.devicePixelRatio);
     if (!Number.isFinite(value) || value < MIN_VIEWPORT_DEVICE_PIXEL_RATIO ||
@@ -1063,16 +1377,23 @@
     if (visual && Math.abs(visualScale - 1) <= 0.01 &&
         Number.isFinite(visual.width) && Number.isFinite(visual.height) &&
         visual.width > 0 && visual.height > 0) {
+      const top = Number.isFinite(visual.offsetTop) ? visual.offsetTop : 0;
       return {
         width: visual.width,
         height: visual.height,
+        top,
+        bottom: top + visual.height,
         scale: visualScale,
         source: 'visualViewport'
       };
     }
+    const width = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+    const height = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
     return {
-      width: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
-      height: Math.max(document.documentElement.clientHeight, window.innerHeight || 0),
+      width,
+      height,
+      top: 0,
+      bottom: height,
       scale: visualScale,
       source: 'layoutViewport'
     };
@@ -1091,6 +1412,19 @@
     });
   }
 
+  function orientPresentationViewport(width, height, orientation) {
+    const axis = projectionOrientationAxis(width, height);
+    const requested = PRESENTATION_ORIENTATIONS.includes(orientation) ? orientation : 'auto';
+    if (requested === 'auto' || !axis || axis === requested) {
+      return Object.freeze({width, height, orientation: requested});
+    }
+    return Object.freeze({width: height, height: width, orientation: requested});
+  }
+
+  function effectiveProjectionOrientation() {
+    return browserSessionOwnsViewport() ? presentationOrientation : 'auto';
+  }
+
   function calculateExpandedProjectionViewport() {
     if (viewer.hidden) return null;
     const viewport = layoutViewportDimensions();
@@ -1106,8 +1440,10 @@
       const orientationType = String(
         window.screen && window.screen.orientation && window.screen.orientation.type || ''
       );
+      const legacyOrientation = Number(window.orientation);
       const orientationLandscape = orientationType.startsWith('landscape') ? true :
-        orientationType.startsWith('portrait') ? false : null;
+        orientationType.startsWith('portrait') ? false :
+          Number.isFinite(legacyOrientation) ? Math.abs(legacyOrientation) % 180 === 90 : null;
       const dimensionsLandscape = screenWidth >= screenHeight;
       const swapDimensions = orientationLandscape !== null &&
         orientationLandscape !== dimensionsLandscape;
@@ -1122,15 +1458,17 @@
     width -= insets.left + insets.right;
     height -= insets.top + insets.bottom;
     if (width <= 0 || height <= 0) return null;
-    const roundedWidth = Math.round(width * 100) / 100;
-    const roundedHeight = Math.round(height * 100) / 100;
+    const oriented = orientPresentationViewport(width, height, effectiveProjectionOrientation());
+    const roundedWidth = Math.round(oriented.width * 100) / 100;
+    const roundedHeight = Math.round(oriented.height * 100) / 100;
     return Object.freeze({
       width: roundedWidth,
       height: roundedHeight,
       aspectRatio: roundedWidth / roundedHeight,
       devicePixelRatio: browserDevicePixelRatio(),
       viewportScale: viewport.scale,
-      source
+      source,
+      presentationOrientation: oriented.orientation
     });
   }
 
@@ -1138,15 +1476,61 @@
     return expandedViewportTarget || calculateExpandedProjectionViewport();
   }
 
+  function projectionOrientationAxis(width, height) {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 ||
+        Math.abs(width - height) <= 0.5) return '';
+    return width > height ? 'landscape' : 'portrait';
+  }
+
+  function physicalViewportOrientationAxis() {
+    const orientationType = String(
+      window.screen && window.screen.orientation && window.screen.orientation.type || ''
+    );
+    if (orientationType.startsWith('landscape')) return 'landscape';
+    if (orientationType.startsWith('portrait')) return 'portrait';
+    const legacyOrientation = Number(window.orientation);
+    if (Number.isFinite(legacyOrientation)) {
+      return Math.abs(legacyOrientation) % 180 === 90 ? 'landscape' : 'portrait';
+    }
+    const screenWidth = Number(window.screen && window.screen.width);
+    const screenHeight = Number(window.screen && window.screen.height);
+    const screenAxis = projectionOrientationAxis(screenWidth, screenHeight);
+    if (screenAxis) return screenAxis;
+    const viewport = layoutViewportDimensions();
+    return projectionOrientationAxis(viewport.width, viewport.height);
+  }
+
   function lockExpandedProjectionViewport() {
     if (!expandedViewportTarget) {
       expandedViewportTarget = calculateExpandedProjectionViewport();
+      expandedViewportOrientationAxis = physicalViewportOrientationAxis();
     }
     return expandedViewportTarget;
   }
 
   function releaseExpandedProjectionViewport() {
     expandedViewportTarget = null;
+    expandedViewportOrientationAxis = '';
+  }
+
+  function refreshExpandedProjectionViewport() {
+    if (!expandedViewportTarget) return false;
+    const nextAxis = physicalViewportOrientationAxis();
+    const physicalRotation = Boolean(
+      expandedViewportOrientationAxis && nextAxis &&
+      expandedViewportOrientationAxis !== nextAxis
+    );
+    if (!physicalRotation) return false;
+    const next = calculateExpandedProjectionViewport();
+    const effectiveOrientation = effectiveProjectionOrientation();
+    const requestedAxis = effectiveOrientation === 'auto' ? nextAxis : effectiveOrientation;
+    if (!next || projectionOrientationAxis(next.width, next.height) !== requestedAxis) return false;
+    // orientationchange may precede the visual/layout viewport resize (notably in Safari).
+    // Consume the physical-axis transition only after the corresponding geometry is observable.
+    expandedViewportOrientationAxis = nextAxis;
+    if (!viewportValueChanged(expandedViewportTarget, next)) return false;
+    expandedViewportTarget = next;
+    return true;
   }
 
   function measureProjectionViewport() {
@@ -1175,19 +1559,67 @@
     }
   }
 
+  function clearViewportReportTimer() {
+    if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
+    viewportReportTimer = 0;
+  }
+
+  function abortViewportReportTask(reason) {
+    const task = viewportReportTask;
+    if (!task) return;
+    task.abortReason = reason;
+    task.controller.abort();
+  }
+
+  function armPendingViewportReport(delayMillis) {
+    clearViewportReportTimer();
+    const generation = pendingViewportReportGeneration;
+    viewportReportTimer = window.setTimeout(() => {
+      viewportReportTimer = 0;
+      if (!pendingViewportReport || generation !== pendingViewportReportGeneration ||
+          generation !== viewportReportGeneration) return;
+      reportProjectionViewport();
+    }, delayMillis);
+  }
+
+  function stageLatestViewportReport(value, delayMillis = VIEWPORT_REPORT_SETTLE_MILLIS) {
+    viewportReportGeneration += 1;
+    pendingViewportReport = value;
+    pendingViewportReportGeneration = viewportReportGeneration;
+    pendingViewportReportTimeoutAttempts = 0;
+    abortViewportReportTask('superseded');
+    if (delayMillis === null) clearViewportReportTimer();
+    else armPendingViewportReport(delayMillis);
+  }
+
+  function retryLatestViewportReport(task, delayMillis, timedOut = false) {
+    if (viewportReportTask !== task || task.abortReason === 'superseded' ||
+        task.generation !== viewportReportGeneration ||
+        (pendingViewportReport && pendingViewportReportGeneration !== task.generation)) return false;
+    const timeoutAttempts = task.timeoutAttempts + (timedOut ? 1 : 0);
+    if (timedOut && timeoutAttempts > VIEWPORT_REPORT_MAX_TIMEOUT_RETRIES) return false;
+    pendingViewportReport = task.value;
+    pendingViewportReportGeneration = task.generation;
+    pendingViewportReportTimeoutAttempts = timeoutAttempts;
+    armPendingViewportReport(delayMillis);
+    return true;
+  }
+
   function scheduleViewportReport(value) {
     const blockedReason = !value ? 'no-viewport' :
       !browserCredential ? 'no-browser-credential' :
+      !browserSessionOwnsViewport() ? 'not-main-session' :
       !pageActive ? 'page-inactive' :
       document.hidden ? 'document-hidden' :
       !document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS) ? 'not-entitled' :
       Math.abs(value.viewportScale - 1) > 0.01 ? 'viewport-scaled' : '';
     if (blockedReason) {
-      if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
-      viewportReportTimer = 0;
+      viewportReportGeneration += 1;
+      clearViewportReportTimer();
       pendingViewportReport = null;
-      if (viewportReportAbortController) viewportReportAbortController.abort();
-      viewportReportAbortController = null;
+      pendingViewportReportGeneration = 0;
+      pendingViewportReportTimeoutAttempts = 0;
+      abortViewportReportTask('blocked');
       setDevelopmentViewportDiagnostic('viewport-report', `blocked:${blockedReason}`);
       return;
     }
@@ -1195,17 +1627,18 @@
     // vehicle browsers without public Internet even though the local NavOnWeb server is healthy.
     const key = viewportReportKey(value);
     if (viewportReportTimer && pendingViewportReport &&
+        pendingViewportReportGeneration === viewportReportGeneration &&
         viewportReportKey(pendingViewportReport) === key) {
       setDevelopmentViewportDiagnostic('viewport-report', `scheduled:${key}`);
       return;
     }
-    pendingViewportReport = value;
+    if (viewportReportTask && viewportReportTask.generation === viewportReportGeneration &&
+        viewportReportTask.key === key && !viewportReportTask.timedOut) {
+      setDevelopmentViewportDiagnostic('viewport-report', `sending:${key}`);
+      return;
+    }
     setDevelopmentViewportDiagnostic('viewport-report', `scheduled:${key}`);
-    if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
-    viewportReportTimer = window.setTimeout(() => {
-      viewportReportTimer = 0;
-      reportProjectionViewport();
-    }, VIEWPORT_REPORT_SETTLE_MILLIS);
+    stageLatestViewportReport(value);
   }
 
   function viewportReportKey(value) {
@@ -1213,16 +1646,27 @@
   }
 
   function requestViewportControlReclaim() {
-    if (!activeViewportValue ||
+    if (!browserSessionOwnsViewport() ||
         !document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS)) return;
+    // A role transition can race a queued layout frame after an offline viewer changed its
+    // orientation preference. Measure synchronously so becoming main never posts the stale
+    // target once before the coalesced preference target.
+    const latest = measureProjectionViewport();
+    if (!latest) return;
+    activeViewportValue = latest;
     lastViewportReportKey = '';
-    scheduleViewportReport(activeViewportValue);
+    scheduleViewportReport(latest);
   }
 
   async function reportProjectionViewport() {
     const value = pendingViewportReport;
+    const generation = pendingViewportReportGeneration;
+    const timeoutAttempts = pendingViewportReportTimeoutAttempts;
     pendingViewportReport = null;
-    if (!value || !browserCredential || !pageActive || document.hidden ||
+    pendingViewportReportGeneration = 0;
+    pendingViewportReportTimeoutAttempts = 0;
+    if (!value || generation !== viewportReportGeneration || !browserCredential ||
+        !browserSessionOwnsViewport() || !pageActive || document.hidden ||
         !document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS) ||
         Math.abs(value.viewportScale - 1) > 0.01) {
       setDevelopmentViewportDiagnostic('viewport-report', 'blocked:stale');
@@ -1230,10 +1674,24 @@
     }
     const key = viewportReportKey(value);
     if (key === lastViewportReportKey) return;
-    if (viewportReportAbortController) viewportReportAbortController.abort();
+    abortViewportReportTask('superseded');
     const controller = new AbortController();
+    const task = {
+      generation,
+      key,
+      value,
+      timeoutAttempts,
+      controller,
+      timedOut: false,
+      abortReason: ''
+    };
+    viewportReportTask = task;
     viewportReportAbortController = controller;
-    const timeout = window.setTimeout(() => controller.abort(), VIEWPORT_REPORT_TIMEOUT_MILLIS);
+    const timeout = window.setTimeout(() => {
+      task.timedOut = true;
+      task.abortReason = 'timeout';
+      controller.abort();
+    }, VIEWPORT_REPORT_TIMEOUT_MILLIS);
     try {
       setDevelopmentViewportDiagnostic('viewport-report', `sending:${key}`);
       const query = new URLSearchParams({
@@ -1245,6 +1703,8 @@
         `/api/projection/viewport?${query}`,
         {method: 'POST', signal: controller.signal}
       );
+      if (viewportReportTask !== task || generation !== viewportReportGeneration ||
+          task.abortReason === 'superseded') return false;
       if (response.status === 401) {
         invalidateCredential(t('connectionExpiredPhone'));
         return false;
@@ -1256,6 +1716,16 @@
       }
       if (response.status === 409 || response.status >= 500) {
         const conflict = response.status === 409 ? await response.json().catch(() => ({})) : {};
+        if (viewportReportTask !== task || generation !== viewportReportGeneration ||
+            task.abortReason === 'superseded') return false;
+        if (conflict.error === 'main_session_required') {
+          viewportAuthorityRejected = true;
+          cancelViewportAuthority();
+          syncViewportAuthorityNotice();
+          void pollStatus({automatic: true});
+          setDevelopmentViewportDiagnostic('viewport-report', `blocked:not-main-session:${key}`);
+          return false;
+        }
         const controllerBusy = conflict.error === 'viewport_controller_busy';
         const retryDelay = controllerBusy ?
           VIEWPORT_CONTROLLER_BUSY_RETRY_MILLIS : VIEWPORT_REPORT_RETRY_MILLIS;
@@ -1263,44 +1733,51 @@
           'viewport-report',
           `${controllerBusy ? 'busy' : 'retry'}:${response.status}:${key}`
         );
-        pendingViewportReport = value;
-        viewportReportTimer = window.setTimeout(() => {
-          viewportReportTimer = 0;
-          reportProjectionViewport();
-        }, retryDelay);
+        retryLatestViewportReport(task, retryDelay);
       }
       if (response.status !== 409 && response.status < 500) {
         setDevelopmentViewportDiagnostic('viewport-report', `rejected:${response.status}:${key}`);
       }
       return false;
     } catch (error) {
-      if (error.name !== 'AbortError') {
+      const latest = viewportReportTask === task && generation === viewportReportGeneration &&
+        task.abortReason !== 'superseded';
+      if (error.name === 'AbortError' && task.timedOut && latest) {
+        const retrying = retryLatestViewportReport(task, VIEWPORT_REPORT_RETRY_MILLIS, true);
+        setDevelopmentViewportDiagnostic(
+          'viewport-report',
+          `${retrying ? 'retry:timeout' : 'failed:timeout'}:${key}`
+        );
+      } else if (error.name !== 'AbortError' && latest) {
         setDevelopmentViewportDiagnostic('viewport-report', `retry:network:${key}`);
-        pendingViewportReport = value;
-        viewportReportTimer = window.setTimeout(() => {
-          viewportReportTimer = 0;
-          reportProjectionViewport();
-        }, VIEWPORT_REPORT_RETRY_MILLIS);
+        retryLatestViewportReport(task, VIEWPORT_REPORT_RETRY_MILLIS);
       } else {
         setDevelopmentViewportDiagnostic('viewport-report', `aborted:${key}`);
       }
       return false;
     } finally {
       window.clearTimeout(timeout);
+      if (viewportReportTask === task) viewportReportTask = null;
       if (viewportReportAbortController === controller) viewportReportAbortController = null;
     }
   }
 
   function preapplyExpandedProjectionViewport() {
     const value = expectedExpandedProjectionViewport();
-    if (!value || !browserCredential || !pageActive || document.hidden ||
+    if (!value || !browserCredential || !browserSessionOwnsViewport() ||
+        !pageActive || document.hidden ||
         !document.body.classList.contains(DYNAMIC_ASPECT_BODY_CLASS) ||
         Math.abs(value.viewportScale - 1) > 0.01) return null;
     const key = viewportReportKey(value);
     if (key === lastViewportReportKey) return null;
-    if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
-    viewportReportTimer = 0;
-    pendingViewportReport = value;
+    if (viewportReportTask && viewportReportTask.generation === viewportReportGeneration &&
+        viewportReportTask.key === key && !viewportReportTask.timedOut) return null;
+    if (!pendingViewportReport || pendingViewportReportGeneration !== viewportReportGeneration ||
+        viewportReportKey(pendingViewportReport) !== key) {
+      stageLatestViewportReport(value, null);
+    } else {
+      clearViewportReportTimer();
+    }
     // Start the same-origin report before requestFullscreen/theater mode. The standard view has
     // normally completed this report already; this last flush remains fire-and-forget so the
     // Fullscreen API is still called inside the browser's transient user-activation window.
@@ -1308,12 +1785,13 @@
   }
 
   function stopViewportReporting() {
-    if (viewportReportTimer) window.clearTimeout(viewportReportTimer);
-    viewportReportTimer = 0;
+    viewportReportGeneration += 1;
+    clearViewportReportTimer();
     pendingViewportReport = null;
+    pendingViewportReportGeneration = 0;
+    pendingViewportReportTimeoutAttempts = 0;
     lastViewportReportKey = '';
-    if (viewportReportAbortController) viewportReportAbortController.abort();
-    viewportReportAbortController = null;
+    abortViewportReportTask('stopped');
   }
 
   function refreshDevelopmentViewportWidth() {
@@ -1335,6 +1813,7 @@
     viewportLayoutFrame = window.requestAnimationFrame(() => {
       viewportLayoutFrame = 0;
       refreshDevelopmentViewportWidth();
+      syncStandardProjectionBounds();
       const next = measureProjectionViewport();
       const changed = viewportValueChanged(activeViewportValue, next);
       if (changed && activePointerId !== null) {
@@ -1357,6 +1836,15 @@
       }
       syncProjectionContentLayout();
     });
+  }
+
+  function handleViewportGeometryChange() {
+    cancelPointerInteraction();
+    // The entry target prevents browser fullscreen CSS transitions from causing a second AA
+    // reconnect. Once the physical viewport rotates, however, that target must follow the new
+    // display geometry so the POST can replace the encoded orientation and touch viewport.
+    refreshExpandedProjectionViewport();
+    scheduleViewportLayoutSync();
   }
 
   function applyDynamicAspectEntitlement(projection) {
@@ -1448,11 +1936,22 @@
     if (typeof ResizeObserver === 'function') {
       viewportResizeObserver = new ResizeObserver(() => scheduleViewportLayoutSync());
       viewportResizeObserver.observe(main);
+      viewportResizeObserver.observe(localNetworkPanel);
+      viewportResizeObserver.observe(mediaPermissionPanel);
+      viewportResizeObserver.observe(repairPairingPanel);
       viewportResizeObserver.observe(viewerControls);
+      viewportResizeObserver.observe(viewportAuthorityNotice);
+      viewportResizeObserver.observe(noticePanel);
+      viewportResizeObserver.observe(noticeSummary);
     }
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', scheduleViewportLayoutSync);
+      window.visualViewport.addEventListener('resize', handleViewportGeometryChange);
       window.visualViewport.addEventListener('scroll', scheduleViewportLayoutSync);
+    }
+    window.addEventListener('orientationchange', handleViewportGeometryChange);
+    if (window.screen && window.screen.orientation &&
+        typeof window.screen.orientation.addEventListener === 'function') {
+      window.screen.orientation.addEventListener('change', handleViewportGeometryChange);
     }
     scheduleViewportLayoutSync();
   }
@@ -1584,6 +2083,7 @@
       noticePanel.hidden = true;
       hidePremiumPrompt();
     }
+    syncViewportAuthorityNotice();
     syncLocalNetworkPermissionPanel();
     if (authenticated) syncScreenWakeLock();
     else releaseScreenWakeLock();
@@ -1683,6 +2183,19 @@
       left.densityDpi === right.densityDpi;
   }
 
+  function projectionReadyForWebRtcPreflight(projection) {
+    if (!projection || String(projection.activationState || '').toLowerCase() !== 'active') {
+      return false;
+    }
+    const viewport = projection.viewport;
+    if (!viewport || String(viewport.activationState || '').toLowerCase() !== 'active') {
+      return false;
+    }
+    const active = normalizeProjectionViewport(viewport.activeLayout);
+    const requested = normalizeProjectionViewport(viewport.requestedLayout);
+    return Boolean(active && requested && sameProjectionViewport(active, requested));
+  }
+
   function zeroProjectionViewport(profile = activeProjectionProfile) {
     return Object.freeze({
       encodedWidth: profile.width,
@@ -1732,19 +2245,205 @@
     return true;
   }
 
-  function syncProjectionContentLayout() {
-    const containerWidth = pad.clientWidth;
-    const containerHeight = pad.clientHeight;
-    if (containerWidth <= 0 || containerHeight <= 0) return;
-    const aspectRatio = projectionSourceAspectRatio();
+  function presentationAlignmentOffset(alignment) {
+    const horizontal = alignment.endsWith('left') || alignment === 'left' ? -1 :
+      alignment.endsWith('right') || alignment === 'right' ? 1 : 0;
+    const vertical = alignment.startsWith('top') || alignment === 'top' ? -1 :
+      alignment.startsWith('bottom') || alignment === 'bottom' ? 1 : 0;
+    return Object.freeze({x: horizontal, y: vertical});
+  }
+
+  function calculatePresentationLayout(containerWidth, containerHeight, aspectRatio, offset) {
+    if (![containerWidth, containerHeight, aspectRatio].every(Number.isFinite) ||
+        containerWidth <= 0 || containerHeight <= 0 || aspectRatio <= 0) return null;
     let width = containerWidth;
     let height = width / aspectRatio;
     if (height > containerHeight) {
       height = containerHeight;
       width = height * aspectRatio;
     }
-    projectionContent.style.width = `${width}px`;
-    projectionContent.style.height = `${height}px`;
+    const marginX = Math.max(0, (containerWidth - width) / 2);
+    const marginY = Math.max(0, (containerHeight - height) / 2);
+    const normalizedOffset = Object.freeze({
+      x: marginX > 0 ? boundedPresentationUnit(offset && offset.x) : 0,
+      y: marginY > 0 ? boundedPresentationUnit(offset && offset.y) : 0
+    });
+    const offsetX = normalizedOffset.x * marginX;
+    const offsetY = normalizedOffset.y * marginY;
+    return Object.freeze({
+      width,
+      height,
+      marginX,
+      marginY,
+      left: marginX + offsetX,
+      top: marginY + offsetY,
+      offsetX,
+      offsetY,
+      normalizedOffset
+    });
+  }
+
+  function snapPresentationAxis(value, maximum, wasSnapped) {
+    const boundedMaximum = Number.isFinite(maximum) ? Math.max(0, maximum) : 0;
+    const bounded = Math.max(-boundedMaximum, Math.min(boundedMaximum, Number(value) || 0));
+    const threshold = wasSnapped
+      ? PRESENTATION_SNAP_EXIT_CSS_PIXELS
+      : PRESENTATION_SNAP_ENTER_CSS_PIXELS;
+    if (Math.abs(bounded) <= Math.min(boundedMaximum, threshold)) {
+      return Object.freeze({value: 0, snapped: true});
+    }
+    return Object.freeze({value: bounded, snapped: false});
+  }
+
+  function dragPresentationOffset(layout, initialOffset, deltaX, deltaY, snapState) {
+    if (!layout) return null;
+    const initialX = boundedPresentationUnit(initialOffset && initialOffset.x) * layout.marginX;
+    const initialY = boundedPresentationUnit(initialOffset && initialOffset.y) * layout.marginY;
+    const horizontal = snapPresentationAxis(
+      initialX + (Number.isFinite(deltaX) ? deltaX : 0),
+      layout.marginX,
+      Boolean(snapState && snapState.x)
+    );
+    const vertical = snapPresentationAxis(
+      initialY + (Number.isFinite(deltaY) ? deltaY : 0),
+      layout.marginY,
+      Boolean(snapState && snapState.y)
+    );
+    return Object.freeze({
+      offset: Object.freeze({
+        x: layout.marginX > 0 ? horizontal.value / layout.marginX : 0,
+        y: layout.marginY > 0 ? vertical.value / layout.marginY : 0
+      }),
+      snap: Object.freeze({x: horizontal.snapped, y: vertical.snapped})
+    });
+  }
+
+  function presentationAlignmentI18nKey(value) {
+    switch (value) {
+      case 'top': return 'presentationAlignTop';
+      case 'bottom': return 'presentationAlignBottom';
+      case 'left': return 'presentationAlignLeft';
+      case 'right': return 'presentationAlignRight';
+      case 'top-left': return 'presentationAlignTopLeft';
+      case 'top-right': return 'presentationAlignTopRight';
+      case 'bottom-left': return 'presentationAlignBottomLeft';
+      case 'bottom-right': return 'presentationAlignBottomRight';
+      case 'custom': return 'presentationAlignCustom';
+      default: return 'presentationAlignCenter';
+    }
+  }
+
+  function setPresentationAlignmentPickerOpen(open, restoreTriggerFocus = false) {
+    const allowed = presentationOrientation !== 'auto' && !expandedViewActive() &&
+      !presentationAlignmentLabel.hidden;
+    const nextOpen = Boolean(open && allowed);
+    const wasOpen = presentationAlignmentPickerOpen;
+    presentationAlignmentPickerOpen = nextOpen;
+    presentationAlignmentTrigger.setAttribute('aria-expanded', String(nextOpen));
+    presentationAlignmentPicker.hidden = !nextOpen;
+    if (nextOpen && !wasOpen) {
+      window.requestAnimationFrame(() => {
+        if (!presentationAlignmentPickerOpen || presentationAlignmentPicker.hidden) return;
+        const focusTarget = presentationAlignmentInputs.find(input => input.checked) ||
+          presentationAlignmentInputs.find(input => input.value === 'center') ||
+          presentationAlignmentInputs[0];
+        if (!focusTarget) return;
+        try { focusTarget.focus({preventScroll: true}); } catch (_) { focusTarget.focus(); }
+      });
+    } else if (!nextOpen && wasOpen && restoreTriggerFocus &&
+        !presentationAlignmentLabel.hidden) {
+      try { presentationAlignmentTrigger.focus({preventScroll: true}); } catch (_) {
+        presentationAlignmentTrigger.focus();
+      }
+    }
+    return nextOpen !== wasOpen;
+  }
+
+  function syncPresentationControls() {
+    for (const input of presentationOrientationInputs) {
+      input.checked = input.value === presentationOrientation;
+    }
+    presentationAlignmentLabel.hidden = presentationOrientation === 'auto';
+    if (presentationOrientation === 'auto' || expandedViewActive()) {
+      setPresentationAlignmentPickerOpen(false, false);
+    }
+    for (const input of presentationAlignmentInputs) {
+      input.checked = input.value === presentationAlignment;
+    }
+    presentationAlignmentSelect.value = presentationAlignment;
+    presentationAlignmentTrigger.dataset.presentationAlignment = presentationAlignment;
+    presentationAlignmentTrigger.setAttribute(
+      'aria-label',
+      t('presentationAlignmentTrigger').replace(
+        '{alignment}',
+        t(presentationAlignmentI18nKey(presentationAlignment))
+      )
+    );
+    pad.dataset.navonwebPresentationOrientation = presentationOrientation;
+    pad.dataset.navonwebPresentationAlignment = presentationAlignment;
+  }
+
+  function syncProjectionContentLayout() {
+    const containerWidth = pad.clientWidth;
+    const containerHeight = pad.clientHeight;
+    if (containerWidth <= 0 || containerHeight <= 0) return null;
+    const alignmentOffset = presentationAlignment === 'custom'
+      ? presentationOffset
+      : presentationAlignmentOffset(presentationAlignment);
+    const layout = calculatePresentationLayout(
+      containerWidth,
+      containerHeight,
+      projectionSourceAspectRatio(),
+      alignmentOffset
+    );
+    if (!layout) return null;
+    currentPresentationLayout = layout;
+    projectionContent.style.width = `${layout.width}px`;
+    projectionContent.style.height = `${layout.height}px`;
+    projectionContent.style.left = `${layout.left}px`;
+    projectionContent.style.top = `${layout.top}px`;
+    pad.dataset.navonwebPresentationSnapX = String(Math.abs(layout.offsetX) < 0.01);
+    pad.dataset.navonwebPresentationSnapY = String(Math.abs(layout.offsetY) < 0.01);
+    return layout;
+  }
+
+  function refreshPresentationViewportPreference() {
+    if (expandedViewportTarget) {
+      expandedViewportTarget = calculateExpandedProjectionViewport();
+      expandedViewportOrientationAxis = physicalViewportOrientationAxis();
+    }
+    scheduleViewportLayoutSync();
+  }
+
+  function setPresentationOrientation(value) {
+    if (!PRESENTATION_ORIENTATIONS.includes(value) || value === presentationOrientation) return false;
+    cancelPointerInteraction();
+    presentationOrientation = value;
+    rememberPresentationPreferences();
+    syncPresentationControls();
+    refreshPresentationViewportPreference();
+    return true;
+  }
+
+  function setPresentationAlignment(value) {
+    if (!PRESENTATION_ALIGNMENTS.includes(value) || value === presentationAlignment) return false;
+    cancelPointerInteraction();
+    presentationAlignment = value;
+    if (value !== 'custom') presentationOffset = presentationAlignmentOffset(value);
+    presentationSnapState = presentationSnapStateForOffset(presentationOffset);
+    rememberPresentationPreferences();
+    syncPresentationControls();
+    syncProjectionContentLayout();
+    return true;
+  }
+
+  function resetPresentationPosition() {
+    presentationAlignment = 'center';
+    presentationOffset = Object.freeze({x: 0, y: 0});
+    presentationSnapState = Object.freeze({x: true, y: true});
+    rememberPresentationPreferences();
+    syncPresentationControls();
+    syncProjectionContentLayout();
   }
 
   function applyProjectionGeometry(value) {
@@ -1869,6 +2568,21 @@
     if (CLOUD_RELAY_MODE || framePolling || !browserCredential || document.hidden ||
         pad.classList.contains('webrtc-ready')) return;
     framePolling = true;
+    pollFrame();
+  }
+
+  function resumeFramePollingAfterLifecyclePause() {
+    // Background timer/fetch suspension is browser-owned. Keep the same reader and credential;
+    // when the page becomes visible, only nudge a reader whose timer was frozen or discarded.
+    if (CLOUD_RELAY_MODE || !browserCredential || document.hidden ||
+        pad.classList.contains('webrtc-ready')) return;
+    if (!framePolling) {
+      startFramePolling();
+      return;
+    }
+    if (frameAbortController) return;
+    if (frameTimer) clearTimeout(frameTimer);
+    frameTimer = 0;
     pollFrame();
   }
 
@@ -2000,9 +2714,10 @@
     fullscreenHint.textContent = '';
   }
 
-  function showFullscreenHint() {
+  function showFullscreenHint(message = '') {
     hideFullscreenHint();
-    fullscreenHint.textContent = t(WINDOWS_PLATFORM ? 'fullscreenHintWindows' : 'fullscreenHintTouch');
+    fullscreenHint.textContent = message ||
+      t(WINDOWS_PLATFORM ? 'fullscreenHintWindows' : 'fullscreenHintTouch');
     fullscreenHint.hidden = false;
     fullscreenHintTimer = window.setTimeout(() => {
       fullscreenHintTimer = 0;
@@ -2011,9 +2726,137 @@
     }, FULLSCREEN_HINT_DURATION_MILLIS);
   }
 
+  function resetPresentationGuideAutoDismiss() {
+    presentationGuideTimerGeneration += 1;
+    if (presentationGuideAutoDismissTimer) {
+      window.clearTimeout(presentationGuideAutoDismissTimer);
+    }
+    if (presentationGuideCountdownTimer) {
+      window.clearInterval(presentationGuideCountdownTimer);
+    }
+    presentationGuideAutoDismissTimer = 0;
+    presentationGuideCountdownTimer = 0;
+    presentationGuideAutoDismissDeadline = 0;
+    presentationGuideCountdown.hidden = true;
+    presentationGuideCountdownText.textContent = '';
+    presentationGuideProgress.hidden = false;
+    presentationGuideProgress.max = PRESENTATION_GUIDE_AUTO_DISMISS_MILLIS;
+    presentationGuideProgress.value = PRESENTATION_GUIDE_AUTO_DISMISS_MILLIS;
+    presentationGuideProgress.removeAttribute('aria-valuetext');
+  }
+
+  function updatePresentationGuideCountdown(generation, deadline) {
+    if (!presentationGuideOpen || generation !== presentationGuideTimerGeneration ||
+        deadline <= 0 || deadline !== presentationGuideAutoDismissDeadline) return false;
+    const remainingMillis = Math.max(0, deadline - Date.now());
+    const remainingSeconds = Math.ceil(remainingMillis / 1000);
+    const message = t('presentationGuideAutoDismiss').replace(
+      '{seconds}',
+      String(remainingSeconds)
+    );
+    if (presentationGuideCountdownText.textContent !== message) {
+      presentationGuideCountdownText.textContent = message;
+    }
+    presentationGuideProgress.value = remainingMillis;
+    presentationGuideProgress.setAttribute('aria-valuetext', message);
+    return true;
+  }
+
+  function expirePresentationGuideAutoDismiss(generation, deadline) {
+    if (!presentationGuideOpen || generation !== presentationGuideTimerGeneration ||
+        deadline <= 0 || deadline !== presentationGuideAutoDismissDeadline) return false;
+    const remainingMillis = deadline - Date.now();
+    if (remainingMillis > 0) {
+      updatePresentationGuideCountdown(generation, deadline);
+      presentationGuideAutoDismissTimer = window.setTimeout(
+        () => expirePresentationGuideAutoDismiss(generation, deadline),
+        remainingMillis
+      );
+      return false;
+    }
+    presentationGuideAutoDismissTimer = 0;
+    hidePresentationGuide(true);
+    return true;
+  }
+
+  function startPresentationGuideAutoDismiss() {
+    resetPresentationGuideAutoDismiss();
+    const generation = presentationGuideTimerGeneration;
+    const deadline = Date.now() + PRESENTATION_GUIDE_AUTO_DISMISS_MILLIS;
+    presentationGuideAutoDismissDeadline = deadline;
+    presentationGuideCountdown.hidden = false;
+    updatePresentationGuideCountdown(generation, deadline);
+    presentationGuideCountdownTimer = window.setInterval(
+      () => updatePresentationGuideCountdown(generation, deadline),
+      PRESENTATION_GUIDE_COUNTDOWN_INTERVAL_MILLIS
+    );
+    presentationGuideAutoDismissTimer = window.setTimeout(
+      () => expirePresentationGuideAutoDismiss(generation, deadline),
+      PRESENTATION_GUIDE_AUTO_DISMISS_MILLIS
+    );
+  }
+
+  function stopPresentationGuideAutoDismissForInteraction() {
+    if (!presentationGuideOpen || presentationGuideAutoDismissDeadline <= 0) return false;
+    presentationGuideTimerGeneration += 1;
+    if (presentationGuideAutoDismissTimer) window.clearTimeout(presentationGuideAutoDismissTimer);
+    if (presentationGuideCountdownTimer) window.clearInterval(presentationGuideCountdownTimer);
+    presentationGuideAutoDismissTimer = 0;
+    presentationGuideCountdownTimer = 0;
+    presentationGuideAutoDismissDeadline = 0;
+    presentationGuideCountdownText.textContent = t('presentationGuideAutoDismissStopped');
+    presentationGuideProgress.hidden = true;
+    presentationGuideProgress.removeAttribute('aria-valuetext');
+    return true;
+  }
+
+  function presentationGuideInteraction(event) {
+    if (!presentationGuideOpen || !event) return;
+    const target = event.target;
+    const dismissalTarget = target === presentationGuideDismiss ||
+      (target && typeof presentationGuideDismiss.contains === 'function' &&
+        presentationGuideDismiss.contains(target));
+    if (dismissalTarget && (event.type !== 'keydown' || event.key === 'Enter' || event.key === ' ')) {
+      return;
+    }
+    if (event.type === 'keydown' && event.key === 'Escape') return;
+    stopPresentationGuideAutoDismissForInteraction();
+  }
+
+  function hidePresentationGuide(restoreFocus = false) {
+    if (!presentationGuideOpen && presentationGuide.hidden) return;
+    const focusWasInside = typeof presentationGuide.contains === 'function' &&
+      presentationGuide.contains(document.activeElement);
+    presentationGuideOpen = false;
+    presentationGuide.hidden = true;
+    resetPresentationGuideAutoDismiss();
+    presentationGuideDismissForever.checked = false;
+    if (restoreFocus && focusWasInside) {
+      const focusTarget = expandedViewActive() ? viewer : fullscreenButton;
+      try { focusTarget.focus({preventScroll: true}); } catch (_) { focusTarget.focus(); }
+    }
+  }
+
+  function maybeShowPresentationGuide() {
+    if (!expandedViewActive() || presentationGuideWasDismissed()) return false;
+    hideFullscreenHint();
+    presentationGuideOpen = true;
+    presentationGuideDismissForever.checked = false;
+    presentationGuide.hidden = false;
+    startPresentationGuideAutoDismiss();
+    window.requestAnimationFrame(() => {
+      if (!presentationGuideOpen || presentationGuide.hidden) return;
+      try { presentationGuideDismiss.focus({preventScroll: true}); } catch (_) {
+        presentationGuideDismiss.focus();
+      }
+    });
+    return true;
+  }
+
   function syncFullscreenState() {
     const nativeFullscreen = viewerOwnsFullscreen();
     const expanded = nativeFullscreen || theaterMode;
+    if (expanded) setPresentationAlignmentPickerOpen(false, false);
     fullscreenButton.hidden = expanded;
     viewerControls.hidden = expanded;
     fullscreenButton.setAttribute('aria-pressed', String(expanded));
@@ -2021,13 +2864,18 @@
       'aria-label',
       expanded ? t('fullscreenExitLabel') : t('fullscreenEnterLabel')
     );
-    fullscreenButton.textContent = t('fullscreenEnter');
+    fullscreenButton.textContent = t(expanded ? 'fullscreenExit' : 'fullscreenEnter');
     fullscreenState.textContent = nativeFullscreen
       ? t('fullscreenViewState')
       : theaterMode ? t('theaterViewState') : t('normalViewState');
-    if (expanded && !expandedViewWasActive) showFullscreenHint();
-    if (!expanded) hideFullscreenHint();
+    if (expanded && !expandedViewWasActive && !maybeShowPresentationGuide()) showFullscreenHint();
+    if (!expanded) {
+      hideFullscreenHint();
+      hidePresentationGuide(false);
+    }
     expandedViewWasActive = expanded;
+    if (expanded) clearStandardProjectionBounds();
+    syncViewportAuthorityNotice();
     syncScreenWakeLock();
     scheduleViewportLayoutSync();
   }
@@ -2108,6 +2956,7 @@
       const signal = options.signal;
       if (signal && signal.aborted) throw abortError();
       await this.connect(signal);
+      if (signal && signal.aborted) throw abortError();
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         throw new Error('Cloud relay is not connected');
       }
@@ -2147,8 +2996,14 @@
           resolve: response => finish(resolve, response),
           reject: error => finish(reject, error)
         });
-        if (signal) signal.addEventListener('abort', onAbort, {once: true});
+        if (signal) {
+          signal.addEventListener('abort', onAbort, {once: true});
+        }
         try {
+          if (signal && signal.aborted) {
+            onAbort();
+            return;
+          }
           this.socket.send(envelope);
         } catch (error) {
           finish(reject, error);
@@ -2261,6 +3116,43 @@
     }
   }
 
+  function cancelControlWebRtcOpenWatchdog(generation = 0) {
+    if (generation && generation !== webRtcControlNegotiatingGeneration) return;
+    if (webRtcControlOpenTimer) window.clearTimeout(webRtcControlOpenTimer);
+    webRtcControlOpenTimer = 0;
+    webRtcControlNegotiatingGeneration = 0;
+  }
+
+  function isControlWebRtcChannelNegotiating(generation) {
+    const transport = webRtcControlTransport;
+    return generation === webRtcGeneration &&
+      generation === webRtcControlNegotiatingGeneration &&
+      Boolean(transport) && transport.generation === generation && !transport.closed &&
+      transport.channel.readyState === 'connecting';
+  }
+
+  function beginControlWebRtcChannelNegotiation(transport) {
+    cancelControlWebRtcOpenWatchdog();
+    webRtcControlNegotiatingGeneration = transport.generation;
+  }
+
+  function armControlWebRtcOpenWatchdog(generation) {
+    if (webRtcControlOpenTimer || !isControlWebRtcChannelNegotiating(generation)) return;
+    webRtcControlOpenTimer = window.setTimeout(() => {
+      webRtcControlOpenTimer = 0;
+      if (!isControlWebRtcChannelNegotiating(generation)) {
+        if (webRtcControlNegotiatingGeneration === generation) {
+          webRtcControlNegotiatingGeneration = 0;
+        }
+        return;
+      }
+      // End the grace period before scheduling failure. A late open event must not resurrect a
+      // generation whose bounded control-channel negotiation already expired.
+      webRtcControlNegotiatingGeneration = 0;
+      markLocalControlUnavailable('open_timeout', generation);
+    }, CONTROL_WEBRTC_OPEN_TIMEOUT_MILLIS);
+  }
+
   class WebRtcControlTransport {
     constructor(channel, generation) {
       this.channel = channel;
@@ -2269,6 +3161,7 @@
       this.closed = false;
       channel.addEventListener('open', () => {
         if (!this.isCurrent()) return;
+        cancelControlWebRtcOpenWatchdog(this.generation);
         localControlCutover = true;
         pad.dataset.navonwebControlTransport = 'direct';
         if (streamStateKey === 'localControlRecovering') setStreamState('videoWaiting');
@@ -2352,6 +3245,7 @@
       } catch (_) {
         return;
       }
+      if (renderTouchPresence(envelope)) return;
       if (!envelope || envelope.type !== 'rpc_response' ||
           !CLOUD_RELAY_REQUEST_ID_PATTERN.test(String(envelope.requestId || ''))) return;
       const pending = this.pending.get(envelope.requestId);
@@ -2378,6 +3272,7 @@
       if (this.closed) return;
       this.closed = true;
       if (webRtcControlTransport === this) {
+        cancelControlWebRtcOpenWatchdog(this.generation);
         webRtcControlTransport = null;
         markLocalControlUnavailable('channel_failed', this.generation);
       }
@@ -2396,6 +3291,7 @@
       'accept',
       'content-type',
       'x-browser-credential',
+      'x-browser-device-name',
       'x-pairing-code',
       'x-viewport-client-id'
     ]);
@@ -2442,7 +3338,13 @@
     pad.dataset.navonwebControlTransport = `local_unavailable_${reason}`;
     setStreamState('localControlRecovering');
     window.setTimeout(() => {
-      if (generation === webRtcGeneration && (webRtcPeer || webRtcStarting)) failWebRtc();
+      if (generation !== webRtcGeneration || (!webRtcPeer && !webRtcStarting)) return;
+      // A viewport retry can arrive after the previous direct channel closed but before the new
+      // generation's control DataChannel opens, including after PeerConnection reports connected.
+      // Keep the request local-only and preserve that generation only during its bounded, watched
+      // DataChannel negotiation. Timeout, post-open loss and explicit channel failure remain fatal.
+      if (reason === 'channel_not_open' && isControlWebRtcChannelNegotiating(generation)) return;
+      failWebRtc();
     }, 0);
     return new Error(`Local WebRTC control channel unavailable (${reason})`);
   }
@@ -2586,7 +3488,8 @@
   }
 
   function microphoneCaptureEligible() {
-    return Boolean(browserCredential) && androidAutoInteractive && pageActive && !document.hidden;
+    return Boolean(browserCredential) && browserSessionCanControl() &&
+      androidAutoInteractive && pageActive && !document.hidden;
   }
 
   function microphoneCaptureIsBusy() {
@@ -3245,6 +4148,7 @@
       audioStreams.delete(track);
     }
     outputAudioWebRtcRecoveryRequired = true;
+    outputAudioWebRtcRecoveryGeneration = generation;
     pad.dataset.navonwebOutputAudioState = `${track}_${reason}`;
     scheduleOutputAudioWebRtcRecovery();
     console.warn(
@@ -3257,6 +4161,12 @@
     if (outputAudioWebRtcRecoveryTimer) window.clearTimeout(outputAudioWebRtcRecoveryTimer);
     outputAudioWebRtcRecoveryTimer = 0;
     if (resetAttempts) outputAudioWebRtcRecoveryAttempts = 0;
+  }
+
+  function clearOutputAudioWebRtcRecovery(resetAttempts = false) {
+    cancelOutputAudioWebRtcRecovery(resetAttempts);
+    outputAudioWebRtcRecoveryRequired = false;
+    outputAudioWebRtcRecoveryGeneration = 0;
   }
 
   function armOutputAudioWebRtcOpenTimers(generation) {
@@ -3272,7 +4182,9 @@
   }
 
   function scheduleOutputAudioWebRtcRecovery() {
+    const recoveryGeneration = outputAudioWebRtcRecoveryGeneration;
     if (!CLOUD_RELAY_MODE || !outputAudioWebRtcRecoveryRequired || outputAudioWebRtcUnsupported ||
+        recoveryGeneration === 0 || recoveryGeneration !== webRtcGeneration ||
         outputAudioWebRtcRecoveryTimer || !pageActive || document.hidden || !browserCredential ||
         !androidAutoInteractive) return;
     const exponent = Math.min(outputAudioWebRtcRecoveryAttempts, 4);
@@ -3283,6 +4195,8 @@
     outputAudioWebRtcRecoveryTimer = window.setTimeout(() => {
       outputAudioWebRtcRecoveryTimer = 0;
       if (!outputAudioWebRtcRecoveryRequired || outputAudioWebRtcUnsupported ||
+          outputAudioWebRtcRecoveryGeneration !== recoveryGeneration ||
+          recoveryGeneration !== webRtcGeneration ||
           !pageActive || document.hidden || !browserCredential || !androidAutoInteractive) return;
       outputAudioWebRtcRecoveryAttempts += 1;
       if (webRtcPeer || webRtcStarting) failWebRtc();
@@ -3291,10 +4205,11 @@
   }
 
   function confirmOutputAudioWebRtcChannelsOpen() {
-    if (!webRtcAudioChannels.size ||
+    // A failed track is removed from the map. Do not mistake the remaining open
+    // subset for a complete channel set and cancel the required full-peer retry.
+    if (outputAudioWebRtcRecoveryRequired || !webRtcAudioChannels.size ||
         [...webRtcAudioChannels.values()].some(channel => channel.readyState !== 'open')) return;
-    outputAudioWebRtcRecoveryRequired = false;
-    cancelOutputAudioWebRtcRecovery(true);
+    clearOutputAudioWebRtcRecovery(true);
     delete pad.dataset.navonwebOutputAudioState;
   }
 
@@ -3368,6 +4283,9 @@
 
   function createOutputAudioWebRtcChannels(peer, generation, supportedTracks) {
     disposeOutputAudioWebRtcChannels();
+    // Creating this generation's channels consumes any recovery request left by
+    // a previous peer. Their own post-connect open timers cover this attempt.
+    clearOutputAudioWebRtcRecovery(false);
     try {
       for (const track of supportedTracks) {
         const channel = peer.createDataChannel(audioWebRtcChannelLabel(track), {
@@ -3501,8 +4419,8 @@
       webRtcRecoveryTimer = 0;
       if (!pageActive || browserCredential !== requestedCredential || !androidAutoInteractive ||
           document.hidden || webRtcStarting || webRtcRecoveryInFlight) return;
-      webRtcRecoveryAttempts += 1;
       webRtcRecoveryInFlight = true;
+      let attempted = false;
       try {
         if (webRtcPeer) {
           if (isWebRtcConnected(webRtcPeer)) {
@@ -3512,10 +4430,17 @@
           resetWebRtc(true);
           await delay(WEBRTC_RECOVERY_CLOSE_GRACE_MILLIS);
         }
+        // startWebRtc owns the common close/status admission gate for every offer entry.
         if (pageActive && browserCredential === requestedCredential &&
-            androidAutoInteractive && !document.hidden) await startWebRtc();
+            androidAutoInteractive && !document.hidden) {
+          attempted = await startWebRtc();
+        }
       } finally {
         webRtcRecoveryInFlight = false;
+        if (attempted && !webRtcPeer && browserCredential === requestedCredential &&
+            androidAutoInteractive) {
+          webRtcRecoveryAttempts += 1;
+        }
         if (!webRtcPeer && browserCredential === requestedCredential && androidAutoInteractive) {
           scheduleWebRtcRecovery();
         }
@@ -3531,7 +4456,7 @@
     const requestedProjectionRevision = projectionProfileRevision;
     const requestIsCurrent = () => browserCredential === requestedCredential &&
       projectionProfileRevision === requestedProjectionRevision;
-    webRtcCapabilitiesPromise = (async () => {
+    const capabilitiesPromise = (async () => {
       try {
         const response = await api('/api/webrtc/capabilities', {}, requestedCredential);
         if (!requestIsCurrent()) return null;
@@ -3563,18 +4488,12 @@
           ? 'unsupported'
           : 'available';
         if (outputAudioWebRtcUnsupported) {
-          outputAudioWebRtcRecoveryRequired = false;
-          cancelOutputAudioWebRtcRecovery(true);
+          clearOutputAudioWebRtcRecovery(true);
         }
         pad.dataset.navonwebIceServerCount = String(webRtcServerCapabilities.iceServers.length);
         pad.dataset.navonwebControlCapability = webRtcServerCapabilities.controlDataChannelV1
           ? 'available'
           : 'unavailable';
-        const compatible = webRtcServerCapabilities.codecs.some(name => browserCodecCapabilities.has(name));
-        if (webRtcServerCapabilities.available && compatible && !webRtcPeer && !webRtcStarting &&
-            !webRtcRecoveryTimer && !webRtcRecoveryInFlight) {
-          queueMicrotask(() => startWebRtc());
-        }
         return webRtcServerCapabilities;
       } catch (_) {
         if (requestIsCurrent()) {
@@ -3584,7 +4503,12 @@
         return null;
       }
     })();
-    return webRtcCapabilitiesPromise;
+    webRtcCapabilitiesPromise = capabilitiesPromise;
+    const capabilities = await capabilitiesPromise;
+    if (!capabilities && requestIsCurrent() && webRtcCapabilitiesPromise === capabilitiesPromise) {
+      webRtcCapabilitiesPromise = null;
+    }
+    return capabilities;
   }
 
   function createControlWebRtcChannel(peer, generation) {
@@ -3596,6 +4520,7 @@
       const previous = webRtcControlTransport;
       webRtcControlTransport = transport;
       if (previous) previous.close();
+      beginControlWebRtcChannelNegotiation(transport);
       pad.dataset.navonwebControlTransport = 'negotiating';
       return transport;
     } catch (error) {
@@ -3610,6 +4535,7 @@
 
   function disposeControlWebRtcChannel() {
     const transport = webRtcControlTransport;
+    cancelControlWebRtcOpenWatchdog();
     webRtcControlTransport = null;
     if (transport) transport.close();
     if (CLOUD_RELAY_MODE) pad.dataset.navonwebControlTransport = 'local_unavailable';
@@ -3683,15 +4609,78 @@
     );
   }
 
+  function enqueueWebRtcSessionClose(sessionId, credential) {
+    if (!WEBRTC_SESSION_PATTERN.test(sessionId) || !credential) return;
+    const previous = webRtcSessionCloseBarrier;
+    const controller = new AbortController();
+    const entry = {credential, controller, previous, promise: null};
+    entry.promise = (async () => {
+      if (previous && previous.credential === credential) await previous.promise;
+      if (controller.signal.aborted) return;
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        STATUS_REQUEST_TIMEOUT_MILLIS
+      );
+      try {
+        await api(
+          `/api/webrtc/session/${encodeURIComponent(sessionId)}`,
+          {method: 'DELETE', signal: controller.signal},
+          credential
+        );
+      } catch (_) {
+        // A timeout, controller replacement (404), or already-closed session all
+        // release the bounded admission barrier; recovery will use fresh status.
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    })().finally(() => {
+      if (webRtcSessionCloseBarrier === entry) webRtcSessionCloseBarrier = null;
+    });
+    webRtcSessionCloseBarrier = entry;
+  }
+
+  async function awaitWebRtcSessionCloseBarrier(credential) {
+    const entry = webRtcSessionCloseBarrier;
+    if (!entry || entry.credential !== credential) return true;
+    await entry.promise;
+    return webRtcSessionCloseBarrier === null || webRtcSessionCloseBarrier === entry;
+  }
+
+  async function awaitWebRtcOfferAdmission(credential) {
+    if (!pageActive || document.hidden || browserCredential !== credential ||
+        !androidAutoInteractive || webRtcStarting || webRtcPeer) return false;
+    if (!await awaitWebRtcSessionCloseBarrier(credential)) return false;
+    if (!pageActive || document.hidden || browserCredential !== credential ||
+        !androidAutoInteractive || webRtcStarting || webRtcPeer) return false;
+    // Every offer entry, including user-triggered local-network permission recovery,
+    // must observe a settled profile and viewport. pollStatus coalesces a regular poll,
+    // whose shared boolean is false while either activation is still applying.
+    const statusCurrent = await pollStatus({automatic: true, webRtcPreflight: true});
+    return statusCurrent && pageActive && !document.hidden && browserCredential === credential &&
+      androidAutoInteractive && !webRtcStarting && !webRtcPeer;
+  }
+
+  function clearWebRtcSessionCloseBarriers() {
+    let entry = webRtcSessionCloseBarrier;
+    webRtcSessionCloseBarrier = null;
+    while (entry) {
+      entry.controller.abort();
+      entry = entry.previous;
+    }
+  }
+
   function resetWebRtc(notifyServer = true) {
     cancelWebRtcRecovery();
-    cancelOutputAudioWebRtcRecovery(false);
+    // A full peer replacement is itself the audio recovery attempt. Do not let
+    // the previous generation's delayed audio retry close the replacement offer.
+    clearOutputAudioWebRtcRecovery(false);
     const closingSessionId = webRtcSessionId;
     const closingCredential = browserCredential;
     const closingPeer = webRtcPeer;
     webRtcGeneration += 1;
     stopWebRtcVideoStats();
     disposeControlWebRtcChannel();
+    clearRemoteTouchMarkers();
     disposeMicrophoneWebRtcChannel();
     disposeOutputAudioWebRtcChannels();
     if (CLOUD_RELAY_MODE) stopAudioStreams(true);
@@ -3705,11 +4694,7 @@
     webRtcVideo.srcObject = null;
     if (closingPeer) closingPeer.close();
     if (notifyServer && WEBRTC_SESSION_PATTERN.test(closingSessionId) && closingCredential) {
-      api(
-        `/api/webrtc/session/${encodeURIComponent(closingSessionId)}`,
-        {method: 'DELETE'},
-        closingCredential
-      ).catch(() => null);
+      enqueueWebRtcSessionClose(closingSessionId, closingCredential);
     }
     if (browserCredential) startFramePolling();
   }
@@ -3735,6 +4720,15 @@
   function isWebRtcConnected(peer) {
     const state = webRtcConnectionState(peer);
     return state === 'connected' || state === 'completed';
+  }
+
+  function resumeProjectionMediaAfterLifecyclePause() {
+    if (!pageActive || document.hidden || !browserCredential) return;
+    resumeFramePollingAfterLifecyclePause();
+    if (!webRtcPeer || !isWebRtcConnected(webRtcPeer) || !webRtcVideo.srcObject) return;
+    // Mobile browsers may keep inbound RTP alive while suspending HTMLVideoElement painting.
+    // Reassert playback on foreground without replacing the peer, stream, or credential.
+    webRtcVideo.play().catch(() => null);
   }
 
   async function publishSelectedIcePair(peer, generation) {
@@ -3911,10 +4905,40 @@
     });
   }
 
-  async function waitForWebRtcAnswer(initial, generation) {
+  function webRtcStartIsCurrent(generation, peer, credential) {
+    return generation === webRtcGeneration && peer === webRtcPeer &&
+      browserCredential === credential;
+  }
+
+  async function consumeWebRtcSessionOpenResponse(response, generation, peer, credential) {
+    if (response.status === 401) {
+      if (webRtcStartIsCurrent(generation, peer, credential)) {
+        invalidateCredential(t('connectionExpired'));
+      }
+      return null;
+    }
+    if (!response.ok) {
+      if (!webRtcStartIsCurrent(generation, peer, credential)) return null;
+      throw new Error(`signaling HTTP ${response.status}`);
+    }
+    const opened = await response.json();
+    const sessionId = String(opened && opened.sessionId || '');
+    if (!WEBRTC_SESSION_PATTERN.test(sessionId)) {
+      if (!webRtcStartIsCurrent(generation, peer, credential)) return null;
+      throw new Error('invalid WebRTC session');
+    }
+    if (!webRtcStartIsCurrent(generation, peer, credential)) {
+      enqueueWebRtcSessionClose(sessionId, credential);
+      return null;
+    }
+    webRtcSessionId = sessionId;
+    return opened;
+  }
+
+  async function waitForWebRtcAnswer(initial, generation, peer, sessionId, credential) {
     const deadline = performance.now() + WEBRTC_ANSWER_TIMEOUT_MILLIS;
     let current = initial;
-    while (generation === webRtcGeneration && webRtcPeer) {
+    while (webRtcStartIsCurrent(generation, peer, credential) && webRtcSessionId === sessionId) {
       if (current.state === 'ready') {
         if (typeof current.answerSdp !== 'string' || !current.answerSdp.includes('m=video ')) {
           throw new Error('invalid WebRTC answer');
@@ -3926,7 +4950,13 @@
       }
       if (performance.now() >= deadline) throw new Error('WebRTC answer timeout');
       await delay(WEBRTC_ANSWER_POLL_MILLIS);
-      const response = await api(`/api/webrtc/session/${encodeURIComponent(webRtcSessionId)}`);
+      if (!webRtcStartIsCurrent(generation, peer, credential) || webRtcSessionId !== sessionId) break;
+      const response = await api(
+        `/api/webrtc/session/${encodeURIComponent(sessionId)}`,
+        {},
+        credential
+      );
+      if (!webRtcStartIsCurrent(generation, peer, credential) || webRtcSessionId !== sessionId) break;
       if (response.status === 401) throw new Error('browser credential expired');
       if (!response.ok) throw new Error(`signaling HTTP ${response.status}`);
       current = await response.json();
@@ -3938,14 +4968,24 @@
     if (!pageActive || document.hidden || !browserCredential || !androidAutoInteractive ||
         webRtcStarting || webRtcPeer) {
       syncLocalNetworkPermissionPanel();
-      return;
+      return false;
+    }
+    const requestedCredential = browserCredential;
+    if (!await awaitWebRtcOfferAdmission(requestedCredential)) {
+      syncLocalNetworkPermissionPanel();
+      return false;
     }
     const webRtcStartedAt = diagnosticClockMillis();
     let startupStage = 'capabilities';
     recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
+    const requestedProjectionRevision = projectionProfileRevision;
     const capabilities = await ensureWebRtcCapabilities();
-    if (!pageActive || document.hidden || !capabilities || !capabilities.available ||
+    if (!pageActive || document.hidden || browserCredential !== requestedCredential ||
+        projectionProfileRevision !== requestedProjectionRevision ||
         !androidAutoInteractive || webRtcStarting || webRtcPeer) {
+      return false;
+    }
+    if (!capabilities || !capabilities.available) {
       if (!capabilities) pad.dataset.navonwebWebRtcFailureStage = 'capabilities';
       else if (!capabilities.available) pad.dataset.navonwebWebRtcFailureStage = 'unavailable';
       recordConnectionTiming(
@@ -3953,13 +4993,13 @@
         capabilities && !capabilities.available ? 'unavailable' : 'capabilities_failed',
         webRtcStartedAt
       );
-      return;
+      return true;
     }
     const compatible = capabilities.codecs.some(name => browserCodecCapabilities.has(name));
     if (!compatible) {
       pad.dataset.navonwebWebRtcFailureStage = 'no_compatible_codec';
       recordConnectionTiming('WebRtc', 'no_compatible_codec', webRtcStartedAt);
-      return;
+      return true;
     }
     webRtcStarting = true;
     const generation = ++webRtcGeneration;
@@ -3987,8 +5027,10 @@
       if (CLOUD_RELAY_MODE && !controlTransport) {
         throw new Error('WebRTC control data channel is required in cloud mode');
       }
-      const microphoneChannel = createMicrophoneWebRtcChannel(peer, generation);
-      if (CLOUD_RELAY_MODE && !microphoneChannel) {
+      const microphoneChannel = browserSessionCanControl()
+        ? createMicrophoneWebRtcChannel(peer, generation)
+        : null;
+      if (CLOUD_RELAY_MODE && browserSessionCanControl() && !microphoneChannel) {
         throw new Error('WebRTC microphone data channel is required in cloud mode');
       }
       const outputAudioTracks = capabilities.outputAudioDataChannelsV1 || [];
@@ -4011,6 +5053,7 @@
             recordConnectionTiming('WebRtc', 'connected', webRtcStartedAt, state);
           }
           cancelWebRtcRecovery(true);
+          armControlWebRtcOpenWatchdog(generation);
           armOutputAudioWebRtcOpenTimers(generation);
           pad.classList.add('webrtc-ready');
           setStreamState('');
@@ -4037,42 +5080,47 @@
       startupStage = 'ice_gathering';
       recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       await waitForIceGatheringComplete(peer);
-      if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
+      if (!webRtcStartIsCurrent(generation, peer, requestedCredential)) return true;
       startupStage = 'session_open';
       recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       const response = await api('/api/webrtc/session?codec=auto', {
         method: 'POST',
         headers: {'Content-Type': 'application/sdp', 'Accept': 'application/json'},
         body: peer.localDescription.sdp
-      });
-      if (response.status === 401) {
-        invalidateCredential(t('connectionExpired'));
-        return;
-      }
-      if (!response.ok) throw new Error(`signaling HTTP ${response.status}`);
-      const opened = await response.json();
-      if (!WEBRTC_SESSION_PATTERN.test(String(opened.sessionId || ''))) {
-        throw new Error('invalid WebRTC session');
-      }
-      webRtcSessionId = opened.sessionId;
+      }, requestedCredential);
+      const opened = await consumeWebRtcSessionOpenResponse(
+        response,
+        generation,
+        peer,
+        requestedCredential
+      );
+      if (!opened) return true;
+      const acceptedSessionId = String(opened.sessionId);
       startupStage = 'answer';
       recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
-      const answer = await waitForWebRtcAnswer(opened, generation);
-      if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
+      const answer = await waitForWebRtcAnswer(
+        opened,
+        generation,
+        peer,
+        acceptedSessionId,
+        requestedCredential
+      );
+      if (!webRtcStartIsCurrent(generation, peer, requestedCredential)) return true;
       await peer.setRemoteDescription({type: 'answer', sdp: answer.answerSdp});
-      if (generation !== webRtcGeneration || peer !== webRtcPeer) return;
+      if (!webRtcStartIsCurrent(generation, peer, requestedCredential)) return true;
       startupStage = 'connection';
       recordConnectionTiming('WebRtc', startupStage, webRtcStartedAt);
       await waitForWebRtcConnection(peer, generation);
-      if (generation === webRtcGeneration && peer === webRtcPeer) {
+      if (webRtcStartIsCurrent(generation, peer, requestedCredential)) {
         delete pad.dataset.navonwebWebRtcFailureStage;
         updateConnectionState();
       }
     } catch (error) {
-      if (generation === webRtcGeneration) {
+      if (webRtcStartIsCurrent(generation, peer, requestedCredential)) {
         const failureReason = webRtcFailureReason(error);
         recordConnectionTiming('WebRtc', 'failed', webRtcStartedAt, startupStage);
         await publishIceFailure(peer, generation, startupStage, failureReason);
+        if (!webRtcStartIsCurrent(generation, peer, requestedCredential)) return true;
         pad.dataset.navonwebWebRtcFailureStage = startupStage;
         console.warn(
           `NAVONWEB_WEBRTC_START_FAILED stage=${startupStage} ` +
@@ -4081,8 +5129,9 @@
         failWebRtc();
       }
     } finally {
-      if (generation === webRtcGeneration) webRtcStarting = false;
+      if (webRtcStartIsCurrent(generation, peer, requestedCredential)) webRtcStarting = false;
     }
+    return true;
   }
 
   function renderAndroidAutoStatus(connection, projection = null) {
@@ -4126,8 +5175,200 @@
     syncLocalNetworkPermissionPanel();
   }
 
+  function browserSessionCanControl() {
+    return browserSessionAccess === 'control';
+  }
+
+  function browserSessionOwnsViewport() {
+    return browserSessionRole === 'main' && !viewportAuthorityRejected;
+  }
+
+  function viewportAuthorityNoticeEligible() {
+    return Boolean(
+      browserCredential && !viewer.hidden && browserSessionMetadataSupported &&
+      browserSessionRole === 'viewer'
+    );
+  }
+
+  function cancelViewportAuthorityNoticeTimer() {
+    viewportAuthorityNoticeTimerGeneration += 1;
+    if (viewportAuthorityNoticeTimer) window.clearTimeout(viewportAuthorityNoticeTimer);
+    viewportAuthorityNoticeTimer = 0;
+  }
+
+  function setViewportAuthorityNoticeVisible(visible) {
+    const nextState = visible ? 'visible' : 'hidden';
+    if (viewportAuthorityNoticeState === nextState) return false;
+    viewportAuthorityNoticeState = nextState;
+    viewportAuthorityNotice.hidden = !visible;
+    if (visible) viewportAuthorityNotice.textContent = t('viewportMainSessionOnly');
+    scheduleViewportLayoutSync();
+    return true;
+  }
+
+  function startExpandedViewportAuthorityNotice() {
+    cancelViewportAuthorityNoticeTimer();
+    const generation = viewportAuthorityNoticeTimerGeneration;
+    const changed = setViewportAuthorityNoticeVisible(true);
+    viewportAuthorityNoticeTimer = window.setTimeout(() => {
+      if (generation !== viewportAuthorityNoticeTimerGeneration ||
+          !viewportAuthorityNoticeEligible() || !expandedViewActive()) return;
+      viewportAuthorityNoticeTimer = 0;
+      setViewportAuthorityNoticeVisible(false);
+    }, VIEWPORT_AUTHORITY_NOTICE_EXPANDED_MILLIS);
+    return changed;
+  }
+
+  function syncViewportAuthorityNotice() {
+    const eligible = viewportAuthorityNoticeEligible();
+    const expanded = expandedViewActive();
+    const becameEligible = eligible && !viewportAuthorityNoticeEligibleState;
+    const enteredExpanded = expanded && !viewportAuthorityNoticeExpandedState;
+    viewportAuthorityNoticeEligibleState = eligible;
+    viewportAuthorityNoticeExpandedState = expanded;
+    if (!eligible) {
+      cancelViewportAuthorityNoticeTimer();
+      return setViewportAuthorityNoticeVisible(false);
+    }
+    if (!expanded) {
+      cancelViewportAuthorityNoticeTimer();
+      return setViewportAuthorityNoticeVisible(true);
+    }
+    if (enteredExpanded || becameEligible) return startExpandedViewportAuthorityNotice();
+    return false;
+  }
+
+  function normalizeBrowserSession(value) {
+    if (!value || typeof value !== 'object') return null;
+    const deviceId = String(value.deviceId || '');
+    const rawAccess = String(value.access || '').toLowerCase();
+    const access = rawAccess === 'control' || rawAccess === 'interactive'
+      ? 'control'
+      : rawAccess === 'read_only' || rawAccess === 'read-only' ? 'read_only' : '';
+    const role = String(value.role || '').toLowerCase();
+    const colorSlot = Number(value.colorSlot);
+    if (!SESSION_DEVICE_ID_PATTERN.test(deviceId) || !access ||
+        (role !== 'main' && role !== 'viewer') ||
+        (access === 'read_only' && role === 'main') ||
+        !Number.isInteger(colorSlot) || colorSlot < 0 || colorSlot > 2) return null;
+    return Object.freeze({deviceId, access, role, colorSlot});
+  }
+
+  function cancelViewportAuthority() {
+    viewportReportGeneration += 1;
+    clearViewportReportTimer();
+    pendingViewportReport = null;
+    pendingViewportReportGeneration = 0;
+    pendingViewportReportTimeoutAttempts = 0;
+    abortViewportReportTask('not_main');
+    lastViewportReportKey = '';
+  }
+
+  function clearRemoteTouchMarkers() {
+    for (const marker of remoteTouchMarkers.values()) {
+      if (marker.timer) window.clearTimeout(marker.timer);
+      marker.element.remove();
+    }
+    remoteTouchMarkers.clear();
+  }
+
+  function applyBrowserSession(value) {
+    const normalized = normalizeBrowserSession(value);
+    // Older phone builds predate session metadata and remain single-session/control owners.
+    const legacy = value === null || typeof value === 'undefined';
+    const next = normalized || (legacy
+      ? Object.freeze({deviceId: '', access: 'control', role: 'main', colorSlot: 0})
+      : Object.freeze({deviceId: '', access: 'read_only', role: 'viewer', colorSlot: 0}));
+    const wasControl = browserSessionCanControl();
+    const wasMain = browserSessionOwnsViewport();
+    if (normalized && normalized.role === 'main') viewportAuthorityRejected = false;
+    browserSessionMetadataSupported = normalized !== null;
+    browserSessionDeviceId = next.deviceId;
+    browserSessionAccess = next.access;
+    browserSessionRole = next.role;
+    browserSessionColorSlot = next.colorSlot;
+    pad.dataset.navonwebSessionAccess = next.access;
+    pad.dataset.navonwebSessionRole = next.role;
+    pad.dataset.navonwebSessionColorSlot = String(next.colorSlot);
+    if (wasControl && !browserSessionCanControl()) {
+      resetTouchTransport(false, true);
+      stopMicrophoneCapture('read_only_session');
+    }
+    const ownsViewport = browserSessionOwnsViewport();
+    if (wasMain && !ownsViewport) cancelViewportAuthority();
+    if (wasMain !== ownsViewport) {
+      // Re-resolve the persisted orientation against the new authority before a main-session
+      // reclaim. Viewers keep the received main projection aspect and never apply a forced target.
+      refreshPresentationViewportPreference();
+    }
+    if (!wasMain && ownsViewport) requestViewportControlReclaim();
+    syncViewportAuthorityNotice();
+  }
+
+  function resetBrowserSessionState() {
+    browserSessionMetadataSupported = false;
+    browserSessionDeviceId = '';
+    browserSessionAccess = 'read_only';
+    browserSessionRole = 'viewer';
+    browserSessionColorSlot = 0;
+    viewportAuthorityRejected = false;
+    pad.dataset.navonwebSessionAccess = 'read_only';
+    pad.dataset.navonwebSessionRole = 'viewer';
+    pad.dataset.navonwebSessionColorSlot = '0';
+    syncViewportAuthorityNotice();
+    cancelViewportAuthority();
+    resetTouchTransport(false, true);
+    clearRemoteTouchMarkers();
+  }
+
+  function normalizeTouchPresenceEnvelope(envelope) {
+    if (!envelope || envelope.type !== 'session_event' ||
+        envelope.event !== 'touch_presence') return null;
+    const sourceDeviceId = String(envelope.sourceDeviceId || '');
+    const colorSlot = Number(envelope.colorSlot);
+    const phase = String(envelope.phase || '').toLowerCase();
+    const x = Number(envelope.x);
+    const y = Number(envelope.y);
+    const sequence = Number(envelope.sequence);
+    if (!SESSION_DEVICE_ID_PATTERN.test(sourceDeviceId) ||
+        !Number.isInteger(colorSlot) || colorSlot < 0 || colorSlot > 2 ||
+        !['down', 'move', 'up', 'cancel'].includes(phase) ||
+        !Number.isFinite(x) || x < 0 || x > 1 ||
+        !Number.isFinite(y) || y < 0 || y > 1 ||
+        !Number.isSafeInteger(sequence) || sequence < 0) return null;
+    return Object.freeze({sourceDeviceId, colorSlot, phase, x, y, sequence});
+  }
+
+  function renderTouchPresence(envelope) {
+    const event = normalizeTouchPresenceEnvelope(envelope);
+    if (!event || !sessionTouchOverlay || document.hidden ||
+        event.sourceDeviceId === browserSessionDeviceId) return false;
+    const previous = remoteTouchMarkers.get(event.sourceDeviceId);
+    if (previous && event.sequence <= previous.sequence) return false;
+    if (previous && previous.timer) window.clearTimeout(previous.timer);
+    const element = previous ? previous.element : document.createElement('span');
+    element.className = 'session-touch-marker';
+    element.dataset.colorSlot = String(event.colorSlot);
+    element.style.left = `${event.x * 100}%`;
+    element.style.top = `${event.y * 100}%`;
+    if (!previous) sessionTouchOverlay.appendChild(element);
+    element.classList.toggle('released', event.phase === 'up' || event.phase === 'cancel');
+    const state = {element, sequence: event.sequence, timer: 0};
+    const removalDelay = event.phase === 'up' || event.phase === 'cancel'
+      ? SESSION_TOUCH_MARKER_RELEASE_MILLIS
+      : SESSION_TOUCH_MARKER_STALE_MILLIS;
+    state.timer = window.setTimeout(() => {
+      if (remoteTouchMarkers.get(event.sourceDeviceId) !== state) return;
+      element.remove();
+      remoteTouchMarkers.delete(event.sourceDeviceId);
+    }, removalDelay);
+    remoteTouchMarkers.set(event.sourceDeviceId, state);
+    return true;
+  }
+
   function updateMicrophoneCaptureRequest(microphone) {
-    const requested = Boolean(microphone && microphone.captureRequested);
+    const requested = browserSessionCanControl() &&
+      Boolean(microphone && microphone.captureRequested);
     if (requested !== microphoneCaptureRequested) {
       // Discard audio queued for the previous AA microphone state. The one
       // request already in flight may finish, then the latest state wins.
@@ -4248,6 +5489,38 @@
       browserCredential === task.credential;
   }
 
+  function liveCloudDirectSessionSurvivesStatusOutage() {
+    if (!CLOUD_RELAY_MODE || !webRtcPeer || !isWebRtcConnected(webRtcPeer) ||
+        !webRtcControlTransport || !webRtcControlTransport.isOpen()) return false;
+    if (browserSessionCanControl() && !currentMicrophoneWebRtcChannel()) return false;
+    if (outputAudioWebRtcRecoveryRequired ||
+        [...webRtcAudioChannels.values()].some(channel => channel.readyState !== 'open')) {
+      return false;
+    }
+    return true;
+  }
+
+  function consumeRecoveredStatusFailure() {
+    const recovered = statusFailureCount > 0;
+    statusFailureCount = 0;
+    delete pad.dataset.navonwebSignalingState;
+    return recovered;
+  }
+
+  function handleStatusPollFailure() {
+    showAuthenticatedView(true);
+    statusFailureCount += 1;
+    scheduleRepairPairingAction();
+    const preserveDirectSession = liveCloudDirectSessionSurvivesStatusOutage();
+    if (preserveDirectSession) {
+      pad.dataset.navonwebSignalingState = 'degraded';
+    } else if (statusFailureCount >= 2) {
+      renderAndroidAutoStatus(null);
+    }
+    setStreamState('serverWaiting');
+    return preserveDirectSession;
+  }
+
   async function performStatusPoll(options, task) {
     // Arm at the beginning of the request so its own timeout is included in the ten-second
     // recovery window. Repeated polls cannot reset an already running countdown.
@@ -4268,8 +5541,8 @@
       cancelRepairPairingCountdown();
       const data = await response.json();
       if (!statusPollTaskIsCurrent(task)) return false;
-      const recoveredFromStatusFailure = statusFailureCount > 0;
-      statusFailureCount = 0;
+      const recoveredFromStatusFailure = consumeRecoveredStatusFailure();
+      applyBrowserSession(data.browserSession);
       applyDynamicAspectEntitlement(data.projection);
       const activeProfile = data.projection && normalizeProjectionProfile(data.projection.activeProfile);
       if (activeProfile) applyProjectionGeometry(activeProfile);
@@ -4285,18 +5558,22 @@
       showAuthenticatedView(true);
       ensureNoticesLoaded();
       startFramePolling();
+      // The boolean result is also shared with a concurrent recovery preflight. Keep it
+      // false for every caller while profile/viewport activation is still applying so a
+      // regular poll cannot accidentally admit an offer through promise coalescing.
+      if (!projectionReadyForWebRtcPreflight(data.projection)) {
+        pad.dataset.navonwebWebRtcFailureStage = 'projection_reconfiguring';
+        return false;
+      }
       ensureWebRtcCapabilities();
       if (androidAutoInteractive && !webRtcPeer && !webRtcStarting) scheduleWebRtcRecovery();
       return true;
     } catch (_) {
       if (!statusPollTaskIsCurrent(task)) return false;
-      showAuthenticatedView(true);
-      statusFailureCount += 1;
-      scheduleRepairPairingAction();
-      // Keep the established media pipeline through one transient request
-      // failure. Two consecutive failures expose the disconnected state.
-      if (statusFailureCount >= 2) renderAndroidAutoStatus(null);
-      setStreamState('serverWaiting');
+      // Cloud signaling may disappear while the LAN PeerConnection and every required direct
+      // DataChannel remain healthy. Preserve that local media/input session; its own PC/DC
+      // lifecycle callbacks remain the authoritative teardown boundary.
+      handleStatusPollFailure();
       return false;
     } finally {
       window.clearTimeout(timeout);
@@ -4309,10 +5586,11 @@
     stopMicrophoneCapture('credential_invalid');
     stopAudioStreams(true);
     resetWebRtc(false);
-    outputAudioWebRtcRecoveryRequired = false;
+    clearWebRtcSessionCloseBarriers();
     outputAudioWebRtcUnsupported = false;
-    cancelOutputAudioWebRtcRecovery(true);
+    clearOutputAudioWebRtcRecovery(true);
     browserCredential = '';
+    resetBrowserSessionState();
     localControlCutover = false;
     webRtcCapabilitiesPromise = null;
     webRtcServerCapabilities = null;
@@ -4421,6 +5699,19 @@
     return digits.length > 4 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : digits;
   }
 
+  function pairingDeviceName() {
+    const platform = String(
+      (navigator.userAgentData && navigator.userAgentData.platform) ||
+      navigator.platform || ''
+    ).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const agent = String(navigator.userAgent || '');
+    const browser = /Edg\//u.test(agent) ? 'Edge' :
+      /Firefox\//u.test(agent) ? 'Firefox' :
+      /Chrome\//u.test(agent) ? 'Chrome' :
+      /Safari\//u.test(agent) ? 'Safari' : 'Browser';
+    return `${browser}${platform ? ` · ${platform}` : ''}`.slice(0, 64);
+  }
+
   async function pairWithCode(candidate) {
     const pairingCode = normalizePairingCode(candidate);
     if (!/^\d{8}$/.test(pairingCode)) {
@@ -4473,7 +5764,10 @@
       recordConnectionTiming('Pairing', 'pair_start', pairingStartedAt);
       const response = await api('/api/pair', {
         method: 'POST',
-        headers: {'X-Pairing-Code': pairingCode},
+        headers: {
+          'X-Pairing-Code': pairingCode,
+          'X-Browser-Device-Name': pairingDeviceName()
+        },
         cache: 'no-store'
       }, '');
       recordConnectionTiming('Pairing', 'pair_complete', pairingStartedAt, String(response.status));
@@ -4498,9 +5792,11 @@
       if (!CREDENTIAL_PATTERN.test(issuedCredential)) throw new Error('invalid browser credential');
       stopAudioStreams(true);
       resetWebRtc(true);
+      clearWebRtcSessionCloseBarriers();
       stopFramePolling(true);
       resetPremiumPromptSession();
       resetNoticeSession();
+      resetBrowserSessionState();
       browserCredential = issuedCredential;
       localControlCutover = false;
       cancelWebRtcRecovery(true);
@@ -4531,6 +5827,7 @@
   async function connectRemembered(credential) {
     resetPremiumPromptSession();
     resetNoticeSession();
+    resetBrowserSessionState();
     browserCredential = credential;
     localControlCutover = false;
     showAuthenticatedView(true);
@@ -4570,7 +5867,8 @@
   }
 
   function enqueueTouch(phase, position, options = {}) {
-    if (!browserCredential || !androidAutoInteractive || !androidAutoTouchReady) return;
+    if (!browserCredential || !browserSessionCanControl() ||
+        !androidAutoInteractive || !androidAutoTouchReady) return;
     const request = Object.freeze({
       phase,
       position: Object.freeze({x: position.x, y: position.y}),
@@ -4616,7 +5914,7 @@
   async function sendTouchRequest(request) {
     if (request.generation !== touchQueueGeneration ||
         !request.credential || browserCredential !== request.credential ||
-        !androidAutoInteractive || !androidAutoTouchReady) return;
+        !browserSessionCanControl() || !androidAutoInteractive || !androidAutoTouchReady) return;
     const query = new URLSearchParams({
       phase: request.phase,
       x: String(request.position.x),
@@ -4676,7 +5974,7 @@
 
   function enqueueRecoveryCancelIfNeeded() {
     if (!touchRecoveryCancelPending || touchRecoveryCancelInFlight ||
-        !androidAutoInteractive || !androidAutoTouchReady) return;
+        !browserSessionCanControl() || !androidAutoInteractive || !androidAutoTouchReady) return;
     touchRecoveryCancelInFlight = true;
     enqueueTouch('cancel', lastPointerPosition, {recoveryCancel: true});
   }
@@ -4687,13 +5985,59 @@
     enqueueTouch(phase, position);
   }
 
+  function cancelPendingSingleTouch() {
+    if (pendingSingleTouchTimer) window.clearTimeout(pendingSingleTouchTimer);
+    pendingSingleTouchTimer = 0;
+    pendingSingleTouch = null;
+  }
+
+  function activatePendingSingleTouch(pointerId) {
+    if (!pendingSingleTouch || pendingSingleTouch.pointerId !== pointerId ||
+        suppressAndroidAutoTouch || activePointerId !== null) return false;
+    const pending = pendingSingleTouch;
+    cancelPendingSingleTouch();
+    if (!pending.position || !browserCredential || !browserSessionCanControl() ||
+        !androidAutoInteractive || !androidAutoTouchReady) return false;
+    activePointerId = pointerId;
+    updatePointer('down', pending.position);
+    return true;
+  }
+
+  function stagePendingSingleTouch(event) {
+    cancelPendingSingleTouch();
+    pendingSingleTouch = Object.freeze({
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      position: point(event, false)
+    });
+    pendingSingleTouchTimer = window.setTimeout(() => {
+      pendingSingleTouchTimer = 0;
+      activatePendingSingleTouch(event.pointerId);
+    }, TOUCH_GESTURE_DECISION_MILLIS);
+  }
+
   function cancelActivePointer() {
+    cancelPendingSingleTouch();
     if (activePointerId === null) return;
     activePointerId = null;
     updatePointer('cancel', lastPointerPosition);
   }
 
+  function restoreCancelledPresentationPan() {
+    if (!pinchGesture || pinchGesture.mode !== 'pan' || pinchGesture.applied) return;
+    presentationAlignment = pinchGesture.initialAlignment;
+    presentationOffset = pinchGesture.initialPreferenceOffset;
+    presentationSnapState = pinchGesture.initialSnapState;
+    syncPresentationControls();
+    syncProjectionContentLayout();
+    pinchGesture.applied = true;
+    pinchGesture.mode = 'cancelled';
+  }
+
   function clearPinchPointers() {
+    restoreCancelledPresentationPan();
+    cancelPendingSingleTouch();
     touchPointers.clear();
     pinchGesture = null;
     suppressAndroidAutoTouch = false;
@@ -4726,32 +6070,112 @@
     return Math.hypot(left.x - right.x, left.y - right.y);
   }
 
+  function pointerCentroid(left, right) {
+    return Object.freeze({x: (left.x + right.x) / 2, y: (left.y + right.y) / 2});
+  }
+
   function beginPinchGesture() {
     const entries = Array.from(touchPointers.entries()).slice(0, 2);
     if (entries.length !== 2) return;
     const distance = pointerDistance(entries[0][1], entries[1][1]);
     if (!Number.isFinite(distance) || distance < 1) return;
+    cancelPendingSingleTouch();
     cancelActivePointer();
     suppressAndroidAutoTouch = true;
+    const layout = syncProjectionContentLayout();
     pinchGesture = {
       pointerIds: [entries[0][0], entries[1][0]],
       initialDistance: distance,
+      initialCentroid: pointerCentroid(entries[0][1], entries[1][1]),
       initiallyExpanded: expandedViewActive(),
+      initialLayout: layout,
+      initialOffset: layout ? layout.normalizedOffset : Object.freeze({x: 0, y: 0}),
+      initialAlignment: presentationAlignment,
+      initialPreferenceOffset: presentationOffset,
+      initialSnapState: presentationSnapState,
+      mode: 'pending',
+      presentationChanged: false,
       intent: null,
       applied: false
     };
   }
 
+  function beginThreeFingerPresentationReset() {
+    if (touchPointers.size < 3 || !expandedViewActive()) return false;
+    cancelPendingSingleTouch();
+    cancelActivePointer();
+    suppressAndroidAutoTouch = true;
+    pinchGesture = {
+      pointerIds: Array.from(touchPointers.keys()).slice(0, 3),
+      initiallyExpanded: expandedViewActive(),
+      mode: 'reset',
+      intent: null,
+      applied: true
+    };
+    resetPresentationPosition();
+    showFullscreenHint(t('presentationReset'));
+    return true;
+  }
+
+  function applyPresentationPan(gesture, centroid) {
+    if (!gesture.initialLayout || !gesture.initialCentroid) return false;
+    const dragged = dragPresentationOffset(
+      gesture.initialLayout,
+      gesture.initialOffset,
+      centroid.x - gesture.initialCentroid.x,
+      centroid.y - gesture.initialCentroid.y,
+      gesture.initialSnapState
+    );
+    if (!dragged) return false;
+    const movedFromInitial = Math.abs(dragged.offset.x - gesture.initialOffset.x) > 0.0001 ||
+      Math.abs(dragged.offset.y - gesture.initialOffset.y) > 0.0001;
+    if (gesture.mode !== 'pan' && !movedFromInitial) return false;
+    const changedFromCurrent = Math.abs(dragged.offset.x - presentationOffset.x) > 0.0001 ||
+      Math.abs(dragged.offset.y - presentationOffset.y) > 0.0001 ||
+      dragged.snap.x !== presentationSnapState.x || dragged.snap.y !== presentationSnapState.y;
+    if (!changedFromCurrent) return gesture.mode === 'pan';
+    presentationAlignment = 'custom';
+    presentationOffset = dragged.offset;
+    presentationSnapState = dragged.snap;
+    gesture.presentationChanged = true;
+    syncPresentationControls();
+    syncProjectionContentLayout();
+    return true;
+  }
+
   function updatePinchGesture() {
-    if (!pinchGesture || pinchGesture.applied) return;
+    if (!pinchGesture || pinchGesture.applied ||
+        pinchGesture.mode === 'reset' || pinchGesture.mode === 'cancelled') return;
     const left = touchPointers.get(pinchGesture.pointerIds[0]);
     const right = touchPointers.get(pinchGesture.pointerIds[1]);
     if (!left || !right) return;
-    const scale = pointerDistance(left, right) / pinchGesture.initialDistance;
+    const distance = pointerDistance(left, right);
+    const scale = distance / pinchGesture.initialDistance;
     if (!pinchGesture.initiallyExpanded && scale >= PINCH_EXPAND_SCALE) {
       pinchGesture.intent = 'expand';
-    } else if (pinchGesture.initiallyExpanded && scale <= PINCH_COLLAPSE_SCALE) {
+      pinchGesture.mode = 'pinch';
+      return;
+    }
+    if (!pinchGesture.initiallyExpanded) return;
+    const centroid = pointerCentroid(left, right);
+    if (pinchGesture.mode === 'pan') {
+      applyPresentationPan(pinchGesture, centroid);
+      return;
+    }
+    if (scale <= PINCH_COLLAPSE_SCALE) {
       pinchGesture.intent = 'collapse';
+      pinchGesture.mode = 'pinch';
+      return;
+    }
+    if (pinchGesture.mode !== 'pending') return;
+    const translation = pointerDistance(centroid, pinchGesture.initialCentroid);
+    const radialChange = Math.abs(distance - pinchGesture.initialDistance);
+    if (translation >= PRESENTATION_PAN_LOCK_CSS_PIXELS &&
+        translation >= radialChange * PRESENTATION_PAN_DIRECTION_RATIO) {
+      if (applyPresentationPan(pinchGesture, centroid)) {
+        pinchGesture.mode = 'pan';
+        pinchGesture.intent = null;
+      }
     }
   }
 
@@ -4764,15 +6188,50 @@
   function finishGesturePointer(event, cancelled) {
     if (!touchPointers.has(event.pointerId)) return false;
     const consumed = suppressAndroidAutoTouch;
-    if (consumed && !cancelled) {
+    if (!consumed) return false;
+    if (cancelled) {
+      restoreCancelledPresentationPan();
+      if (pinchGesture && !pinchGesture.applied) {
+        pinchGesture.applied = true;
+        pinchGesture.mode = 'cancelled';
+      }
+    } else {
       touchPointers.set(event.pointerId, touchPoint(event));
       updatePinchGesture();
-      applyPinchIntentFromGesture();
+      if (pinchGesture && pinchGesture.mode === 'pan' && !pinchGesture.applied) {
+        pinchGesture.applied = true;
+        if (pinchGesture.presentationChanged) rememberPresentationPreferences();
+      } else {
+        applyPinchIntentFromGesture();
+      }
     }
     touchPointers.delete(event.pointerId);
-    if (touchPointers.size < 2) pinchGesture = null;
-    if (touchPointers.size === 0) suppressAndroidAutoTouch = false;
+    if (touchPointers.size === 0) {
+      pinchGesture = null;
+      suppressAndroidAutoTouch = false;
+    }
     return consumed;
+  }
+
+  function finishSingleTouchPointer(event, cancelled) {
+    if (event.pointerType !== 'touch' || !touchPointers.has(event.pointerId)) return false;
+    touchPointers.delete(event.pointerId);
+    if (pendingSingleTouch && pendingSingleTouch.pointerId === event.pointerId) {
+      const pending = pendingSingleTouch;
+      cancelPendingSingleTouch();
+      if (!cancelled) {
+        pendingSingleTouch = pending;
+        activatePendingSingleTouch(event.pointerId);
+      }
+    }
+    if (event.pointerId === activePointerId) {
+      if (cancelled) cancelActivePointer();
+      else {
+        updatePointer('up', point(event));
+        activePointerId = null;
+      }
+    }
+    return true;
   }
 
   code.addEventListener('input', () => {
@@ -4788,6 +6247,41 @@
   fullscreenButton.addEventListener('click', () => {
     unlockAudio();
     toggleFullscreen();
+  });
+  presentationAlignmentTrigger.addEventListener('click', () => {
+    setPresentationAlignmentPickerOpen(!presentationAlignmentPickerOpen, false);
+  });
+  for (const input of presentationOrientationInputs) {
+    input.addEventListener('change', () => {
+      if (input.checked) setPresentationOrientation(input.value);
+    });
+  }
+  for (const input of presentationAlignmentInputs) {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      setPresentationAlignment(input.value);
+      setPresentationAlignmentPickerOpen(false, true);
+    });
+    input.addEventListener('click', () => {
+      if (!input.checked || !presentationAlignmentPickerOpen) return;
+      setPresentationAlignment(input.value);
+      setPresentationAlignmentPickerOpen(false, true);
+    });
+  }
+  presentationAlignmentSelect.addEventListener('change', () => {
+    setPresentationAlignment(presentationAlignmentSelect.value);
+  });
+  presentationGuideCard.addEventListener('pointerdown', presentationGuideInteraction);
+  presentationGuideCard.addEventListener('click', presentationGuideInteraction);
+  presentationGuideCard.addEventListener('keydown', presentationGuideInteraction);
+  document.addEventListener('pointerdown', event => {
+    if (!presentationAlignmentPickerOpen || presentationAlignmentLabel.contains(event.target)) return;
+    setPresentationAlignmentPickerOpen(false, false);
+  });
+  presentationGuideDismiss.addEventListener('click', () => {
+    const dismissPermanently = presentationGuideDismissForever.checked;
+    if (dismissPermanently) rememberPresentationGuideDismissal();
+    hidePresentationGuide(true);
   });
   localNetworkAllow.addEventListener('click', () => {
     unlockAudio();
@@ -4810,21 +6304,31 @@
   });
 
   pad.addEventListener('pointerdown', event => {
+    if (presentationGuideOpen) {
+      event.preventDefault();
+      return;
+    }
     unlockAudio();
     if (event.pointerType === 'touch') {
       touchPointers.set(event.pointerId, touchPoint(event));
       try { pad.setPointerCapture(event.pointerId); } catch (_) { /* capture is best effort */ }
+      event.preventDefault();
+      if (touchPointers.size >= 3) {
+        beginThreeFingerPresentationReset();
+        return;
+      }
       if (touchPointers.size >= 2) {
-        event.preventDefault();
         if (!pinchGesture) beginPinchGesture();
         return;
       }
       if (suppressAndroidAutoTouch) {
-        event.preventDefault();
         return;
       }
+      stagePendingSingleTouch(event);
+      return;
     }
-    if (!browserCredential || !androidAutoInteractive || !androidAutoTouchReady ||
+    if (!browserCredential || !browserSessionCanControl() ||
+        !androidAutoInteractive || !androidAutoTouchReady ||
         activePointerId !== null) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const position = point(event, false);
@@ -4842,6 +6346,15 @@
         updatePinchGesture();
         return;
       }
+      if (pendingSingleTouch && pendingSingleTouch.pointerId === event.pointerId) {
+        event.preventDefault();
+        const movement = Math.hypot(
+          event.clientX - pendingSingleTouch.clientX,
+          event.clientY - pendingSingleTouch.clientY
+        );
+        if (movement < TOUCH_GESTURE_MOVE_CSS_PIXELS ||
+            !activatePendingSingleTouch(event.pointerId)) return;
+      }
     }
     if (event.pointerId !== activePointerId) return;
     event.preventDefault();
@@ -4851,6 +6364,10 @@
   });
   pad.addEventListener('pointerup', event => {
     if (finishGesturePointer(event, false)) {
+      event.preventDefault();
+      return;
+    }
+    if (finishSingleTouchPointer(event, false)) {
       event.preventDefault();
       return;
     }
@@ -4864,26 +6381,24 @@
       event.preventDefault();
       return;
     }
+    if (finishSingleTouchPointer(event, true)) {
+      event.preventDefault();
+      return;
+    }
     if (event.pointerId !== activePointerId) return;
     event.preventDefault();
     updatePointer('cancel', point(event));
     activePointerId = null;
   });
   pad.addEventListener('lostpointercapture', event => {
-    if (touchPointers.has(event.pointerId)) {
-      touchPointers.delete(event.pointerId);
-      if (touchPointers.size < 2) pinchGesture = null;
-      if (touchPointers.size === 0) suppressAndroidAutoTouch = false;
-    }
+    if (finishGesturePointer(event, true)) return;
+    if (finishSingleTouchPointer(event, true)) return;
     if (event.pointerId === activePointerId) cancelActivePointer();
   });
   window.addEventListener('blur', cancelPointerInteraction);
-  window.addEventListener('resize', () => {
-    cancelActivePointer();
-    scheduleViewportLayoutSync();
-  });
+  window.addEventListener('resize', handleViewportGeometryChange);
   document.addEventListener('fullscreenchange', () => {
-    cancelActivePointer();
+    cancelPointerInteraction();
     if (viewerOwnsFullscreen() && theaterMode) {
       theaterMode = false;
       document.body.classList.remove('theater-mode');
@@ -4901,6 +6416,16 @@
     }
   });
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && presentationAlignmentPickerOpen) {
+      event.preventDefault();
+      setPresentationAlignmentPickerOpen(false, true);
+      return;
+    }
+    if (event.key === 'Escape' && presentationGuideOpen) {
+      event.preventDefault();
+      hidePresentationGuide(true);
+      return;
+    }
     if (event.key === 'Escape' && theaterMode) {
       event.preventDefault();
       setExpandedView(false).catch(() => null);
@@ -4910,14 +6435,15 @@
     syncScreenWakeLock();
     if (document.hidden) {
       cancelRepairPairingCountdown();
+      clearRemoteTouchMarkers();
       stopStatusPolling();
       if (!microphoneCaptureIsTerminal()) stopMicrophoneCapture('visibility_hidden');
       stopAudioStreams(false);
       resetTouchTransport(true, true);
       cancelWebRtcRecovery();
       cancelOutputAudioWebRtcRecovery(false);
-      stopFramePolling(false);
     } else if (statusPollingEligible()) {
+      resumeProjectionMediaAfterLifecyclePause();
       requestViewportControlReclaim();
       startStatusPolling();
       refreshLocalNetworkPermission().then(() => {
@@ -4937,7 +6463,6 @@
           }
         });
       }
-      startFramePolling();
       pollStatus().then(connected => {
         if (connected && androidAutoInteractive) {
           scheduleWebRtcRecovery();
@@ -4981,10 +6506,11 @@
       })
       .catch(suspendUnavailableSameOriginConnection);
   });
-  window.addEventListener('pagehide', () => {
+  window.addEventListener('pagehide', event => {
     pageActive = false;
     releaseScreenWakeLock();
     cancelRepairPairingCountdown();
+    hidePresentationGuide(false);
     hidePremiumPrompt();
     cancelNoticeRequestForRetry();
     resetTouchTransport(true, true);
@@ -5000,15 +6526,20 @@
     hideFullscreenHint();
     setTheaterMode(false);
     cancelWebRtcRecovery();
-    stopFramePolling(false);
-    resetWebRtc(true);
-    if (cloudRelayTransport) {
-      cloudRelayTransport.close();
-      cloudRelayTransport = null;
+    if (!event.persisted) {
+      // A real navigation/unload has no matching pageshow in this document. Release the phone
+      // session slot and cloud transport; BFCache pagehide keeps them for the same-page resume.
+      stopFramePolling(false);
+      resetWebRtc(true);
+      if (cloudRelayTransport) {
+        cloudRelayTransport.close();
+        cloudRelayTransport = null;
+      }
     }
   });
   window.addEventListener('pageshow', event => {
     pageActive = true;
+    resumeProjectionMediaAfterLifecyclePause();
     startDevelopmentTeslaCycle();
     syncFullscreenState();
     scheduleViewportLayoutSync();
@@ -5029,9 +6560,21 @@
       });
     }
   });
+  document.addEventListener('freeze', () => {
+    // The OS owns JavaScript suspension. Release only ephemeral UI ownership; the authenticated
+    // media transports and JPEG reader remain intact for the matching resume/pageshow event.
+    releaseScreenWakeLock();
+    cancelPointerInteraction();
+  });
+  document.addEventListener('resume', () => {
+    if (!pageActive || document.hidden) return;
+    resumeProjectionMediaAfterLifecyclePause();
+    resumeSameOriginConnection();
+  });
 
   applyDocumentLocale();
   pad.style.setProperty('--projection-aspect-ratio', '5 / 3');
+  syncPresentationControls();
   pad.classList.add('aa-unavailable');
   pad.dataset.navonwebRtcApi = typeof RTCPeerConnection === 'function' ? 'available' : 'unavailable';
   pad.dataset.navonwebBrowserCodecCount = String(browserCodecCapabilities.size);

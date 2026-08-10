@@ -88,6 +88,46 @@ class AndroidStringResourceParityTest {
     }
 
     @Test
+    fun `browser onboarding is generic and does not name a vehicle brand`() {
+        val defaultResources = readTextResources(findResourceDirectory("values"))
+        val koreanResources = readTextResources(findResourceDirectory("values-ko"))
+        val names = listOf("first_run_browser_title", "first_run_browser_body")
+        val englishCopy = names.joinToString(" ") { name ->
+            (defaultResources.entries.getValue(name) as TextResource.StringValue).text
+        }
+        val koreanCopy = names.joinToString(" ") { name ->
+            (koreanResources.entries.getValue(name) as TextResource.StringValue).text
+        }
+
+        assertFalse(englishCopy.contains("Tesla", ignoreCase = true))
+        assertFalse(koreanCopy.contains("Tesla", ignoreCase = true))
+        assertTrue(englishCopy.contains("Pair a web browser"))
+        assertTrue(koreanCopy.contains("웹 브라우저 페어링하기"))
+    }
+
+    @Test
+    fun `video server and decoder recovery waits use one message`() {
+        val defaultResources = readTextResources(findResourceDirectory("values"))
+        val koreanResources = readTextResources(findResourceDirectory("values-ko"))
+        val names = listOf(
+            "session_local_browser_starting",
+            "android_auto_reason_link_ready",
+            "android_auto_reason_decoder_recovery",
+        )
+
+        names.forEach { name ->
+            assertEquals(
+                "Waiting for video...",
+                (defaultResources.entries.getValue(name) as TextResource.StringValue).text,
+            )
+            assertEquals(
+                "영상 연결 대기...",
+                (koreanResources.entries.getValue(name) as TextResource.StringValue).text,
+            )
+        }
+    }
+
+    @Test
     fun `projection profile descriptions show bitrate without frame rates`() {
         listOf("values", "values-ko").forEach { qualifier ->
             val resources = readTextResources(findResourceDirectory(qualifier))

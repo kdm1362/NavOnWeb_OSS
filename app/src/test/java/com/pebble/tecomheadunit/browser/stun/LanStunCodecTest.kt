@@ -25,7 +25,7 @@ class LanStunCodecTest {
     fun encodesIpv4XorMappedAddress() {
         val response = LanStunCodec.encodeBindingSuccess(
             transactionId = transactionId,
-            mappedAddress = InetAddress.getByName("10.0.0.220") as Inet4Address,
+            mappedAddress = InetAddress.getByName("192.168.50.12") as Inet4Address,
             mappedPort = 50_000,
         )
 
@@ -37,7 +37,7 @@ class LanStunCodecTest {
             byteArrayOf(
                 0x00, 0x20, 0x00, 0x08,
                 0x00, 0x01, 0xe2.toByte(), 0x42,
-                0x2b, 0x12, 0xa4.toByte(), 0x9e.toByte(),
+                0xe1.toByte(), 0xba.toByte(), 0x96.toByte(), 0x4e,
             ),
             response.copyOfRange(20, 32),
         )
@@ -87,7 +87,7 @@ class LanStunCodecTest {
 
     @Test
     fun allowsOnlyPrivateIpv4LanClients() {
-        assertTrue(LanStunServer.isAllowedClientAddress(InetAddress.getByName("10.0.0.50")))
+        assertTrue(LanStunServer.isAllowedClientAddress(InetAddress.getByName("192.168.50.50")))
         assertTrue(LanStunServer.isAllowedClientAddress(InetAddress.getByName("10.0.0.2")))
         assertTrue(!LanStunServer.isAllowedClientAddress(InetAddress.getByName("127.0.0.1")))
         assertTrue(!LanStunServer.isAllowedClientAddress(InetAddress.getByName("8.8.8.8")))

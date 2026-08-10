@@ -2,7 +2,7 @@
 <resources>
     <!-- Session and connection status -->
     <string name="session_service_stopped">The service is stopped.</string>
-    <string name="session_local_browser_starting">Starting the local browser service.</string>
+    <string name="session_local_browser_starting">Waiting for video...</string>
     <string name="session_browser_ready">Browser connection is ready.</string>
     <string name="session_native_status_checking">Checking</string>
     <string name="session_stopped_by_user">The user stopped the service.</string>
@@ -13,10 +13,10 @@
     <string name="android_auto_state_reconnecting">Reconnecting to Android Auto</string>
     <string name="android_auto_state_disconnected">Android Auto disconnected</string>
     <string name="android_auto_reason_streaming">Receiving Android Auto video</string>
-    <string name="android_auto_reason_link_ready">Android Auto negotiation complete · waiting for video</string>
+    <string name="android_auto_reason_link_ready">Waiting for video...</string>
     <string name="android_auto_reason_waiting_for_phone">Waiting for the phone</string>
     <string name="android_auto_reason_retrying">Retrying the Android Auto connection</string>
-    <string name="android_auto_reason_decoder_recovery">Recovering the Android Auto video decoder</string>
+    <string name="android_auto_reason_decoder_recovery">Waiting for video...</string>
     <string name="android_auto_reason_phone_ended_session">The phone ended the Android Auto connection</string>
     <string name="android_auto_reason_head_unit_server_stopped">Android Auto Head Unit Server is off on this phone</string>
     <string name="android_auto_reason_network_interrupted">The connection to the phone was interrupted</string>

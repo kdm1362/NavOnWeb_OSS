@@ -1,34 +1,21 @@
-# Modifications and provenance
+# NavOnWeb modifications
 
-This document distinguishes retained upstream source, adapted behavior, and reference-only material. Exact revisions and hashes are recorded in `third_party/UPSTREAM.lock`.
+Exact upstream repositories, revisions, and retained-file hashes are recorded in `third_party/UPSTREAM.lock`. License notices are collected in `THIRD_PARTY_NOTICES.md`.
 
-Last updated: 2026-08-05.
+## OpenAuto-derived interfaces
 
-## OpenAuto
+Selected OpenAuto projection interface and service files are retained under `third_party/openauto-reference/` with their original notices.
 
-Upstream: `f1xpl/openauto` at `aa90412bf93b5a5078495ea85ac9270c6297d369`.
+`app/src/main/cpp/port/ProjectionTypes.hpp` adapts viewport, margin, and touch-coordinate concepts to dependency-free C++ types suitable for Android JNI checks. The Android application does not build the upstream Qt user interface.
 
-- `third_party/openauto-reference/**` retains selected upstream projection interface and service files. These files are included for attribution and source correspondence; their SHA-256 values are locked.
-- `app/src/main/cpp/port/ProjectionTypes.hpp` is an Android-oriented adaptation of the upstream projection input and viewport concepts. It replaces Qt/desktop types with dependency-free C++ value types and coordinate conversion helpers.
-- Android code under `app/src/main/java/com/pebble/tecomheadunit/openauto/` implements projection, audio, microphone, input, sensor, and session behavior for Android rather than building the upstream Qt application.
+## AASDK protocol adaptation
 
-## AASDK
+The Kotlin classes under `app/src/main/java/com/pebble/tecomheadunit/openauto/protocol/` implement the framing, bootstrap, TLS channel, service discovery, channel lifecycle, and media packet behavior used by the Android runtime.
 
-Upstream: `f1xpl/aasdk` at `046b3b381595509d0939fa84b14a90978f46ff63`.
+The upstream AASDK C++ library is not linked or bundled. Android Auto identity material is supplied separately from source and build metadata.
 
-- The upstream C++ library is not linked or bundled.
-- Kotlin source under `app/src/main/java/com/pebble/tecomheadunit/openauto/protocol/` adapts the wire framing, bootstrap, TLS channel, service/channel lifecycle, and media packet behavior needed by the Android implementation.
-- `AasdkOpenAutoProtocol.kt` records both the AASDK and OpenAuto revisions used for protocol constants and the audited service-discovery fixture.
-- Runtime certificates and private keys are not derived source and are deliberately excluded.
+## NavOnWeb implementation
 
-## open-headunit
+NavOnWeb adds the Android UI and foreground-service lifecycle, MediaCodec projection pipeline, local and relay browser signaling, WebRTC video, browser audio and microphone handling, pairing/session management, touch and viewport mapping, automation, billing integration, notices, and opt-in diagnostics.
 
-Upstream: `andreknieriem/open-headunit` at `738b07ff7e765d9b570d27dee6d15901ad30b80c`, revived from `mikereidis/headunit`.
-
-- Relationship: architecture and interoperability reference only.
-- No open-headunit implementation source, fixture, build file, or credential asset is included in this curated public source tree or in the Android package inputs under `app/src/`.
-- Its upstream AGPL-3.0-or-later license and Michael A. Reid attribution are recorded in the notices for provenance; NavOnWeb does not claim that material as GPL-licensed NavOnWeb code.
-
-## NavOnWeb-specific implementation
-
-The Android UI, foreground service and automation, WebRTC browser bridge, local HTTP control surface, pairing/session management, billing integration, diagnostics client, viewport and touch mapping, and bundled browser client were implemented for NavOnWeb and are licensed GPL-3.0-or-later.
+These NavOnWeb-specific sources are licensed GPL-3.0-or-later.

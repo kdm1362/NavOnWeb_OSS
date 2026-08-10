@@ -23,4 +23,12 @@ class PlayBillingEntitlementGrantTest {
             ServerProjectionEntitlementGrant.clientPlayPurchase("not-a-token-digest")
         }
     }
+
+    @Test
+    fun reviewPromoIsPremiumButHasDistinctNonPurchaseProvenance() {
+        val grant: ServerProjectionEntitlementGrant = ServerProjectionEntitlementGrant.ReviewPromo
+
+        assertEquals(ProjectionAccessTier.PREMIUM, grant.tier)
+        assertTrue(grant is ServerProjectionEntitlementGrant.ReviewPromo)
+    }
 }

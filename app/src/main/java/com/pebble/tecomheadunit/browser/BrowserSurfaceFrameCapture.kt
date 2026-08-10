@@ -3,23 +3,36 @@
  */
 package com.pebble.tecomheadunit.browser
 
-import android.graphics.Bitmap
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
-import android.view.PixelCopy
 import android.view.Surface
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import org.webrtc.EglBase
+import org.webrtc.EglRenderer
+import org.webrtc.GlRectDrawer
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoFrame
+import org.webrtc.VideoSink
 
 /**
- * Low-rate browser preview copied from the existing MediaCodec output Surface.
+ * Service-owned Android Auto decoder target and low-rate browser JPEG fan-out.
  *
- * PixelCopy is requested only while at least one counted browser subscriber is
- * active. This class borrows the UI-owned Surface and never releases it. All
- * capture, JPEG encoding and lifecycle state are serialized on one HandlerThread.
+ * The owned [decoderSurface] is backed by a continuously draining [SurfaceTextureHelper], so the
+ * MediaCodec producer never depends on an Activity Surface or on an active HTTP subscriber. When
+ * native WebRTC is available, its texture bridge can also fan out the same [VideoFrame] through
+ * [onFrame]; only the runtime-bound decoder target receives frames. I420 conversion and JPEG
+ * encoding are latest-only, subscriber-gated and serialized on one worker.
+ *
+ * [attach] and [detach] manage only an optional Activity preview. They never release the decoder
+ * target or clear the latest browser frame.
  */
 class BrowserSurfaceFrameCapture(
     private val frameStore: BrowserFrameStore,
@@ -27,13 +40,16 @@ class BrowserSurfaceFrameCapture(
     private val height: Int = DEFAULT_HEIGHT,
     targetFramesPerSecond: Int = DEFAULT_TARGET_FPS,
     private val jpegQuality: Int = DEFAULT_JPEG_QUALITY,
-) : Closeable {
+) : Closeable, VideoSink {
     @Suppress("unused")
     private val validatedParameters = Unit.also {
-        require(width > 0 && height > 0) { "invalid browser capture dimensions" }
+        require(width > 0 && height > 0 && width % 2 == 0 && height % 2 == 0) {
+            "browser capture dimensions must be positive and even"
+        }
         require(jpegQuality in 1..100) { "invalid browser JPEG quality" }
     }
     private val closed = AtomicBoolean(false)
+    private val lifecycleLock = Any()
     private val frameIntervalMillis = 1_000L / targetFramesPerSecond.also {
         require(it in 1..MAX_TARGET_FPS) { "invalid browser capture frame rate" }
     }
@@ -42,84 +58,111 @@ class BrowserSurfaceFrameCapture(
             .coerceIn(INITIAL_JPEG_CAPACITY.toLong(), MAX_INITIAL_JPEG_CAPACITY.toLong())
             .toInt()
     private val rateLimiter = BrowserCaptureRateLimiter(frameIntervalMillis)
-    private val captureThread = HandlerThread("TecomBrowserPixelCopy").apply { start() }
+    private val decoderResources = createDecoderResources(width, height)
+    private val captureThread = HandlerThread("TecomBrowserJpegEncoder").apply { start() }
     private val handler = Handler(captureThread.looper)
 
+    /** Stable service-owned target used when the native WebRTC controller is unavailable. */
+    val decoderSurface: Surface
+        get() = decoderResources.surface
+
+    private val previewBinding = PreviewRendererBinding<Surface, EglRenderer>(
+        sameTarget = { first, second -> first === second },
+        releaseRenderer = EglRenderer::release,
+    )
+
     // Handler-thread confined state.
-    private var surface: Surface? = null
-    private var surfaceGeneration = NO_GENERATION
     private var subscriberCount = 0
-    private var captureScheduled = false
-    private var copyInFlight = false
-    private var bitmap: Bitmap? = null
-    private var requestStartedAtMillis = 0L
+    private var pendingFrame: VideoFrame? = null
+    private var encodeScheduled = false
     private var closing = false
 
-    private val captureTick = Runnable {
-        captureScheduled = false
-        requestCaptureIfEligible()
+    private val encodeTick = Runnable {
+        encodeScheduled = false
+        encodeLatestFrame()
+    }
+
+    private val subscriberListener: (Int) -> Unit = {
+        if (!closed.get()) {
+            // Listener callbacks run after the store lock is released and may be posted out of
+            // order. Resolve the authoritative count on the serialized worker.
+            handler.post {
+                onSubscriberCountChanged(frameStore.activeSubscriberCount)
+            }
+        }
     }
 
     init {
-        frameStore.setSubscriberListener {
-            if (!closed.get()) {
-                // Listener calls may originate from concurrent HTTP workers.
-                // Resolve the current count on our serialized handler instead
-                // of trusting an older queued transition.
-                handler.post {
-                    onSubscriberCountChanged(frameStore.activeSubscriberCount)
-                }
-            }
-        }
+        frameStore.setSubscriberListener(subscriberListener)
+        decoderResources.textureHelper.startListening(this)
     }
 
-    /** Attaches a newer UI-owned output Surface. Ownership remains with SurfaceView. */
+    /** Attaches a newer caller-owned preview Surface without taking ownership of it. */
     fun attach(outputSurface: Surface, generation: Long) {
         require(generation >= 0L) { "invalid projection surface generation" }
+        require(outputSurface.isValid) { "preview Surface is invalid" }
         if (closed.get()) return
-        handler.post {
-            if (closing || generation < surfaceGeneration) return@post
-            if (generation == surfaceGeneration && surface === outputSurface) {
-                scheduleCapture(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
-                return@post
-            }
-            surface = outputSurface
-            surfaceGeneration = generation
-            frameStore.clear()
-            scheduleCapture(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
+
+        previewBinding.attach(outputSurface, generation) {
+            createInitializedPreviewRenderer(
+                allocate = { EglRenderer(PREVIEW_RENDERER_NAME) },
+                initialize = { candidate ->
+                    candidate.init(
+                        decoderResources.eglBase.eglBaseContext,
+                        EglBase.CONFIG_PLAIN,
+                        GlRectDrawer(),
+                    )
+                    candidate.setFpsReduction(PREVIEW_FRAMES_PER_SECOND.toFloat())
+                    candidate.createEglSurface(outputSurface)
+                },
+                release = EglRenderer::release,
+            )
         }
     }
 
-    /** Detaches only the matching generation, preventing stale UI callbacks. */
-    fun detach(generation: Long) {
-        if (generation < 0L || closed.get()) return
-        handler.post {
-            if (generation != surfaceGeneration) return@post
-            surface = null
-            frameStore.clear()
-            cancelScheduledCapture()
-            recycleBitmapWhenIdle()
+    /** Detaches only the matching Activity preview generation. */
+    fun detach(generation: Long? = null) {
+        if (generation != null && generation < 0L) return
+        previewBinding.detach(generation)
+    }
+
+    /**
+     * Receives either the owned decoder texture or the native controller's texture fan-out.
+     * The renderer and WebRTC sink retain frames they need; this method retains only a bounded
+     * latest frame for the asynchronous JPEG encoder.
+     */
+    override fun onFrame(frame: VideoFrame) {
+        val queueForJpeg: Boolean
+        synchronized(lifecycleLock) {
+            if (closed.get()) return
+            queueForJpeg = frameStore.activeSubscriberCount > 0
+            if (queueForJpeg) frame.retain()
+        }
+        previewBinding.dispatch { renderer -> renderer.onFrame(frame) }
+        if (!queueForJpeg) return
+
+        if (!handler.post { enqueueLatestFrame(frame) }) {
+            frame.release()
         }
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        frameStore.setSubscriberListener(null)
+        frameStore.clearSubscriberListener(subscriberListener)
+
+        // Stop both frame producers before releasing the EGL context. Any frame already retained
+        // by the encoder worker is released by the serialized close task below.
+        decoderResources.textureHelper.stopListening()
+        previewBinding.close()
         handler.post {
             closing = true
-            surface = null
-            subscriberCount = 0
-            cancelScheduledCapture()
-            frameStore.clear()
-            if (!copyInFlight) {
-                recycleBitmap()
-                captureThread.quitSafely()
-            } else {
-                // PixelCopy normally completes promptly. This timeout only
-                // releases the worker; it deliberately does not recycle a
-                // bitmap that the platform may still be writing.
-                handler.postDelayed({ captureThread.quitSafely() }, CLOSE_TIMEOUT_MILLIS)
-            }
+            cancelScheduledEncode()
+            pendingFrame?.release()
+            pendingFrame = null
+            decoderResources.surface.release()
+            decoderResources.textureHelper.dispose()
+            decoderResources.eglBase.release()
+            captureThread.quitSafely()
         }
     }
 
@@ -127,112 +170,196 @@ class BrowserSurfaceFrameCapture(
         if (closing) return
         subscriberCount = count.coerceAtLeast(0)
         if (subscriberCount == 0) {
-            cancelScheduledCapture()
-            recycleBitmapWhenIdle()
-            return
+            cancelScheduledEncode()
+            pendingFrame?.release()
+            pendingFrame = null
         }
-        // A browser may long-poll using one short subscription per HTTP
-        // request. Preserve the global FPS ceiling across 0 -> 1 transitions.
-        scheduleCapture(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
     }
 
-    private fun requestCaptureIfEligible() {
-        if (closing || copyInFlight || frameStore.activeSubscriberCount == 0) return
-        val activeSurface = surface?.takeIf(Surface::isValid) ?: return
-        val generation = surfaceGeneration
-        val target = bitmap?.takeUnless(Bitmap::isRecycled) ?: Bitmap.createBitmap(
-            width,
-            height,
-            Bitmap.Config.ARGB_8888,
-        ).also { bitmap = it }
+    private fun enqueueLatestFrame(frame: VideoFrame) {
+        if (closing || subscriberCount == 0 || frameStore.activeSubscriberCount == 0) {
+            frame.release()
+            return
+        }
+        pendingFrame?.release()
+        pendingFrame = frame
+        scheduleEncode(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
+    }
 
-        copyInFlight = true
-        requestStartedAtMillis = SystemClock.elapsedRealtime()
-        rateLimiter.markRequestStarted(requestStartedAtMillis)
+    private fun encodeLatestFrame() {
+        if (closing || subscriberCount == 0 || frameStore.activeSubscriberCount == 0) {
+            pendingFrame?.release()
+            pendingFrame = null
+            return
+        }
+        val frame = pendingFrame ?: return
+        pendingFrame = null
+        rateLimiter.markRequestStarted(SystemClock.elapsedRealtime())
         try {
-            PixelCopy.request(
-                activeSurface,
-                target,
-                { result -> onPixelCopyFinished(result, activeSurface, generation, target) },
-                handler,
-            )
-        } catch (error: Throwable) {
-            copyInFlight = false
-            Log.w(LOG_TAG, "BROWSER_PIXEL_COPY_REQUEST_FAILED ${error.javaClass.simpleName}")
-            scheduleNextCapture()
-        }
-    }
-
-    private fun onPixelCopyFinished(
-        result: Int,
-        requestedSurface: Surface,
-        requestedGeneration: Long,
-        target: Bitmap,
-    ) {
-        copyInFlight = false
-        val requestStillCurrent = !closing &&
-            frameStore.activeSubscriberCount > 0 &&
-            surface === requestedSurface &&
-            surfaceGeneration == requestedGeneration &&
-            requestedSurface.isValid
-
-        if (result == PixelCopy.SUCCESS && requestStillCurrent) {
-            val jpegOutput = ByteArrayOutputStream(initialJpegCapacity)
-            val encoded = target.compress(Bitmap.CompressFormat.JPEG, jpegQuality, jpegOutput)
-            if (!encoded || !frameStore.publishOwned(jpegOutput.toByteArray())) {
-                Log.w(LOG_TAG, "BROWSER_JPEG_FRAME_REJECTED")
+            val buffer = frame.buffer.toI420()
+            if (buffer == null) {
+                Log.w(LOG_TAG, "BROWSER_JPEG_I420_UNAVAILABLE")
+                return
             }
-        } else if (result != PixelCopy.SUCCESS && requestStillCurrent) {
-            Log.w(LOG_TAG, "BROWSER_PIXEL_COPY_FAILED result=$result")
+            try {
+                val frameWidth = buffer.width
+                val frameHeight = buffer.height
+                if (frameWidth % 2 != 0 || frameHeight % 2 != 0) {
+                    Log.w(LOG_TAG, "BROWSER_JPEG_ODD_I420_FRAME ${frameWidth}x$frameHeight")
+                    return
+                }
+                val nv21 = copyI420ToNv21(
+                    width = frameWidth,
+                    height = frameHeight,
+                    dataY = buffer.dataY,
+                    strideY = buffer.strideY,
+                    dataU = buffer.dataU,
+                    strideU = buffer.strideU,
+                    dataV = buffer.dataV,
+                    strideV = buffer.strideV,
+                )
+                val output = ByteArrayOutputStream(initialJpegCapacity)
+                val encoded = YuvImage(
+                    nv21,
+                    ImageFormat.NV21,
+                    frameWidth,
+                    frameHeight,
+                    null,
+                ).compressToJpeg(Rect(0, 0, frameWidth, frameHeight), jpegQuality, output)
+                if (!encoded || !frameStore.publishOwned(output.toByteArray())) {
+                    Log.w(LOG_TAG, "BROWSER_JPEG_FRAME_REJECTED")
+                }
+            } finally {
+                buffer.release()
+            }
+        } catch (error: Throwable) {
+            Log.w(LOG_TAG, "BROWSER_JPEG_ENCODE_FAILED ${error.javaClass.simpleName}")
+        } finally {
+            frame.release()
         }
-
-        if (closing) {
-            recycleBitmap()
-            captureThread.quitSafely()
-            return
+        if (pendingFrame != null) {
+            scheduleEncode(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
         }
-        recycleBitmapWhenIdle()
-        scheduleNextCapture()
     }
 
-    private fun scheduleNextCapture() {
-        scheduleCapture(rateLimiter.remainingDelayMillis(SystemClock.elapsedRealtime()))
+    private fun scheduleEncode(delayMillis: Long) {
+        if (closing || encodeScheduled || pendingFrame == null || subscriberCount == 0) return
+        encodeScheduled = true
+        handler.postDelayed(encodeTick, delayMillis)
     }
 
-    private fun scheduleCapture(delayMillis: Long) {
-        if (closing || captureScheduled || copyInFlight || frameStore.activeSubscriberCount == 0) return
-        if (surface?.isValid != true) return
-        captureScheduled = true
-        handler.postDelayed(captureTick, delayMillis)
+    private fun cancelScheduledEncode() {
+        if (!encodeScheduled) return
+        handler.removeCallbacks(encodeTick)
+        encodeScheduled = false
     }
 
-    private fun cancelScheduledCapture() {
-        if (!captureScheduled) return
-        handler.removeCallbacks(captureTick)
-        captureScheduled = false
-    }
-
-    private fun recycleBitmapWhenIdle() {
-        if (copyInFlight || surface != null && frameStore.activeSubscriberCount > 0) return
-        recycleBitmap()
-    }
-
-    private fun recycleBitmap() {
-        bitmap?.takeUnless(Bitmap::isRecycled)?.recycle()
-        bitmap = null
-    }
+    private data class DecoderResources(
+        val eglBase: EglBase,
+        val textureHelper: SurfaceTextureHelper,
+        val surface: Surface,
+    )
 
     private companion object {
         const val LOG_TAG = "TecomBrowser"
+        const val DECODER_THREAD_NAME = "TecomBrowserFallbackTexture"
+        const val PREVIEW_RENDERER_NAME = "TecomBrowserFallbackPreview"
         const val DEFAULT_WIDTH = 800
         const val DEFAULT_HEIGHT = 480
         const val DEFAULT_TARGET_FPS = 5
+        const val PREVIEW_FRAMES_PER_SECOND = 30
         const val MAX_TARGET_FPS = 10
         const val DEFAULT_JPEG_QUALITY = 70
         const val INITIAL_JPEG_CAPACITY = 128 * 1024
         const val MAX_INITIAL_JPEG_CAPACITY = 512 * 1024
-        const val NO_GENERATION = -1L
-        const val CLOSE_TIMEOUT_MILLIS = 1_000L
+        fun createDecoderResources(width: Int, height: Int): DecoderResources {
+            val eglBase = EglBase.create()
+            var textureHelper: SurfaceTextureHelper? = null
+            var surface: Surface? = null
+            try {
+                textureHelper = checkNotNull(
+                    SurfaceTextureHelper.create(DECODER_THREAD_NAME, eglBase.eglBaseContext),
+                ) { "Unable to create browser fallback SurfaceTextureHelper" }
+                textureHelper.setTextureSize(width, height)
+                textureHelper.surfaceTexture.setDefaultBufferSize(width, height)
+                textureHelper.setFrameRotation(0)
+                surface = Surface(textureHelper.surfaceTexture)
+                return DecoderResources(eglBase, textureHelper, surface)
+            } catch (error: Throwable) {
+                surface?.release()
+                textureHelper?.dispose()
+                eglBase.release()
+                throw error
+            }
+        }
     }
+}
 
+/** Copies strided planar I420 into the tightly packed NV21 format expected by [YuvImage]. */
+internal fun copyI420ToNv21(
+    width: Int,
+    height: Int,
+    dataY: ByteBuffer,
+    strideY: Int,
+    dataU: ByteBuffer,
+    strideU: Int,
+    dataV: ByteBuffer,
+    strideV: Int,
+): ByteArray {
+    require(width > 0 && height > 0 && width % 2 == 0 && height % 2 == 0) {
+        "I420 dimensions must be positive and even"
+    }
+    require(strideY >= width && strideU >= width / 2 && strideV >= width / 2) {
+        "I420 stride is smaller than its plane width"
+    }
+    requirePlaneCapacity(dataY, strideY, width, height, "Y")
+    requirePlaneCapacity(dataU, strideU, width / 2, height / 2, "U")
+    requirePlaneCapacity(dataV, strideV, width / 2, height / 2, "V")
+
+    val output = ByteArray(width * height * 3 / 2)
+    copyRows(
+        source = dataY,
+        stride = strideY,
+        rowWidth = width,
+        rows = height,
+        destination = output,
+    )
+    var outputIndex = width * height
+    val u = dataU.duplicate()
+    val v = dataV.duplicate()
+    val uStart = u.position()
+    val vStart = v.position()
+    repeat(height / 2) { row ->
+        repeat(width / 2) { column ->
+            output[outputIndex++] = v.get(vStart + row * strideV + column)
+            output[outputIndex++] = u.get(uStart + row * strideU + column)
+        }
+    }
+    return output
+}
+
+private fun requirePlaneCapacity(
+    buffer: ByteBuffer,
+    stride: Int,
+    rowWidth: Int,
+    rows: Int,
+    name: String,
+) {
+    val required = (rows - 1).toLong() * stride + rowWidth
+    require(required <= buffer.remaining().toLong()) { "$name plane is truncated" }
+}
+
+private fun copyRows(
+    source: ByteBuffer,
+    stride: Int,
+    rowWidth: Int,
+    rows: Int,
+    destination: ByteArray,
+) {
+    val duplicate = source.duplicate()
+    val start = duplicate.position()
+    repeat(rows) { row ->
+        duplicate.position(start + row * stride)
+        duplicate.get(destination, row * rowWidth, rowWidth)
+    }
 }

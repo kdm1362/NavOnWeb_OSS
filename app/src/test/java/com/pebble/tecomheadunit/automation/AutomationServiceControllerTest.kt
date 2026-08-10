@@ -29,6 +29,40 @@ class AutomationServiceControllerTest {
     }
 
     @Test
+    fun `selected mode can be atomically disabled without synthesizing an inactive event`() {
+        val store = FakeStateStore()
+        val runtime = FakeRuntime(running = true)
+        val controller = controller(store, runtime)
+        val selected = controller.selectMode(AutomationTriggerMode.HOTSPOT).state
+
+        val result = controller.disableModeIfSelected(AutomationTriggerMode.HOTSPOT)
+
+        assertTrue(result is AutomationDispatchResult.ModeDisabled)
+        result as AutomationDispatchResult.ModeDisabled
+        assertEquals(AutomationTriggerMode.NONE, result.state.mode)
+        assertEquals(selected.generation, result.disabledGeneration)
+        assertEquals(AutomationTriggerMode.HOTSPOT, result.disabledSource)
+        assertNull(result.state.lastTriggerActive)
+        assertEquals(0, runtime.stops)
+        assertEquals(0, runtime.pendingStartCancellations)
+    }
+
+    @Test
+    fun `stale notification cannot disable a newly selected mode`() {
+        val store = FakeStateStore()
+        val runtime = FakeRuntime()
+        val controller = controller(store, runtime)
+        controller.selectMode(AutomationTriggerMode.HOTSPOT)
+        val bluetooth = controller.selectMode(AutomationTriggerMode.BLUETOOTH).state
+
+        val result = controller.disableModeIfSelected(AutomationTriggerMode.HOTSPOT)
+
+        assertTrue(result is AutomationDispatchResult.IgnoredStaleSignal)
+        assertEquals(bluetooth, result.state)
+        assertEquals(bluetooth, store.state)
+    }
+
+    @Test
     fun `stale callback from previous mode is ignored`() {
         val store = FakeStateStore()
         val runtime = FakeRuntime()
@@ -65,6 +99,10 @@ class AutomationServiceControllerTest {
         assertTrue(result is AutomationDispatchResult.Started)
         assertTrue(runtime.running)
         assertEquals(1, runtime.starts)
+        assertEquals(
+            listOf(AutomationProjectionOwner(AutomationTriggerMode.BLUETOOTH, generation)),
+            runtime.automationStarts,
+        )
         assertEquals(true, result.state.lastTriggerActive)
     }
 
@@ -299,6 +337,7 @@ class AutomationServiceControllerTest {
         var starts = 0
         var stops = 0
         var pendingStartCancellations = 0
+        val automationStarts = mutableListOf<AutomationProjectionOwner>()
 
         override fun isRunning(): Boolean = running
 
@@ -306,6 +345,14 @@ class AutomationServiceControllerTest {
             starts += 1
             if (startResult == AutomationRuntimeResult.Success) running = true
             return startResult
+        }
+
+        override fun startForAutomation(
+            source: AutomationTriggerMode,
+            generation: Long,
+        ): AutomationRuntimeResult {
+            automationStarts += AutomationProjectionOwner(source, generation)
+            return start()
         }
 
         override fun stop(): AutomationRuntimeResult {

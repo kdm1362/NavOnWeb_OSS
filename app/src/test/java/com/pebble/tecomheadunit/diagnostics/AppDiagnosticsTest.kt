@@ -28,7 +28,7 @@ class AppDiagnosticsTest {
                     "identity_provider" to "DEVELOPMENT_PEM",
                     "pairing_code" to "123456",
                     "credential" to "top-secret",
-                    "network" to "http://10.0.0.231:8787/",
+                    "network" to "http://192.168.50.10:8787/",
                     "ipv6" to "fe80::1234:5678:abcd:ef01",
                     "mdns" to "phone-session.local",
                     "code" to "654321",
@@ -44,7 +44,7 @@ class AppDiagnosticsTest {
         assertTrue(encoded.contains("[redacted]"))
         assertFalse(encoded.contains("123456"))
         assertFalse(encoded.contains("top-secret"))
-        assertFalse(encoded.contains("10.0.0.231"))
+        assertFalse(encoded.contains("192.168.50.10"))
         assertFalse(encoded.contains("fe80::1234"))
         assertFalse(encoded.contains("phone-session.local"))
         assertFalse(encoded.contains("654321"))

@@ -119,6 +119,7 @@ export async function createRouteCookieValue(
   routeNonce,
   nowMillis = Date.now(),
   ttlSeconds = ROUTE_COOKIE_TTL_SECONDS,
+  formatVersion = "v3",
 ) {
   if (!isValidBootstrapSecret(secret)) {
     throw new TypeError("Bootstrap HMAC secret is not configured");
@@ -128,28 +129,47 @@ export async function createRouteCookieValue(
   if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > ROUTE_COOKIE_TTL_SECONDS) {
     throw new TypeError("Invalid route cookie lifetime");
   }
-  const expiresAtSeconds = Math.floor(nowMillis / 1000) + ttlSeconds;
-  const payload = `v2.${roomId}.${routeNonce}.${expiresAtSeconds}`;
+  if (formatVersion !== "v2" && formatVersion !== "v3") {
+    throw new TypeError("Invalid route cookie format version");
+  }
+  const issuedAtSeconds = Math.floor(nowMillis / 1000);
+  const expiresAtSeconds = issuedAtSeconds + ttlSeconds;
+  // v3 carries an authenticated issuance time so the relay can restrict /api/pair to the
+  // ten-minute bootstrap that minted this route. v2 remains verify-only for existing browsers.
+  const payload = formatVersion === "v3"
+    ? `v3.${roomId}.${routeNonce}.${issuedAtSeconds}.${expiresAtSeconds}`
+    : `v2.${roomId}.${routeNonce}.${expiresAtSeconds}`;
   const signature = await hmacBase64Url(secret, `navonweb-route-cookie\u0000${payload}`);
   return `${payload}.${signature}`;
 }
 
 export async function verifyRouteCookieValue(secret, value, nowMillis = Date.now()) {
   if (!isValidBootstrapSecret(secret) || typeof value !== "string") return null;
-  const match = /^(v2)\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{22})\.(\d{10})\.([A-Za-z0-9_-]{43})$/u.exec(value);
-  if (!match) return null;
-  const [, version, roomId, routeNonce, expirationText, providedSignature] = match;
+  const v3 = /^(v3)\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{22})\.(\d{10})\.(\d{10})\.([A-Za-z0-9_-]{43})$/u.exec(value);
+  const v2 = /^(v2)\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{22})\.(\d{10})\.([A-Za-z0-9_-]{43})$/u.exec(value);
+  if (!v3 && !v2) return null;
+  const version = (v3 ?? v2)[1];
+  const roomId = (v3 ?? v2)[2];
+  const routeNonce = (v3 ?? v2)[3];
+  const issuedAtText = v3 ? v3[4] : null;
+  const expirationText = v3 ? v3[5] : v2[4];
+  const providedSignature = v3 ? v3[6] : v2[5];
+  const issuedAtSeconds = issuedAtText === null ? null : Number.parseInt(issuedAtText, 10);
   const expiresAtSeconds = Number.parseInt(expirationText, 10);
   if (!Number.isSafeInteger(expiresAtSeconds) || expiresAtSeconds <= Math.floor(nowMillis / 1000)) {
     return null;
   }
-  const payload = `${version}.${roomId}.${routeNonce}.${expirationText}`;
+  if (issuedAtSeconds !== null &&
+      (!Number.isSafeInteger(issuedAtSeconds) || issuedAtSeconds >= expiresAtSeconds)) return null;
+  const payload = version === "v3"
+    ? `${version}.${roomId}.${routeNonce}.${issuedAtText}.${expirationText}`
+    : `${version}.${roomId}.${routeNonce}.${expirationText}`;
   const expectedSignature = await hmacBase64Url(
     secret,
     `navonweb-route-cookie\u0000${payload}`,
   );
   if (!constantTimeEqualAscii(providedSignature, expectedSignature)) return null;
-  return { roomId, routeNonce, expiresAtSeconds };
+  return { version, roomId, routeNonce, issuedAtSeconds, expiresAtSeconds };
 }
 
 export function readCookie(cookieHeader, name) {

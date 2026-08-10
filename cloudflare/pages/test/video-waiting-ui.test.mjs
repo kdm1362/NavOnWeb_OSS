@@ -79,13 +79,13 @@ function loadWaitingRuntime(locale = "en") {
       androidAutoWaiting: "Android Auto 연결 대기",
       videoWaiting: "영상 연결 대기",
       videoWaitingElapsed: "대기 시간 {time}",
-      serverWaiting: "서버 연결 대기",
+      serverWaiting: "영상 연결 대기",
     }
     : {
       androidAutoWaiting: "Waiting for Android Auto",
       videoWaiting: "Waiting for video",
       videoWaitingElapsed: "Waiting time {time}",
-      serverWaiting: "Waiting for server",
+      serverWaiting: "Waiting for video",
     };
   const runtime = Function(
     "window",
@@ -162,7 +162,7 @@ test("video waiting timer starts once, advances, and resets on every exit state"
   runtime.tick();
   assert.equal(runtime.streamWaitTime.textContent, "Waiting time 1:05");
   runtime.setStreamState("serverWaiting");
-  assert.equal(runtime.streamStateMessage.textContent, "Waiting for server");
+  assert.equal(runtime.streamStateMessage.textContent, "Waiting for video");
   assert.equal(runtime.streamWaitTime.hidden, true);
   assert.equal(runtime.streamWaitTime.textContent, "");
   assert.equal(runtime.streamWaitTime.attributes.has("datetime"), false);
@@ -206,4 +206,6 @@ test("all stream status transitions use the timer-aware renderer", () => {
   assert.match(appScript, /setStreamState\('serverWaiting'\)/u);
   assert.match(appScript, /videoWaitingElapsed: 'Waiting time \{time\}'/u);
   assert.match(appScript, /videoWaitingElapsed: '대기 시간 \{time\}'/u);
+  assert.match(appScript, /videoWaiting: 'Waiting for video',[\s\S]*serverWaiting: 'Waiting for video'/u);
+  assert.match(appScript, /videoWaiting: '영상 연결 대기',[\s\S]*serverWaiting: '영상 연결 대기'/u);
 });

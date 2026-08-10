@@ -27,6 +27,7 @@ data class SessionUiState(
     val message: String = "",
     @param:StringRes @get:StringRes val messageRes: Int? = null,
     val browserUrl: String? = null,
+    val localBrowserUrl: String? = null,
     val pairingCode: String? = null,
     val cloudPairingRegistrationStatus: CloudPairingRegistrationStatus? = null,
     val cloudPairingPublicationEpoch: Long? = null,
@@ -57,6 +58,7 @@ object SessionController {
 
     fun ready(
         url: String,
+        localUrl: String? = null,
         pairingCode: String?,
         nativeStatus: String,
         cloudPairingRegistrationStatus: CloudPairingRegistrationStatus? = null,
@@ -66,6 +68,7 @@ object SessionController {
             phase = SessionPhase.READY,
             messageRes = R.string.session_browser_ready,
             browserUrl = url,
+            localBrowserUrl = localUrl,
             pairingCode = pairingCode,
             cloudPairingRegistrationStatus = cloudPairingRegistrationStatus,
             nativeStatus = nativeStatus,
@@ -129,10 +132,14 @@ object SessionController {
         }
     }
 
-    /** Switches between the cloud HTTPS entry point and the always-running LAN fallback. */
-    fun updateBrowserUrl(browserUrl: String) {
+    /** Updates the selected entry point while retaining the explicit numeric LAN debug address. */
+    fun updateBrowserAddresses(browserUrl: String, localBrowserUrl: String) {
         mutableState.update { current ->
-            if (current.phase == SessionPhase.READY) current.copy(browserUrl = browserUrl) else current
+            if (current.phase == SessionPhase.READY) {
+                current.copy(browserUrl = browserUrl, localBrowserUrl = localBrowserUrl)
+            } else {
+                current
+            }
         }
     }
 

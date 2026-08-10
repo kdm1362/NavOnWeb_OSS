@@ -49,6 +49,22 @@ class BrowserAudioStreamHubTest {
     }
 
     @Test
+    fun threePeerSubscriptionsReceiveTheSameAudioFrameIndependently() {
+        val hub = hub()
+        val peers = List(3) { checkNotNull(hub.subscribe(BrowserAudioTrack.MEDIA)) }
+        val packet = byteArrayOf(1, 0, 2, 0)
+
+        assertTrue(hub.publish(BrowserAudioTrack.MEDIA, packet))
+
+        peers.forEach { peer -> assertArrayEquals(packet, peer.poll(0)) }
+        peers[0].close()
+        assertTrue(hub.publish(BrowserAudioTrack.MEDIA, byteArrayOf(3, 0, 4, 0)))
+        assertNull(peers[0].poll(0))
+        assertArrayEquals(byteArrayOf(3, 0, 4, 0), peers[1].poll(0))
+        assertArrayEquals(byteArrayOf(3, 0, 4, 0), peers[2].poll(0))
+    }
+
+    @Test
     fun resetClosesCurrentStreamsButAllowsFreshSubscriptions() {
         val hub = hub()
         val old = checkNotNull(hub.subscribe(BrowserAudioTrack.SYSTEM))

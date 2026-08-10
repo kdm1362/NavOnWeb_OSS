@@ -397,6 +397,28 @@ test("PWA metadata is language-neutral instead of falsely declaring English", ()
   assert.match(manifest.description, /차량용 화면/u);
 });
 
+test("local control recovery copy is concise and equivalent in Korean and English", () => {
+  const englishStart = appScript.indexOf("    en: Object.freeze({");
+  const koreanStart = appScript.indexOf("    ko: Object.freeze({", englishStart);
+  const i18nEnd = appScript.indexOf("  let ACTIVE_LOCALE", koreanStart);
+  assert.ok(englishStart >= 0 && koreanStart > englishStart && i18nEnd > koreanStart);
+
+  const englishSource = appScript.slice(englishStart, koreanStart);
+  const koreanSource = appScript.slice(koreanStart, i18nEnd);
+  assert.match(
+    englishSource,
+    /localControlRecovering: 'Recovering the local control connection\.'/u,
+  );
+  assert.match(
+    koreanSource,
+    /localControlRecovering: '로컬 제어 연결을 복구하는 중입니다\.'/u,
+  );
+  assert.doesNotMatch(
+    koreanSource,
+    /로컬 연결을 복구하는 중입니다\. 제어 데이터는 클라우드로 전송되지 않았습니다\./u,
+  );
+});
+
 test("pre-pairing landing content has complete English and Korean translations", () => {
   const englishStart = appScript.indexOf("    en: Object.freeze({");
   const koreanStart = appScript.indexOf("    ko: Object.freeze({", englishStart);

@@ -3,7 +3,6 @@
 .idea/
 .kotlin/
 .local-tools/
-.oss-staging/
 local.properties
 *.iml
 build/
@@ -66,6 +65,5 @@ cloudflare/.env.*
 .DS_Store
 Thumbs.db
 
-# Internal planning and source inputs
+# Local document inputs
 *.pptx
-입력폴더/

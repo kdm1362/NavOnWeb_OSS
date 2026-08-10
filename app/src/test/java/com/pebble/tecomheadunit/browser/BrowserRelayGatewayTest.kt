@@ -25,6 +25,33 @@ class BrowserRelayGatewayTest {
         assertEquals("/api/webrtc/session?codec=auto", request.target)
     }
 
+    @Test
+    fun cloudPairingAcceptsTheExactLowercaseDeviceNameHeader() {
+        val request = BrowserRelayRequest(
+            method = "POST",
+            target = "/api/pair",
+            headers = mapOf(
+                "x-pairing-code" to "12345678",
+                "x-browser-device-name" to "Chrome · Windows",
+            ),
+        )
+
+        assertEquals("Chrome · Windows", request.headers["x-browser-device-name"])
+        assertEquals(
+            setOf("x-pairing-code", "x-browser-device-name"),
+            request.headers.keys,
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun cloudPairingStillRejectsNonCanonicalHeaderCasing() {
+        BrowserRelayRequest(
+            method = "POST",
+            target = "/api/pair",
+            headers = mapOf("X-Browser-Device-Name" to "Chrome"),
+        )
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun requestRejectsAbsoluteTargets() {
         BrowserRelayRequest(method = "GET", target = "https://attacker.example/api/status")

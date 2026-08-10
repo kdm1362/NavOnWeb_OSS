@@ -44,6 +44,7 @@
     <string name="hotspot_automation_title">Hotspot event monitoring</string>
     <string name="hotspot_automation_waiting">Waiting for the initial hotspot state</string>
     <string name="hotspot_automation_monitoring">Starts and stops the server only on hotspot changes</string>
+    <string name="hotspot_automation_disable_action">Turn off automation</string>
     <string name="service_automation_title">Automatic service start and stop</string>
     <string name="service_automation_event_only">Only real system events are observed. No periodic polling is used.</string>
     <string name="service_automation_off">Not used</string>
@@ -80,6 +81,9 @@
     <string name="automation_companion_failed_fallback">Companion-device setup was unavailable. System Bluetooth events will be used as a fallback.</string>
     <string name="bluetooth_unnamed_device">Bluetooth device</string>
     <string name="browser_open_title">Open in a browser</string>
+    <string name="browser_open_action">Open %1$s in a browser</string>
+    <string name="browser_debug_local_link_action">Local debug address. Open %1$s once, then return to the normal address.</string>
+    <string name="browser_open_failed">No browser app could open this address.</string>
     <string name="browser_pairing_code_title">8-digit browser registration code</string>
     <string name="browser_pairing_code_hint">This one-time code expires after 10 minutes. A used code is not published again.</string>
     <string name="browser_pairing_preparing_title">Preparing pairing</string>
@@ -111,8 +115,8 @@
     <string name="first_run_hotspot_warning">NavOnWeb video travels directly over the local connection between the phone and viewing device, so the video stream itself does not use the phone’s mobile data. Opening navonweb.com and setting up the connection may use a small amount of internet data. Diagnostics or service traffic, map or software updates, and music or video streaming from the viewing device can also use mobile data. Check the data allowance and automatic update or streaming settings first.</string>
     <string name="first_run_service_title">3. Start NavOnWeb</string>
     <string name="first_run_service_body">Return to NavOnWeb and tap Start service. Review any notification or approximate-location permission request. Wait until Android Auto shows Connected and a browser address appears.</string>
-    <string name="first_run_browser_title">4. Pair the Tesla browser</string>
-    <string name="first_run_browser_body">Open https://navonweb.com in the Tesla browser. Enter the 8-digit registration code shown in NavOnWeb. The approved browser is remembered for later connections.</string>
+    <string name="first_run_browser_title">4. Pair a web browser</string>
+    <string name="first_run_browser_body">On the device where you want to view the screen, open https://navonweb.com in a web browser. Enter the 8-digit registration code shown in NavOnWeb. The approved browser is remembered for later connections.</string>
     <string name="first_run_browser_warning">If connection is unavailable for more than 10 seconds, use Get a new pairing code in the browser, issue a fresh code in the phone app, and enter it again.</string>
     <string name="first_run_settings_title">First-use guide</string>
     <string name="first_run_settings_description">Review Android Auto server, hotspot, service start, and browser pairing in short steps.</string>

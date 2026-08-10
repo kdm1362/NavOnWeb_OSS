@@ -1,43 +1,37 @@
 # Source distribution
 
-This public repository is maintained as the preferred form for modifying NavOnWeb. For every distributed APK or Android App Bundle, publish a commit or immutable tag containing the complete matching source and build files.
+This repository is the preferred form for modifying NavOnWeb. Every distributed APK or Android App Bundle should have a matching immutable public commit or source tag.
 
-## Release correspondence checklist
+## Creating a matching source revision
 
-1. Freeze the exact source revision used for the binary and push it to the public repository.
-2. Run the Android tests described in `BUILDING.md`.
-3. Confirm that all modified Android, bundled-browser, Cloudflare Worker/Pages, build, and test sources are present.
-4. Confirm that Gradle wrapper files, the version catalog, licenses, notices, and upstream revision lock are present.
-5. Confirm that credentials, signing keys, service secrets, diagnostic data, device identifiers, private-network records, build outputs, and internal planning records are absent from the full Git history.
-6. Tag the matching public commit and retain it for as long as required by the GPL and the distribution channel.
-7. Build the distributed binary with that immutable tag URL, such as `-PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/<tag>`. Release tasks reject the repository root URL.
-8. Record the source tag and commit, version code/name, AAB SHA-256, and release date with the distribution evidence.
+1. Start from the exact Android, browser, Worker/Pages, build, and test sources used for the binary.
+2. Include the Gradle wrapper, version catalog, licenses, notices, and upstream revision lock.
+3. Run the Android and web checks in [BUILDING.md](BUILDING.md).
+4. Stage the intended source tree and regenerate `SOURCE_MANIFEST.sha256`.
+5. Commit and tag that source tree.
+6. Build the binary with `-PsourceCodeUrl` set to the immutable `/tree/v0.1.13-p0-source` (or another matching versioned `v...-source` tag) or `/tree/<40-character-commit>` URL.
 
-`SOURCE_MANIFEST.sha256` records the exact staged Git index, so stage every intended source change
-before regenerating it and then stage the updated manifest:
+To regenerate the manifest from the staged Git index on Windows:
 
 ```powershell
-git add --all
+git add <reviewed-source-paths>
 .\tools\update-source-manifest.ps1
 git add SOURCE_MANIFEST.sha256
 ```
 
-## Deliberately external inputs
+Review the intended paths before staging them; do not use a broad staging command that can include unrelated untracked files. `SOURCE_MANIFEST.sha256` lists the SHA-256 digest of each staged source file except the manifest itself. The immutable Git revision remains the authoritative source identifier.
 
-The following are not source code and must never be committed:
+## External inputs
+
+The following deployment inputs are not source code and are not included:
 
 - Android Auto identity certificates and private keys
-- Android or Google Play signing keys and passwords
-- Cloudflare, Supabase, TURN, or other service secrets
-- Browser/device pairing secrets and cookies
-- User diagnostic reports and logs
-- Machine-specific `local.properties` and deployment configuration
+- Android and Google Play signing keys and passwords
+- Cloudflare, Supabase, TURN, and other administrative credentials
+- Service signing private keys and server-side data
+- Pairing secrets, user logs, diagnostic uploads, and device identifiers
+- Machine-specific SDK paths and generated build or deployment output
 
-Public certificate fingerprints and public service origins may be supplied as build parameters when required, but they are not secrets and should still be reviewed for release correspondence.
+Public service origins, publishable client keys, certificate fingerprints, and signature-verification public keys may be provided as build configuration when the client requires them.
 
-The Cloudflare Worker and Pages source used by NavOnWeb is included under `cloudflare/` so the
-signaling protocol and public browser deployment can be audited and reproduced. Cloudflare account
-authentication, secrets, deployed Durable Object state, and generated deployment output remain
-external. Supabase backend code is independently deployed and is not included in this Android
-Corresponding Source repository. The client-side protocol implementation and browser code bundled
-in the APK remain included under `app/src/`.
+The public signaling and browser deployment source is included under `cloudflare/`. External service state and credentials remain separate from the client source.

@@ -32,6 +32,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import org.json.JSONObject
 
+private const val MAX_CLOUD_RELAY_BODY_BASE64_CHARS = 176 * 1_024
+
+/** Normalizes one decoded WebSocket envelope into the bounded phone gateway contract. */
+internal fun decodeCloudRelayRequest(
+    method: String,
+    target: String,
+    headers: Map<String, String>,
+    encodedBody: String,
+): BrowserRelayRequest {
+    val normalizedHeaders = linkedMapOf<String, String>()
+    headers.forEach { (rawName, value) -> normalizedHeaders[rawName.lowercase()] = value }
+    val body = if (encodedBody.isEmpty()) {
+        ByteArray(0)
+    } else {
+        require(encodedBody.length <= MAX_CLOUD_RELAY_BODY_BASE64_CHARS)
+        Base64.getDecoder().decode(encodedBody)
+    }
+    return BrowserRelayRequest(method.uppercase(), target, normalizedHeaders, body)
+}
+
 internal fun isAllowedCloudRelaySignalingRequest(request: BrowserRelayRequest): Boolean {
     val uri = runCatching { URI(request.target) }.getOrNull() ?: return false
     val path = uri.path ?: return false
@@ -351,24 +371,19 @@ class CloudBrowserRelayClient(
     }
 
     private fun decodeRequest(envelope: JSONObject): BrowserRelayRequest {
-        val method = envelope.getString("method").uppercase()
-        val target = envelope.getString("target")
         val headersObject = envelope.optJSONObject("headers") ?: JSONObject()
         val headers = linkedMapOf<String, String>()
         val names = headersObject.keys()
         while (names.hasNext()) {
             val rawName = names.next()
-            val name = rawName.lowercase()
-            headers[name] = headersObject.getString(rawName)
+            headers[rawName] = headersObject.getString(rawName)
         }
-        val encodedBody = envelope.optString("bodyBase64")
-        val body = if (encodedBody.isEmpty()) {
-            ByteArray(0)
-        } else {
-            require(encodedBody.length <= MAX_BODY_BASE64_CHARS)
-            Base64.getDecoder().decode(encodedBody)
-        }
-        return BrowserRelayRequest(method, target, headers, body)
+        return decodeCloudRelayRequest(
+            method = envelope.getString("method"),
+            target = envelope.getString("target"),
+            headers = headers,
+            encodedBody = envelope.optString("bodyBase64"),
+        )
     }
 
     private fun sendResponse(
@@ -718,7 +733,6 @@ class CloudBrowserRelayClient(
         const val PAIRING_REGISTER_RETRY_BASE_MILLIS = 1_000L
         const val PAIRING_REGISTER_RETRY_MAX_MILLIS = 30_000L
         const val MAX_MESSAGE_CHARS = 192 * 1_024
-        const val MAX_BODY_BASE64_CHARS = 176 * 1_024
         const val MAX_CLOSE_REASON_CHARS = 100
         const val MAX_IN_FLIGHT_MESSAGES = 16
         const val CLOSE_NORMAL = 1000

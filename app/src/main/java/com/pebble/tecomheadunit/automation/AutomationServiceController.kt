@@ -59,6 +59,12 @@ interface AutomationServiceRuntime {
 
     fun start(): AutomationRuntimeResult
 
+    /** Starts with an ownership token so a later explicit disable cannot stop a manual session. */
+    fun startForAutomation(
+        source: AutomationTriggerMode,
+        generation: Long,
+    ): AutomationRuntimeResult = start()
+
     fun stop(): AutomationRuntimeResult
 
     /** Cancels delayed user starts that have not reached the service yet. */
@@ -74,6 +80,12 @@ sealed interface AutomationDispatchResult {
     val state: AutomationControlState
 
     data class ModeChanged(override val state: AutomationControlState) : AutomationDispatchResult
+
+    data class ModeDisabled(
+        override val state: AutomationControlState,
+        val disabledSource: AutomationTriggerMode,
+        val disabledGeneration: Long,
+    ) : AutomationDispatchResult
 
     data class Started(override val state: AutomationControlState) : AutomationDispatchResult
 
@@ -116,6 +128,9 @@ interface AutomationServiceController {
 
     /** Selects one source and invalidates callbacks registered for the previous generation. */
     fun selectMode(mode: AutomationTriggerMode): AutomationDispatchResult
+
+    /** Atomically disables [source] only if that source is still selected. */
+    fun disableModeIfSelected(source: AutomationTriggerMode): AutomationDispatchResult
 
     /**
      * Invalidates the event baseline after changing configuration inside the currently selected
@@ -161,6 +176,31 @@ class CoordinatingAutomationServiceController(
         }
         AutomationDispatchResult.ModeChanged(next)
     }
+
+    override fun disableModeIfSelected(source: AutomationTriggerMode): AutomationDispatchResult =
+        synchronized(lock) {
+            val current = safeLoad()
+            if (source == AutomationTriggerMode.NONE || current.mode != source) {
+                return@synchronized AutomationDispatchResult.IgnoredStaleSignal(current)
+            }
+            val next = AutomationControlState(
+                mode = AutomationTriggerMode.NONE,
+                generation = if (current.generation == Long.MAX_VALUE) 1L else current.generation + 1L,
+                lastTriggerActive = null,
+            )
+            if (!stateStore.save(next)) {
+                return@synchronized AutomationDispatchResult.Failed(
+                    state = current,
+                    operation = AutomationOperation.SAVE_STATE,
+                    reason = AutomationFailureReason.PERSISTENCE_FAILED,
+                )
+            }
+            AutomationDispatchResult.ModeDisabled(
+                state = next,
+                disabledSource = source,
+                disabledGeneration = current.generation,
+            )
+        }
 
     override fun resetSelectedModeSignal(mode: AutomationTriggerMode): AutomationDispatchResult = synchronized(lock) {
         val current = safeLoad()
@@ -226,7 +266,13 @@ class CoordinatingAutomationServiceController(
             return@synchronized AutomationDispatchResult.NoChange(eventState)
         }
 
-        when (val result = if (active) runtime.start() else runtime.stop()) {
+        when (
+            val result = if (active) {
+                runtime.startForAutomation(source, generation)
+            } else {
+                runtime.stop()
+            }
+        ) {
             AutomationRuntimeResult.Success -> {
                 if (!eventPersisted) {
                     persistenceFailure(current)

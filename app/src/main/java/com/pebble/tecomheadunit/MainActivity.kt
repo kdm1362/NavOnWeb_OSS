@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
@@ -57,6 +58,11 @@ import com.pebble.tecomheadunit.billing.PremiumEntitlementStatus
 import com.pebble.tecomheadunit.billing.PremiumEntitlementSource
 import com.pebble.tecomheadunit.billing.PremiumLicensePresentationStore
 import com.pebble.tecomheadunit.billing.PremiumPurchaseCheckResult
+import com.pebble.tecomheadunit.billing.ReviewPromoSession
+import com.pebble.tecomheadunit.billing.ReviewPromoClient
+import com.pebble.tecomheadunit.billing.ReviewPromoClientFactory
+import com.pebble.tecomheadunit.billing.ReviewPromoRefreshResult
+import com.pebble.tecomheadunit.billing.ReviewPromoSubmissionResult
 import com.pebble.tecomheadunit.diagnostics.AppDiagnostics
 import com.pebble.tecomheadunit.diagnostics.DiagnosticEventCode
 import com.pebble.tecomheadunit.diagnostics.DiagnosticLogSummary
@@ -81,6 +87,11 @@ import com.pebble.tecomheadunit.service.ProjectionStartupStore
 import com.pebble.tecomheadunit.service.shouldRequestProjectionStartOnCreate
 import com.pebble.tecomheadunit.session.SessionController
 import com.pebble.tecomheadunit.session.SessionPhase
+import com.pebble.tecomheadunit.session.BrowserDevicePermission
+import com.pebble.tecomheadunit.session.BrowserTrustStore
+import com.pebble.tecomheadunit.session.PairedBrowserDevice
+import com.pebble.tecomheadunit.session.PairedBrowserMutationResult
+import com.pebble.tecomheadunit.session.PairedBrowserRemovalResult
 import com.pebble.tecomheadunit.ui.ProjectionControlUiState
 import com.pebble.tecomheadunit.ui.AndroidProjectionControlTextResolver
 import com.pebble.tecomheadunit.ui.PremiumPurchaseUiState
@@ -93,6 +104,7 @@ import com.pebble.tecomheadunit.ui.WebRtcCodecPreferenceOption
 import com.pebble.tecomheadunit.ui.WebRtcCodecPreferenceStore
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,7 +137,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var bluetoothCompanionAssociationManager: BluetoothCompanionAssociationManager
     private lateinit var bluetoothCompanionPresenceManager: BluetoothCompanionPresenceManager
     private lateinit var premiumBilling: GooglePlayPremiumBilling
+    private lateinit var reviewPromoClient: ReviewPromoClient
     private lateinit var premiumLicensePresentationStore: PremiumLicensePresentationStore
+    private lateinit var browserTrustStore: BrowserTrustStore
     private val headUnitServerGuidanceGate = HeadUnitServerGuidanceGate()
     private val projectionProfileSnapshot = MutableStateFlow<ProjectionProfileSnapshot?>(null)
     private val serviceConnected = MutableStateFlow(false)
@@ -141,6 +155,9 @@ class MainActivity : ComponentActivity() {
     private val premiumPurchaseInProgress = MutableStateFlow(false)
     private val premiumPurchaseRefreshInProgress = MutableStateFlow(false)
     private val premiumBillingFeedback = MutableStateFlow("")
+    private val pairedBrowserDevices = MutableStateFlow<List<PairedBrowserDevice>>(emptyList())
+    private val connectedBrowserDeviceIds = MutableStateFlow<Set<String>>(emptySet())
+    private val pairedBrowserDeviceFeedback = MutableStateFlow("")
     private val premiumPurchaseConfirmationDialog = MutableStateFlow(
         PremiumPurchaseConfirmationDialog.HIDDEN,
     )
@@ -150,6 +167,7 @@ class MainActivity : ComponentActivity() {
     private var premiumBillingStarted = false
     private var premiumPurchaseFlowLaunched = false
     private var premiumPurchaseConfirmationJob: Job? = null
+    private var reviewPromoMaintenanceJob: Job? = null
     private var pendingPremiumLicenseEvidenceDigest: String? = null
     private var lastObservedPremiumEntitlement: Boolean? = null
     private var reopenBluetoothPickerAfterPermission = false
@@ -160,6 +178,10 @@ class MainActivity : ComponentActivity() {
             val binder = service as? ProjectionService.LocalBinder ?: return
             projectionBinder = binder
             serviceConnected.value = true
+            val waitingForService = getString(R.string.ui_paired_browser_waiting_for_service)
+            if (pairedBrowserDeviceFeedback.value == waitingForService) {
+                pairedBrowserDeviceFeedback.value = ""
+            }
             refreshServiceUi(binder)
             synchronizeSavedProjectionDpi(binder)
             startServiceUiRefresh(binder)
@@ -171,6 +193,7 @@ class MainActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             projectionBinder = null
             serviceConnected.value = false
+            connectedBrowserDeviceIds.value = emptySet()
             serviceUiRefreshJob?.cancel()
             serviceUiRefreshJob = null
         }
@@ -297,7 +320,10 @@ class MainActivity : ComponentActivity() {
         bluetoothCompanionAssociationManager = BluetoothCompanionAssociationManager(this)
         bluetoothCompanionPresenceManager = BluetoothCompanionPresenceManager(this)
         premiumBilling = PremiumBillingProvider.get(this)
+        reviewPromoClient = ReviewPromoClientFactory.create(this)
         premiumLicensePresentationStore = PremiumLicensePresentationStore(this)
+        browserTrustStore = BrowserTrustStore(this)
+        scheduleReviewPromoMaintenance()
         observePremiumBillingState()
         enforceAutomationEntitlement(PremiumAccessGate.isPremium(this))
         observeDiagnosticUploadWork()
@@ -306,6 +332,7 @@ class MainActivity : ComponentActivity() {
         codecPreference.value = codecPreferenceStore.load()
         refreshDiagnosticLogSummary(force = true)
         refreshServiceAutomationUi()
+        refreshPairedBrowserDevices()
         setContent {
             val profileSnapshot by projectionProfileSnapshot.collectAsStateWithLifecycle()
             val bound by serviceConnected.collectAsStateWithLifecycle()
@@ -319,25 +346,38 @@ class MainActivity : ComponentActivity() {
             val currentDiagnosticUploadStatus by diagnosticUploadStatus.collectAsStateWithLifecycle()
             val currentServiceAutomation by serviceAutomation.collectAsStateWithLifecycle()
             val currentPremiumBilling by premiumBilling.state.collectAsStateWithLifecycle()
+            val reviewPromoActive by ReviewPromoSession.active.collectAsStateWithLifecycle()
             val purchaseInProgress by premiumPurchaseInProgress.collectAsStateWithLifecycle()
             val purchaseRefreshInProgress by
                 premiumPurchaseRefreshInProgress.collectAsStateWithLifecycle()
             val currentPremiumFeedback by premiumBillingFeedback.collectAsStateWithLifecycle()
+            val currentPairedBrowserDevices by pairedBrowserDevices.collectAsStateWithLifecycle()
+            val currentConnectedBrowserDeviceIds by
+                connectedBrowserDeviceIds.collectAsStateWithLifecycle()
+            val currentPairedBrowserFeedback by
+                pairedBrowserDeviceFeedback.collectAsStateWithLifecycle()
             val currentPurchaseConfirmationDialog by
                 premiumPurchaseConfirmationDialog.collectAsStateWithLifecycle()
             val licenseConfirmationPending by
                 premiumLicenseConfirmationPending.collectAsStateWithLifecycle()
             val showFirstRunOnboarding by
                 firstRunOnboardingRequired.collectAsStateWithLifecycle()
-            val premiumEntitled = effectivePremiumEntitlement(currentPremiumBilling)
+            val premiumEntitled = effectivePremiumEntitlement(
+                billingState = currentPremiumBilling,
+                reviewPromoActive = reviewPromoActive,
+            )
             val premiumPurchaseUi = PremiumPurchaseUiState(
                 entitled = premiumEntitled,
                 productAvailable = currentPremiumBilling.formattedPrice?.isNotBlank() == true,
                 formattedPrice = currentPremiumBilling.formattedPrice,
                 purchaseInProgress = purchaseInProgress,
                 purchaseRefreshInProgress = purchaseRefreshInProgress,
-                statusMessage = currentPremiumFeedback.ifBlank {
-                    premiumBillingStatusMessage(currentPremiumBilling)
+                statusMessage = if (reviewPromoActive) {
+                    getString(R.string.review_promo_status_active)
+                } else {
+                    currentPremiumFeedback.ifBlank {
+                        premiumBillingStatusMessage(currentPremiumBilling)
+                    }
                 },
                 confirmationDialog = currentPurchaseConfirmationDialog,
                 licenseConfirmationPending = licenseConfirmationPending,
@@ -360,10 +400,15 @@ class MainActivity : ComponentActivity() {
                     BuildConfig.SUPABASE_PUBLISHABLE_KEY.startsWith("sb_publishable_"),
                 diagnosticUploadStatus = currentDiagnosticUploadStatus,
                 serviceAutomation = currentServiceAutomation,
+                pairedBrowserDevices = currentPairedBrowserDevices,
+                connectedBrowserDeviceIds = currentConnectedBrowserDeviceIds,
+                pairedBrowserDeviceMessage = currentPairedBrowserFeedback,
+                pairedBrowserManagementReady = bound,
                 premiumPurchase = premiumPurchaseUi,
                 firstRunOnboardingRequired = showFirstRunOnboarding,
                 onFirstRunOnboardingCompleted = ::completeFirstRunOnboarding,
                 onOpenAndroidAutoSettings = ::showHeadUnitServerGuidance,
+                onOpenBrowserUrl = ::openBrowserUrl,
                 onStart = ::requestProjectionStart,
                 onStop = ::cancelPendingStartAndStop,
                 onRequestNewBrowserPairing = ::requestNewBrowserPairing,
@@ -380,12 +425,17 @@ class MainActivity : ComponentActivity() {
                 onBluetoothDeviceSelected = ::selectBluetoothDevice,
                 onClearBluetoothDeviceSelection = ::clearBluetoothDeviceSelection,
                 onDismissBluetoothPicker = ::dismissBluetoothDevicePicker,
+                onPairedBrowserRenamed = ::renamePairedBrowser,
+                onPairedBrowserReadOnlyChanged = ::setPairedBrowserReadOnly,
+                onPreferredMainBrowserSelected = ::selectPreferredMainBrowser,
+                onPairedBrowserDeleted = ::deletePairedBrowser,
                 onUnlockPremium = ::requestPremiumPurchase,
                 onRefreshPurchases = ::requestPremiumPurchaseRefresh,
                 onDismissPremiumPurchaseConfirmation =
                     ::dismissPremiumPurchaseConfirmation,
                 onPremiumLicenseConfirmationPresented =
                     ::markPremiumLicenseConfirmationPresented,
+                onReviewPromoCodeSubmitted = ::submitReviewPromoCode,
                 onProjectionSurfaceAvailable = ::onProjectionSurfaceAvailable,
                 onProjectionSurfaceDestroyed = ::onProjectionSurfaceDestroyed,
             )
@@ -461,6 +511,7 @@ class MainActivity : ComponentActivity() {
         }
         projectionBinder = null
         serviceConnected.value = false
+        connectedBrowserDeviceIds.value = emptySet()
         if (projectionServiceBound) {
             unbindService(projectionServiceConnection)
             projectionServiceBound = false
@@ -469,11 +520,19 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (!isChangingConfigurations && ReviewPromoSession.clear()) {
+            val remainingEntitled = PremiumAccessGate.isPremium(this)
+            lastObservedPremiumEntitlement = remainingEntitled
+            enforceAutomationEntitlement(remainingEntitled)
+            if (!remainingEntitled) handlePremiumEntitlementTransition(entitled = false)
+        }
         locationRequestGeneration += 1L
         locationTimeoutJob?.cancel()
         locationTimeoutJob = null
         locationCancellation?.cancel()
         locationCancellation = null
+        reviewPromoMaintenanceJob?.cancel()
+        reviewPromoMaintenanceJob = null
         super.onDestroy()
     }
 
@@ -531,7 +590,118 @@ class MainActivity : ComponentActivity() {
                 }
             }
         refreshDiagnosticLogSummary()
+        refreshPairedBrowserDevices()
     }
+
+    private fun refreshPairedBrowserDevices() {
+        val binder = projectionBinder
+        pairedBrowserDevices.value = runCatching {
+            binder?.pairedBrowserDevices() ?: browserTrustStore.devices()
+        }.getOrElse { browserTrustStore.devices() }
+        connectedBrowserDeviceIds.value = if (binder == null) {
+            emptySet()
+        } else {
+            runCatching { binder.connectedBrowserDeviceIds() }.getOrDefault(emptySet())
+        }
+    }
+
+    private fun setPairedBrowserReadOnly(deviceId: String, readOnly: Boolean) {
+        val permission = if (readOnly) {
+            BrowserDevicePermission.READ_ONLY
+        } else {
+            BrowserDevicePermission.CONTROL
+        }
+        val binder = projectionBinder
+        if (binder == null) {
+            pairedBrowserDeviceFeedback.value = getString(
+                R.string.ui_paired_browser_waiting_for_service,
+            )
+            return
+        }
+        val result = runCatching { binder.updatePairedBrowserAccess(deviceId, permission) }
+            .getOrElse { PairedBrowserMutationResult.PersistenceFailed }
+        pairedBrowserDeviceFeedback.value = pairedBrowserMutationMessage(
+            result = result,
+            successMessage = R.string.ui_paired_browser_access_updated,
+        )
+        refreshPairedBrowserDevices()
+    }
+
+    private fun renamePairedBrowser(deviceId: String, displayName: String) {
+        val binder = projectionBinder
+        if (binder == null) {
+            pairedBrowserDeviceFeedback.value = getString(
+                R.string.ui_paired_browser_waiting_for_service,
+            )
+            return
+        }
+        val result = runCatching {
+            binder.renamePairedBrowserDevice(deviceId, displayName)
+        }.getOrElse { PairedBrowserMutationResult.PersistenceFailed }
+        pairedBrowserDeviceFeedback.value = pairedBrowserMutationMessage(
+            result = result,
+            successMessage = R.string.ui_paired_browser_renamed,
+        )
+        refreshPairedBrowserDevices()
+    }
+
+    private fun selectPreferredMainBrowser(deviceId: String) {
+        if (!PremiumAccessGate.isPremium(this)) {
+            pairedBrowserDeviceFeedback.value = getString(
+                R.string.ui_paired_browser_main_premium_hint,
+            )
+            return
+        }
+        val binder = projectionBinder
+        if (binder == null) {
+            pairedBrowserDeviceFeedback.value = getString(
+                R.string.ui_paired_browser_waiting_for_service,
+            )
+            return
+        }
+        val result = runCatching { binder.setPreferredMainBrowserDevice(deviceId) }
+            .getOrElse { PairedBrowserMutationResult.PersistenceFailed }
+        pairedBrowserDeviceFeedback.value = pairedBrowserMutationMessage(
+            result = result,
+            successMessage = R.string.ui_paired_browser_main_updated,
+        )
+        refreshPairedBrowserDevices()
+    }
+
+    private fun deletePairedBrowser(deviceId: String) {
+        val binder = projectionBinder
+        if (binder == null) {
+            pairedBrowserDeviceFeedback.value = getString(
+                R.string.ui_paired_browser_waiting_for_service,
+            )
+            return
+        }
+        val result = runCatching { binder.removePairedBrowserDevice(deviceId) }
+            .getOrElse { PairedBrowserRemovalResult.PersistenceFailed }
+        pairedBrowserDeviceFeedback.value = when (result) {
+            is PairedBrowserRemovalResult.Removed -> getString(R.string.ui_paired_browser_deleted)
+            PairedBrowserRemovalResult.NotFound -> getString(R.string.ui_paired_browser_not_found)
+            PairedBrowserRemovalResult.PersistenceFailed ->
+                getString(R.string.ui_paired_browser_store_failed)
+        }
+        refreshPairedBrowserDevices()
+    }
+
+    private fun pairedBrowserMutationMessage(
+        result: PairedBrowserMutationResult,
+        @androidx.annotation.StringRes successMessage: Int,
+    ): String = getString(
+        when (result) {
+            is PairedBrowserMutationResult.Updated -> successMessage
+            PairedBrowserMutationResult.NotFound -> R.string.ui_paired_browser_not_found
+            PairedBrowserMutationResult.NotAllowed ->
+                R.string.ui_paired_browser_main_read_only_denied
+            PairedBrowserMutationResult.InvalidDisplayName ->
+                R.string.ui_paired_browser_name_invalid
+            PairedBrowserMutationResult.PersistenceFailed ->
+                R.string.ui_paired_browser_store_failed
+        },
+    )
 
     /** Applies a setting saved while the Activity was unbound to an already-running session. */
     private fun synchronizeSavedProjectionDpi(binder: ProjectionService.LocalBinder) {
@@ -1156,16 +1326,97 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun submitReviewPromoCode(
+        code: String,
+        onResult: (ReviewPromoSubmissionResult) -> Unit,
+    ) {
+        lifecycleScope.launch {
+            val result = reviewPromoClient.redeem(code)
+            if (result is ReviewPromoSubmissionResult.Activated) {
+                ReviewPromoSession.activate(result.grant)
+                scheduleReviewPromoMaintenance()
+                clearPremiumPurchaseConfirmation()
+                premiumBillingFeedback.value = getString(R.string.review_promo_status_active)
+                profileFeedback.value = ""
+                if (lastObservedPremiumEntitlement == null) {
+                    lastObservedPremiumEntitlement =
+                        effectivePremiumEntitlement(reviewPromoActive = false)
+                }
+                applyEffectivePremiumEntitlement(
+                    effectivePremiumEntitlement(reviewPromoActive = true),
+                )
+            }
+            onResult(result)
+        }
+    }
+
+    private fun scheduleReviewPromoMaintenance() {
+        reviewPromoMaintenanceJob?.cancel()
+        if (ReviewPromoSession.activeGrant() == null) return
+        reviewPromoMaintenanceJob = lifecycleScope.launch(
+            CoroutineName(REVIEW_PROMO_REFRESH_POLICY_MARKER),
+        ) {
+            while (isActive) {
+                val grant = ReviewPromoSession.activeGrant() ?: run {
+                    handleReviewPromoEnded()
+                    return@launch
+                }
+                val nowEpochSeconds = System.currentTimeMillis() / 1_000L
+                val remainingSeconds = grant.expiresAtEpochSeconds - nowEpochSeconds
+                if (remainingSeconds <= 0L) {
+                    ReviewPromoSession.clear()
+                    handleReviewPromoEnded()
+                    return@launch
+                }
+                val refreshDelaySeconds = minOf(
+                    REVIEW_PROMO_REFRESH_INTERVAL_SECONDS,
+                    maxOf(REVIEW_PROMO_MIN_REFRESH_DELAY_SECONDS, remainingSeconds / 2L),
+                ).coerceAtMost(remainingSeconds)
+                delay(refreshDelaySeconds * 1_000L)
+
+                val currentGrant = ReviewPromoSession.activeGrant() ?: run {
+                    handleReviewPromoEnded()
+                    return@launch
+                }
+                when (val result = reviewPromoClient.refresh(currentGrant)) {
+                    is ReviewPromoRefreshResult.Refreshed -> {
+                        ReviewPromoSession.activate(result.grant)
+                    }
+                    ReviewPromoRefreshResult.Revoked -> {
+                        ReviewPromoSession.clear()
+                        handleReviewPromoEnded()
+                        return@launch
+                    }
+                    else -> {
+                        if (!ReviewPromoSession.isActive) {
+                            handleReviewPromoEnded()
+                            return@launch
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleReviewPromoEnded() {
+        premiumBillingFeedback.value = premiumBillingStatusMessage(premiumBilling.state.value)
+        val remainingEntitled = effectivePremiumEntitlement(reviewPromoActive = false)
+        lastObservedPremiumEntitlement = remainingEntitled
+        enforceAutomationEntitlement(remainingEntitled)
+        if (!remainingEntitled) handlePremiumEntitlementTransition(entitled = false)
+    }
+
     private fun requestPremiumPurchase() {
         if (
+            ReviewPromoSession.isActive ||
             debugPremiumBenchEnabled() ||
             premiumBilling.state.value.isPremium
         ) {
             clearPremiumPurchaseConfirmation()
-            premiumBillingFeedback.value = if (debugPremiumBenchEnabled()) {
-                getString(R.string.billing_debug_bench_active)
-            } else {
-                getString(R.string.billing_purchase_active)
+            premiumBillingFeedback.value = when {
+                ReviewPromoSession.isActive -> getString(R.string.review_promo_status_active)
+                debugPremiumBenchEnabled() -> getString(R.string.billing_debug_bench_active)
+                else -> getString(R.string.billing_purchase_active)
             }
             return
         }
@@ -1350,6 +1601,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun premiumBillingStatusMessage(state: PremiumBillingState): String = when {
+        ReviewPromoSession.isActive -> getString(R.string.review_promo_status_active)
         debugPremiumBenchEnabled() -> getString(R.string.billing_debug_bench_active)
         state.connection == PremiumBillingConnectionState.NOT_STARTED ||
             state.connection == PremiumBillingConnectionState.CONNECTING ->
@@ -1421,7 +1673,8 @@ class MainActivity : ComponentActivity() {
 
     private fun effectivePremiumEntitlement(
         billingState: PremiumBillingState = premiumBilling.state.value,
-    ): Boolean = billingState.isPremium || debugPremiumBenchEnabled()
+        reviewPromoActive: Boolean = ReviewPromoSession.isActive,
+    ): Boolean = billingState.isPremium || reviewPromoActive || debugPremiumBenchEnabled()
 
     private fun applyEffectivePremiumEntitlement(entitled: Boolean) {
         val previous = lastObservedPremiumEntitlement
@@ -1477,6 +1730,35 @@ class MainActivity : ComponentActivity() {
             R.string.android_auto_settings_open_failed
         }
         Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun openBrowserUrl(url: String) {
+        val uri = runCatching { Uri.parse(url.trim()) }.getOrNull()
+        if (uri == null ||
+            (!uri.scheme.equals("http", ignoreCase = true) &&
+                !uri.scheme.equals("https", ignoreCase = true)) ||
+            uri.host.isNullOrBlank()
+        ) {
+            Toast.makeText(
+                applicationContext,
+                R.string.browser_open_failed,
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        val opened = runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, uri)
+                    .addCategory(Intent.CATEGORY_BROWSABLE),
+            )
+        }.isSuccess
+        if (!opened) {
+            Toast.makeText(
+                applicationContext,
+                R.string.browser_open_failed,
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     private fun requestNewBrowserPairing() {
@@ -1579,5 +1861,9 @@ class MainActivity : ComponentActivity() {
         const val PREMIUM_PURCHASE_POLL_MILLIS = 1_500L
         const val ENTITLEMENT_RESTART_ATTEMPTS = 16
         const val ENTITLEMENT_RESTART_RETRY_MILLIS = 250L
+        const val REVIEW_PROMO_REFRESH_INTERVAL_SECONDS = 15L * 60L
+        const val REVIEW_PROMO_MIN_REFRESH_DELAY_SECONDS = 60L
+        const val REVIEW_PROMO_REFRESH_POLICY_MARKER =
+            "navonweb-review-periodic-online-refresh-v1"
     }
 }

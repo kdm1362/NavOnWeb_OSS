@@ -2,61 +2,83 @@
 
 ## Prerequisites
 
-- Windows, macOS, or Linux
 - JDK 17
-- Android SDK Platform 36 and Android SDK Build Tools installed through Android Studio
+- Android SDK Platform 36 and Android SDK Build Tools
+- Node.js 22 or newer for the Cloudflare project
 
-The Gradle wrapper and dependency versions are committed. Configure the Android SDK with `ANDROID_HOME`/`ANDROID_SDK_ROOT`, or create an untracked `local.properties` containing `sdk.dir=<path>`.
+Use `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or an untracked `local.properties` file containing `sdk.dir=<path>` to locate the Android SDK.
 
-On Windows, place the checkout in an ASCII-only path such as `C:\src\NavOnWeb_OSS`. Some JDK/Gradle test runners cannot load compiled test classes when the checkout path contains non-ASCII characters.
+On Windows, an ASCII-only checkout path such as `C:\src\NavOnWeb_OSS` avoids class-loading problems in some JDK and Gradle combinations.
 
 ## Android application
 
-On Windows:
+Windows:
 
 ```powershell
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-On macOS or Linux:
+macOS or Linux:
 
 ```sh
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-To compile an unsigned release bundle without embedding deployment secrets, first commit the
-exact source and use its immutable public tag or commit URL:
+Debug output is written below `app/build/outputs/`. Build outputs are ignored by Git.
+
+### Release source URL
+
+An unsigned release bundle can be compiled without signing or AASDK identity files, but every release build must identify its immutable public source revision:
 
 ```powershell
 .\gradlew.bat bundleRelease `
-  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.8-p0-source
+  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.13-p0-source
 ```
 
-Release tasks fail when `sourceCodeUrl` is omitted or points only to the mutable repository root.
-The referenced public revision must exactly match the binary.
+Debug builds use the repository root by default. Release builds accept only a versioned source tag such as `v0.1.13-p0-source` or a full 40-character commit under the repository's `/tree/` path.
 
-Signing material must be supplied outside the repository. If the optional release identity pin properties are used, pass only certificate fingerprints as Gradle properties; never add certificates or private keys to the source tree:
+Signing is optional for compilation. To sign a release, set `NAVONWEB_PLAY_UPLOAD_KEYSTORE`, `NAVONWEB_PLAY_UPLOAD_PASSWORD`, and optionally `NAVONWEB_PLAY_UPLOAD_KEY_ALIAS`. The keystore must remain outside the checkout.
 
-```text
-productionAasdkIdentityLeafSha256
-productionAasdkIdentityAnchorSha256
-```
+### Public client configuration
 
-The Android Auto identity itself is a runtime/deployment input. A build without a provisioned identity can compile and run its non-projection functions but cannot authenticate an Android Auto projection session.
+The following optional Gradle properties configure external services. They can be supplied with `-P<name>=<value>` or through an untracked `local.properties` file:
 
-The optional JNI scaffold can be compiled with:
+- `supabaseUrl` and `supabasePublishableKey`
+- `premiumProductId` and `premiumPurchaseOptionId`
+- `cloudBrowserPageUrl` and `cloudSignalingWebSocketUrl`
+- `reviewPromoApiUrl`, `reviewPromoEs256KeyId`, and `reviewPromoEs256PublicKeyDerBase64`
+
+The public endpoint and verification values embedded in versionCode 23 are recorded in
+[`config/public-client.properties.example`](../config/public-client.properties.example). Copy
+those entries into an untracked `local.properties` file when reproducing the distributed client,
+or provide a different compatible public client configuration through the same property names.
+
+Service URLs, publishable client keys, key identifiers, and signature-verification public keys are public client configuration. Administrative tokens, service-role keys, signing private keys, database contents, and deployed secrets are not client configuration and must not be added to the repository.
+
+Android Auto identity material and Android/Play signing material are also external build inputs. Use only credentials that you are authorized to use, and keep their files outside the checkout.
+
+To include an externally supplied AASDK identity in a release build, provide all of the following Gradle properties together:
+
+- `bundledAasdkCertificatePemPath`
+- `bundledAasdkPrivateKeyPemPath`
+- `aasdkIdentityLeafSha256`
+- `aasdkIdentityAnchorSha256`
+
+The PEM files must remain outside the checkout. Builds that omit these properties still compile, but the bundled identity provider remains unavailable at runtime.
+
+### Optional native scaffold
+
+The small JNI scaffold under `app/src/main/cpp/` can be compiled with:
 
 ```powershell
 .\gradlew.bat assembleDebug -PenableNativeOpenAuto=true
 ```
 
-This flag compiles the repository's JNI scaffold; it does not link an external OpenAuto runtime.
+This checks the native coordinate and viewport types. It does not link an external OpenAuto runtime; the application uses the Kotlin protocol implementation by default.
 
 ## Cloudflare Worker and Pages
 
-The public signaling Worker and landing/browser Pages source are under `cloudflare/`. Node.js 20
-or newer is required. Syntax-check and run the complete local test suite without deployment
-credentials:
+The Worker, Pages client, and local tests are under `cloudflare/`:
 
 ```powershell
 Set-Location cloudflare
@@ -65,18 +87,11 @@ npm run check
 npm test
 ```
 
-`BOOTSTRAP_HMAC_KEY`, account authentication, Durable Object state, and other deployed values are
-external inputs. Never commit `.dev.vars`, `.env`, Wrangler state, or deployment output.
-
-The preferred launcher artwork is `app/src/main/res/drawable-nodpi/navonweb_icon.png`. Density-specific launcher PNGs can be regenerated on Windows with:
-
-```powershell
-.\tools\generate-launcher-icons.ps1
-```
+Cloudflare account credentials, Wrangler state, environment files, and deployed secrets are not needed for local tests and must remain untracked.
 
 ## Dependency inventory
 
-Android dependency versions are declared in `gradle/libs.versions.toml`. Generate a fresh Android dependency report with:
+Android versions are declared in `gradle/libs.versions.toml`. To inspect the resolved graph:
 
 ```powershell
 .\gradlew.bat :app:dependencies

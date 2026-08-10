@@ -68,17 +68,38 @@ class AndroidProjectionServiceAutomationRuntime(context: Context) : AutomationSe
     }
 
     override fun start(): AutomationRuntimeResult {
+        return startProjection(owner = null)
+    }
+
+    override fun startForAutomation(
+        source: AutomationTriggerMode,
+        generation: Long,
+    ): AutomationRuntimeResult {
+        require(source != AutomationTriggerMode.NONE)
+        return startProjection(AutomationProjectionOwner(source, generation))
+    }
+
+    private fun startProjection(owner: AutomationProjectionOwner?): AutomationRuntimeResult {
         if (!PremiumAccessGate.isPremium(applicationContext)) {
             return AutomationRuntimeResult.Failed(
                 AutomationRuntimeFailureReason.ENTITLEMENT_REQUIRED,
             )
         }
         return try {
-            ProjectionService.start(
-                context = applicationContext,
-                benchConfirmed = true,
-                startCancellationGeneration = ProjectionStartCancellationSignal.snapshot(),
-            )
+            if (owner == null) {
+                ProjectionService.start(
+                    context = applicationContext,
+                    benchConfirmed = true,
+                    startCancellationGeneration = ProjectionStartCancellationSignal.snapshot(),
+                )
+            } else {
+                ProjectionService.startForAutomation(
+                    context = applicationContext,
+                    benchConfirmed = true,
+                    startCancellationGeneration = ProjectionStartCancellationSignal.snapshot(),
+                    owner = owner,
+                )
+            }
             AutomationRuntimeResult.Success
         } catch (error: RuntimeException) {
             if (

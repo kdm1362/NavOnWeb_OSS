@@ -37,6 +37,22 @@ object BrowserCredential {
     /** Checks only the stored digest shape; no browser credential is reconstructed or exposed. */
     fun isStoredDigest(value: String?): Boolean = decodeDigest(value)?.size == TOKEN_BYTES
 
+    /** Public identifier that is unlinkable to the raw credential without knowing its digest. */
+    internal fun deviceIdFromStoredDigest(storedDigest: String): String {
+        require(isStoredDigest(storedDigest)) { "invalid stored browser credential digest" }
+        return "browser_${domainSeparatedDigest(DEVICE_ID_DOMAIN, storedDigest).take(16)}"
+    }
+
+    /** Server-only identity for grouping sessions that authenticate with the same credential. */
+    internal fun ownerKeyFromStoredDigest(storedDigest: String): String {
+        require(isStoredDigest(storedDigest)) { "invalid stored browser credential digest" }
+        return domainSeparatedDigest(OWNER_KEY_DOMAIN, storedDigest)
+    }
+
+    private fun domainSeparatedDigest(domain: String, storedDigest: String): String = digest(
+        "$domain:$storedDigest",
+    )
+
     private fun decodeDigest(value: String?): ByteArray? {
         if (value == null || value.length != TOKEN_LENGTH || !value.all(::isTokenCharacter)) {
             return null
@@ -52,4 +68,7 @@ object BrowserCredential {
             character in '0'..'9' ||
             character == '-' ||
             character == '_'
+
+    private const val DEVICE_ID_DOMAIN = "navonweb-browser-device-v1"
+    private const val OWNER_KEY_DOMAIN = "navonweb-browser-owner-v1"
 }

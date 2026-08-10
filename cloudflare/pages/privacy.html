@@ -26,7 +26,7 @@
 
     <article id="ko" class="privacy-document">
       <h2>NavOnWeb 개인정보 처리방침</h2>
-      <p class="privacy-effective-date">시행일: 2026년 8월 7일 · 최종 업데이트: 2026년 8월 7일</p>
+      <p class="privacy-effective-date">시행일: 2026년 8월 7일 · 최종 업데이트: 2026년 8월 11일</p>
       <p>NavOnWeb 개발자(이하 “개발자”)는 NavOnWeb 앱과 웹 서비스 제공에 필요한 최소한의 정보만 처리합니다. 광고 추적, 개인정보 판매 또는 맞춤형 광고를 하지 않습니다.</p>
 
       <h3>1. 처리하는 정보와 목적</h3>
@@ -40,14 +40,15 @@
           <tr><td>로컬 진단 로그</td><td>앱 상태, 연결 상태, 성능 집계와 민감정보가 제거된 오류 정보를 문제 해결에 사용합니다. 페어링 코드, 토큰, 쿠키, 비밀키, 정확한 위치, SSID/BSSID, Android ID, 일련번호, SDP/ICE 원문, 영상·음성·스크린샷은 기록하지 않도록 설계했습니다.</td><td>휴대전화의 앱 전용 저장소에서 최대 7일간 순환 보관합니다.</td></tr>
           <tr><td>사용자가 선택 전송한 오류 보고서</td><td>사용자가 작성한 상황 설명, 민감정보 제거 진단 로그, 앱·빌드·기기 성능 정보, 언어, 익명 인증 식별자 및 접속 IP의 단방향 솔트 해시를 지원과 오류 수정에 사용합니다.</td><td>보고서는 전송일로부터 30일 후 삭제됩니다. 연락처 없는 익명 인증 식별자는 지원 기능 운영 또는 삭제 요청 처리에 필요한 기간 보관될 수 있습니다.</td></tr>
           <tr><td>구매 정보</td><td>Google Play Billing을 통해 Premium 소유 여부와 가격을 확인하고 구매를 처리합니다. NavOnWeb은 원본 구매 토큰을 자체 서버로 전송하지 않으며, 오프라인 권한 확인을 위해 토큰의 SHA-256 요약값만 앱 전용 저장소에 보관합니다.</td><td>Google의 정책 및 사용자의 Google 계정 설정을 따릅니다. 로컬 요약값은 구매 확인 결과가 취소되거나 앱 데이터가 삭제되면 제거됩니다.</td></tr>
+          <tr><td>임시 이용권 검증 정보</td><td>사용자가 임시 이용권 코드를 입력하면 앱은 입력 코드, 서버가 발급한 단기 일회용 챌린지, 앱 패키지·버전 및 앱 설치 시 만든 무작위 식별자에서 파생한 가명 설치 바인딩을 암호화된 연결로 전송합니다. 이 정보와 갱신 시 처리되는 현재의 서명된 이용권은 임시 이용권 검증·갱신과 오남용 방지에만 사용됩니다. 서버는 원문 코드를 데이터베이스에 저장하지 않습니다.</td><td>서명된 이용권은 앱 프로세스 메모리에서 만료 시까지만 사용되며 디스크에 기록되지 않습니다. 서버의 가명 보안·감사 데이터는 최대 180일 보관 후 삭제합니다. 임시 이용권 정책을 삭제하면 연계된 데이터도 삭제하며, 오남용 방지에 필요한 가명 감사 데이터만 최대 180일 범위에서 유지될 수 있습니다.</td></tr>
           <tr><td>웹 접속 정보</td><td>Cloudflare가 보안, 전송 및 남용 방지를 위해 IP 주소, 요청 시각, 브라우저·네트워크 정보를 처리할 수 있습니다. NavOnWeb은 별도 광고·행동 분석기를 사용하지 않습니다.</td><td>Cloudflare의 적용 정책과 서비스 설정에 따릅니다.</td></tr>
         </tbody>
       </table>
 
       <h3>2. 제3자 서비스</h3>
       <ul>
-        <li><strong>Cloudflare</strong>: navonweb.com 제공, 연결 인증, WebSocket 신호 중계 및 보안. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">개인정보 보호정책</a></li>
-        <li><strong>Supabase</strong>: 공지 제공, 익명 인증 및 사용자가 동의해 전송한 진단 보고서 보관. <a href="https://supabase.com/privacy" rel="external noreferrer">개인정보 보호정책</a></li>
+        <li><strong>Cloudflare</strong>: navonweb.com 제공, 연결 인증, WebSocket 신호 중계, 임시 이용권 API 전송 및 네트워크 수준의 보안·남용 방지. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">개인정보 보호정책</a></li>
+        <li><strong>Supabase</strong>: 공지 제공, 익명 인증, 사용자가 동의해 전송한 진단 보고서 및 임시 이용권 검증에 필요한 가명 보안·감사 기록 보관. <a href="https://supabase.com/privacy" rel="external noreferrer">개인정보 보호정책</a></li>
         <li><strong>Google Play</strong>: 앱 배포, 결제 및 구매 확인. <a href="https://policies.google.com/privacy" rel="external noreferrer">Google 개인정보처리방침</a></li>
       </ul>
       <p>서비스 제공자의 글로벌 인프라 사용으로 정보가 사용자의 국가 밖에서 처리될 수 있습니다. 각 제공자는 위 목적에 필요한 범위에서 자체 정책과 계약에 따라 정보를 처리합니다.</p>
@@ -58,11 +59,12 @@
         <li>브라우저 설정에서 navonweb.com의 쿠키와 사이트 데이터를 삭제하면 기억된 브라우저 연결 정보가 제거됩니다.</li>
         <li>앱의 진단 로그 화면에서 대기 중인 오류 보고서를 취소·삭제할 수 있습니다.</li>
         <li>앱 데이터 삭제 또는 앱 제거로 휴대전화에 저장된 설정, 진단 로그와 로컬 구매 권한 캐시를 삭제할 수 있습니다.</li>
+        <li>앱 데이터 삭제 또는 앱 제거로 임시 이용권의 로컬 설치 식별자와 활성 이용권을 제거할 수 있습니다. 서버 기록에 관한 문의는 아래 문의 경로를 이용해 주십시오.</li>
         <li>이미 전송된 진단 보고서 또는 익명 지원 식별자의 조기 삭제를 요청하려면 아래 문의 경로를 이용해 보고서 식별자와 함께 요청할 수 있습니다.</li>
       </ul>
 
       <h3>4. 안전성 확보 조치</h3>
-      <p>전송 구간 암호화, 일회용 페어링 코드, 서명된 보안 쿠키, Android 앱 전용 저장소, Android Keystore 기반 인증 토큰 암호화, 진단 로그 민감정보 제거와 접근 제한을 적용합니다. 인터넷 전송 또는 저장 방식이 절대적으로 안전하다고 보장할 수는 없습니다.</p>
+      <p>전송 구간 암호화, 일회용 페어링 코드, 서명된 보안 쿠키, 임시 이용권용 일회용 챌린지와 가명 식별자, 서명된 단기 이용권과 요청 빈도 제한, Android 앱 전용 저장소, Android Keystore 기반 인증 토큰 암호화, 진단 로그 민감정보 제거와 접근 제한을 적용합니다. 인터넷 전송 또는 저장 방식이 절대적으로 안전하다고 보장할 수는 없습니다.</p>
 
       <h3>5. 아동의 개인정보</h3>
       <p>NavOnWeb은 아동을 대상으로 설계된 서비스가 아니며, 개발자는 아동의 개인정보를 의도적으로 수집하지 않습니다. 오류 보고서 설명에 본인 또는 타인의 이름, 주소, 이메일, 전화번호를 입력하지 마십시오.</p>
@@ -71,12 +73,12 @@
       <p>기능 또는 법적 요구사항이 변경되면 이 페이지의 최종 업데이트 날짜와 내용을 갱신합니다. 중요한 변경은 앱 또는 웹사이트에서 별도로 알릴 수 있습니다.</p>
 
       <h3>7. 문의</h3>
-      <p>개인정보 관련 문의, 열람 또는 삭제 요청은 <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb 공개 문의 창구</a>를 이용해 주십시오. 공개 이슈에는 개인정보, 진단 로그, 구매 정보 또는 페어링 코드를 게시하지 말고, 비공개 연락이 필요한 요청임을 먼저 알려주십시오.</p>
+      <p>개인정보 관련 문의, 열람 또는 삭제 요청은 <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb 공개 문의 창구</a>를 이용해 주십시오. 공개 이슈에는 개인정보, 진단 로그, 구매 정보, 페어링 코드, 임시 이용권 코드·챌린지·서명된 이용권 또는 설치 바인딩을 게시하지 말고, 비공개 연락이 필요한 요청임을 먼저 알려주십시오. 임시 이용권 서버 기록은 연락처와 연결되지 않은 가명 정보이므로 특정 기록의 확인이 기술적으로 제한될 수 있습니다. Cloudflare와 Supabase가 자체적으로 처리하는 기록은 위에 링크된 각 서비스 제공자의 정책과 문의 절차를 따릅니다.</p>
     </article>
 
     <article id="en" class="privacy-document" lang="en">
       <h2>NavOnWeb Privacy Policy</h2>
-      <p class="privacy-effective-date">Effective: August 7, 2026 · Last updated: August 7, 2026</p>
+      <p class="privacy-effective-date">Effective: August 7, 2026 · Last updated: August 11, 2026</p>
       <p>The NavOnWeb developer (“we”) processes only the information needed to provide the NavOnWeb app and web service. We do not sell personal information, use advertising trackers, or provide personalized advertising.</p>
 
       <h3>1. Information we process</h3>
@@ -90,14 +92,15 @@
           <tr><td>Local diagnostic logs</td><td>App state, connection state, performance aggregates, and redacted errors support troubleshooting. Logs are designed to exclude pairing codes, tokens, cookies, private keys, precise location, SSID/BSSID, Android ID, serial numbers, raw SDP/ICE, video, audio, and screenshots.</td><td>Rotated in app-private storage for up to 7 days.</td></tr>
           <tr><td>Diagnostic reports submitted by the user</td><td>A user-written description, redacted diagnostic log, app/build/device performance information, language, anonymous authentication identifier, and a salted one-way hash of the connection IP are used for support and bug fixing.</td><td>Reports are deleted 30 days after submission. A no-contact anonymous authentication identifier may remain while the support feature operates or until a deletion request is processed.</td></tr>
           <tr><td>Purchase information</td><td>Google Play Billing provides Premium ownership and pricing and processes purchases. NavOnWeb does not send the raw purchase token to its own server; only a SHA-256 digest is kept in app-private storage for offline entitlement.</td><td>Google's policy and the user's Google account settings apply. The local digest is removed when ownership is revoked or app data is cleared.</td></tr>
+          <tr><td>Temporary-access entitlement verification</td><td>When a user enters a temporary-access code, the app sends the entered code, a short-lived one-time server challenge, the app package and version, and a pseudonymous install binding derived from a random identifier created for that app installation over an encrypted connection. This information and the current signed entitlement processed during refresh are used only to verify or refresh temporary access and prevent misuse. The server does not store the raw code in its database.</td><td>The signed entitlement is used only in app process memory until expiry and is not written to disk. Pseudonymous server security and audit data is retained for no more than 180 days and then deleted. Deleting a temporary-access policy also deletes associated data; only pseudonymous audit data needed to prevent misuse may remain within the 180-day maximum.</td></tr>
           <tr><td>Website request information</td><td>Cloudflare may process IP address, request time, browser, and network information for delivery, security, and abuse prevention. NavOnWeb does not add advertising or behavioral analytics.</td><td>Subject to the applicable Cloudflare policy and service configuration.</td></tr>
         </tbody>
       </table>
 
       <h3>2. Service providers</h3>
       <ul>
-        <li><strong>Cloudflare</strong>: navonweb.com delivery, connection authentication, WebSocket signaling relay, and security. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">Privacy Policy</a></li>
-        <li><strong>Supabase</strong>: notices, anonymous authentication, and diagnostic reports submitted with user consent. <a href="https://supabase.com/privacy" rel="external noreferrer">Privacy Policy</a></li>
+        <li><strong>Cloudflare</strong>: navonweb.com delivery, connection authentication, WebSocket signaling relay, temporary-access API transport, and network-level security and abuse prevention. <a href="https://www.cloudflare.com/privacypolicy/" rel="external noreferrer">Privacy Policy</a></li>
+        <li><strong>Supabase</strong>: notices, anonymous authentication, diagnostic reports submitted with user consent, and pseudonymous security and audit records needed for temporary-access verification. <a href="https://supabase.com/privacy" rel="external noreferrer">Privacy Policy</a></li>
         <li><strong>Google Play</strong>: app distribution, billing, and purchase verification. <a href="https://policies.google.com/privacy" rel="external noreferrer">Google Privacy Policy</a></li>
       </ul>
       <p>Use of global service-provider infrastructure may cause information to be processed outside the user's country. Each provider processes information needed for the purposes above under its own policy and applicable agreements.</p>
@@ -108,11 +111,12 @@
         <li>Clearing navonweb.com cookies and site data removes remembered browser connection information.</li>
         <li>The app's diagnostic-log screen can cancel and delete reports waiting to be sent.</li>
         <li>Clearing app data or uninstalling removes phone settings, local diagnostic logs, and the local purchase entitlement cache.</li>
+        <li>Clearing app data or uninstalling removes the local temporary-access installation identifier and active entitlement. Use the contact method below for questions about server records.</li>
         <li>To request early deletion of a submitted report or anonymous support identifier, use the contact method below and provide the report identifier.</li>
       </ul>
 
       <h3>4. Security</h3>
-      <p>We use encrypted transport, one-time pairing codes, signed secure cookies, Android app-private storage, Android Keystore encryption for authentication tokens, diagnostic redaction, and access controls. No Internet transmission or storage method can be guaranteed absolutely secure.</p>
+      <p>We use encrypted transport, one-time pairing codes, signed secure cookies, one-time challenges and pseudonymous identifiers for temporary access, short-lived signed entitlements and rate limiting, Android app-private storage, Android Keystore encryption for authentication tokens, diagnostic redaction, and access controls. No Internet transmission or storage method can be guaranteed absolutely secure.</p>
 
       <h3>5. Children's privacy</h3>
       <p>NavOnWeb is not designed for children, and we do not knowingly collect personal information from children. Do not enter your own or another person's name, address, email address, or phone number in a diagnostic-report description.</p>
@@ -121,7 +125,7 @@
       <p>We will update this page and its “Last updated” date when features or legal requirements change. Material changes may also be announced in the app or on the website.</p>
 
       <h3>7. Contact</h3>
-      <p>For privacy questions, access, or deletion requests, use the <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb public contact channel</a>. Do not post personal information, diagnostic logs, purchase information, or pairing codes in a public issue; first state that your request requires private follow-up.</p>
+      <p>For privacy questions, access, or deletion requests, use the <a href="https://github.com/kdm1362/NavOnWeb_OSS/issues" rel="external noreferrer">NavOnWeb public contact channel</a>. Do not post personal information, diagnostic logs, purchase information, pairing codes, temporary-access codes or challenges, signed entitlements, or install bindings in a public issue; first state that your request requires private follow-up. Temporary-access server records are pseudonymous and are not linked to contact details, so identifying a specific record may be technically limited. Records processed independently by Cloudflare or Supabase follow each provider's linked policy and contact process.</p>
     </article>
   </main>
 </body>

@@ -1,16 +1,13 @@
-name = "navonweb-signaling-staging"
+# Choose a unique name before deploying to your Cloudflare account.
+name = "navonweb-signaling"
 main = "src/index.mjs"
 compatibility_date = "2026-08-03"
-# Production traffic uses only the two custom-domain routes below. Keeping the
-# public workers.dev alias disabled removes an unnecessary second abuse surface.
-workers_dev = false
-routes = [
-  { pattern = "signal.navonweb.com", custom_domain = true },
-  { pattern = "navonweb.com/_nw/*", zone_name = "navonweb.com" }
-]
+# This repository does not prescribe account-specific routes or custom domains.
+# Add them in an untracked environment-specific configuration if needed.
+workers_dev = true
 
 [observability]
-enabled = true
+enabled = false
 
 [durable_objects]
 bindings = [
@@ -27,9 +24,9 @@ tag = "v2"
 new_sqlite_classes = ["PairingBootstrap"]
 
 [vars]
-# Fail closed until the deployed Pages origin is configured. Values must be
-# exact origins separated by commas; wildcard origins are intentionally rejected.
-ALLOWED_BROWSER_ORIGINS = "https://navonweb-web-staging.pages.dev,https://navonweb.com"
+# Replace this example with the exact HTTPS origin(s) hosting the browser client.
+# Separate multiple origins with commas. Wildcards are rejected.
+ALLOWED_BROWSER_ORIGINS = "https://viewer.example.com"
 
 # BOOTSTRAP_HMAC_KEY is deliberately not stored in this file. Configure a
 # random value of at least 32 bytes with `wrangler secret put BOOTSTRAP_HMAC_KEY`.

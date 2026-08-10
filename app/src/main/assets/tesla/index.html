@@ -74,6 +74,7 @@
     }
     button:disabled { opacity: .45; cursor: not-allowed; }
     button:focus-visible, #code:focus-visible, summary:focus-visible,
+    select:focus-visible, input[type="radio"]:focus-visible,
     input[type="checkbox"]:focus-visible {
       outline: 3px solid var(--accent);
       outline-offset: 2px;
@@ -104,14 +105,57 @@
       aspect-ratio: var(--navonweb-available-aspect-ratio, var(--projection-aspect-ratio, 5 / 3));
     }
     body.navonweb-authenticated main { align-content: start; }
+    body.navonweb-authenticated main {
+      padding-top: max(clamp(12px, 3vw, 32px), env(safe-area-inset-top));
+      padding-right: max(clamp(12px, 3vw, 32px), env(safe-area-inset-right));
+      padding-bottom: max(clamp(12px, 3vw, 32px), env(safe-area-inset-bottom));
+      padding-left: max(clamp(12px, 3vw, 32px), env(safe-area-inset-left));
+    }
     #projection-content {
       position: absolute;
-      left: 50%;
+      left: 0;
       top: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
-      transform: translateX(-50%);
+      will-change: left, top;
+    }
+    #session-touch-overlay {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .session-touch-marker {
+      --session-touch-color: #ff6b6b;
+      --session-touch-glow: rgb(255 107 107 / 55%);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 22px;
+      height: 22px;
+      margin: -11px 0 0 -11px;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      background: var(--session-touch-color);
+      box-shadow: 0 0 0 3px var(--session-touch-glow),
+        0 2px 8px rgb(0 0 0 / 55%);
+      opacity: .96;
+      transform: translateZ(0) scale(1);
+      transition: opacity 180ms ease-out, transform 180ms ease-out;
+    }
+    .session-touch-marker[data-color-slot="1"] {
+      --session-touch-color: #35c7f0;
+      --session-touch-glow: rgb(53 199 240 / 55%);
+    }
+    .session-touch-marker[data-color-slot="2"] {
+      --session-touch-color: #ffc857;
+      --session-touch-glow: rgb(255 200 87 / 55%);
+    }
+    .session-touch-marker.released {
+      opacity: 0;
+      transform: translateZ(0) scale(1.45);
     }
     #frame, #webrtc-video {
       position: absolute;
@@ -216,9 +260,188 @@
       background: #fbbf24;
       color: #1c1503;
     }
+    #viewport-authority-notice {
+      margin: 0;
+      padding: 10px 14px;
+      border: 1px solid #fbbf2466;
+      border-radius: 12px;
+      background: #1b1606;
+      color: #fde68a;
+      font-size: 14px;
+      font-weight: 700;
+    }
     #viewer-controls {
       display: flex;
+      align-items: center;
       justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    #presentation-orientation {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      margin: 0;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #071019;
+    }
+    .presentation-orientation-choice {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      color: #dbe8f4;
+      cursor: pointer;
+    }
+    .presentation-orientation-choice input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .presentation-orientation-choice span {
+      display: block;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .presentation-orientation-choice input:checked + span {
+      color: #041014;
+      background: var(--accent);
+    }
+    .presentation-orientation-choice input:focus-visible + span {
+      outline: 3px solid var(--accent);
+      outline-offset: 3px;
+    }
+    #presentation-alignment-label {
+      position: relative;
+      display: inline-flex;
+      min-width: 0;
+    }
+    #presentation-alignment-trigger {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      margin: 0;
+      padding: 5px;
+      border-color: var(--line);
+      background: #071019;
+    }
+    #presentation-alignment-trigger[aria-expanded='true'] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px #67e8f94d;
+    }
+    #presentation-alignment-picker {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 8px);
+      right: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 44px);
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #071019fa;
+      box-shadow: 0 14px 36px #000c;
+    }
+    .presentation-alignment-choice {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+    }
+    .presentation-alignment-choice input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .presentation-alignment-preview {
+      display: grid;
+      grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+      width: 32px;
+      height: 26px;
+      padding: 3px;
+      border: 1px solid #506170;
+      border-radius: 5px;
+      background: #111c26;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    .presentation-alignment-preview::after {
+      content: '';
+      grid-row: var(--anchor-row, 2);
+      grid-column: var(--anchor-column, 2);
+      align-self: var(--anchor-block, center);
+      justify-self: var(--anchor-inline, center);
+      width: 10px;
+      height: 7px;
+      border: 1px solid #b8c7d5;
+      border-radius: 1px;
+      background: #3a4a58;
+      box-shadow: 0 0 0 1px #0007;
+    }
+    [data-presentation-alignment^='top'] {
+      --anchor-row: 1;
+      --anchor-block: start;
+    }
+    [data-presentation-alignment^='bottom'] {
+      --anchor-row: 3;
+      --anchor-block: end;
+    }
+    [data-presentation-alignment$='left'],
+    [data-presentation-alignment='left'] {
+      --anchor-column: 1;
+      --anchor-inline: start;
+    }
+    [data-presentation-alignment$='right'],
+    [data-presentation-alignment='right'] {
+      --anchor-column: 3;
+      --anchor-inline: end;
+    }
+    [data-presentation-alignment='top'] {
+      --anchor-row: 1;
+      --anchor-block: start;
+    }
+    [data-presentation-alignment='bottom'] {
+      --anchor-row: 3;
+      --anchor-block: end;
+    }
+    [data-presentation-alignment='custom'] .presentation-alignment-preview::after {
+      grid-row: 2;
+      grid-column: 2;
+      align-self: center;
+      justify-self: center;
+      width: 15px;
+      height: 15px;
+      border-color: var(--accent);
+      border-radius: 50%;
+      background:
+        linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat,
+        linear-gradient(var(--accent), var(--accent)) center / 100% 1px no-repeat;
+      box-shadow: 0 0 0 1px #0008;
+    }
+    .presentation-alignment-choice input:checked + .presentation-alignment-preview {
+      border-color: var(--accent);
+      background: #12303a;
+      box-shadow: 0 0 0 2px #67e8f94d;
+    }
+    .presentation-alignment-choice input:checked + .presentation-alignment-preview::after {
+      border-color: #041014;
+      background: var(--accent);
+    }
+    .presentation-alignment-choice input:focus-visible + .presentation-alignment-preview {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
     }
     #fullscreen {
       width: auto;
@@ -347,7 +570,8 @@
       gap: 0;
       background: #000;
     }
-    #viewer:fullscreen #viewer-controls { display: none; }
+    #viewer:fullscreen #viewer-controls,
+    body.theater-mode #viewer-controls { display: none !important; }
     #viewer:fullscreen + #notice-panel { display: none; }
     #viewer:fullscreen #pad {
       height: 100%;
@@ -366,7 +590,6 @@
       gap: 0;
       background: #000;
     }
-    body.theater-mode #viewer-controls { display: none; }
     body.theater-mode #notice-panel { display: none; }
     body.theater-mode #pad {
       height: 100%;
@@ -403,6 +626,109 @@
       color: #fde68a;
       font-size: 14px;
     }
+    #viewer:fullscreen #viewport-authority-notice,
+    body.theater-mode #viewport-authority-notice {
+      position: absolute;
+      z-index: 21;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      width: max-content;
+      max-width: min(78%, 620px);
+      transform: translateX(-50%);
+      background: #1b1606e8;
+      box-shadow: 0 8px 28px #000a;
+      text-align: center;
+      pointer-events: none;
+    }
+    #presentation-guide {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+        max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+      background: #0008;
+      pointer-events: none;
+    }
+    #presentation-guide-card {
+      width: min(620px, 100%);
+      max-height: min(82vh, 720px);
+      overflow: auto;
+      padding: 22px;
+      border: 1px solid #67e8f980;
+      border-radius: 18px;
+      color: #eef6ff;
+      background: #071019f7;
+      box-shadow: 0 18px 48px #000d;
+      pointer-events: auto;
+    }
+    #presentation-guide-title { margin: 0; font-size: clamp(20px, 4vw, 28px); }
+    #presentation-guide-list {
+      display: grid;
+      gap: 10px;
+      margin: 16px 0;
+      padding-left: 24px;
+      color: #dbe8f4;
+    }
+    #presentation-guide-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    #presentation-guide-dismiss-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #dbe8f4;
+      cursor: pointer;
+    }
+    #presentation-guide-dismiss-forever {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+    #presentation-guide-dismiss { min-width: 96px; }
+    #presentation-guide-countdown {
+      display: grid;
+      gap: 7px;
+      margin: 14px 0 0;
+      color: #aebdca;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+    }
+    #presentation-guide-progress {
+      width: 100%;
+      height: 7px;
+      border: 0;
+      border-radius: 999px;
+      overflow: hidden;
+      color: var(--accent);
+      background: #253440;
+    }
+    #presentation-guide-progress::-webkit-progress-bar {
+      border-radius: 999px;
+      background: #253440;
+    }
+    #presentation-guide-progress::-webkit-progress-value {
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 200ms linear;
+    }
+    #presentation-guide-progress::-moz-progress-bar {
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    @media (max-width: 680px) {
+      #viewer-controls { justify-content: stretch; }
+      #presentation-orientation { flex: 1 1 auto; justify-content: center; }
+      #presentation-alignment-label { flex: 0 0 auto; }
+      #fullscreen { flex: 1 1 132px; }
+    }
     body.navonweb-development-tesla-driving main {
       width: min(100%, var(--navonweb-development-viewport-width));
       margin-left: 0;
@@ -438,11 +764,12 @@
     </form>
   </section>
 
-  <section id="viewer" aria-label="Android Auto screen" data-i18n-aria-label="androidAutoScreen" hidden>
+  <section id="viewer" aria-label="Android Auto screen" data-i18n-aria-label="androidAutoScreen" tabindex="-1" hidden>
     <div id="pad" aria-label="Android Auto video and touch input area" data-i18n-aria-label="projectionInputArea" aria-describedby="fullscreen-state">
       <div id="projection-content">
         <video id="webrtc-video" autoplay muted playsinline></video>
         <img id="frame" alt="Android Auto projection video" data-i18n-alt="projectionFrameAlt" draggable="false">
+        <div id="session-touch-overlay" aria-hidden="true"></div>
         <div id="stream-state">
           <div id="stream-state-content">
             <span id="stream-state-spinner" aria-hidden="true"></span>
@@ -463,9 +790,104 @@
     <div id="repair-pairing-panel" role="group" aria-label="Pair with a new code" data-i18n-aria-label="repairPairingLabel" hidden>
       <button id="repair-pairing" type="button" data-i18n="repairPairing">Get a new pairing code</button>
     </div>
-    <div id="viewer-controls">
+    <p id="viewport-authority-notice" role="status" aria-live="polite" aria-atomic="true" data-i18n="viewportMainSessionOnly" hidden>This device is not the main session. The projection aspect ratio and viewport follow the main session selected on your phone.</p>
+    <div id="viewer-controls" role="toolbar" aria-label="Projection display controls" data-i18n-aria-label="presentationControlsLabel">
+      <fieldset id="presentation-orientation">
+        <legend class="sr-only" data-i18n="presentationOrientationLabel">Orientation</legend>
+        <label class="presentation-orientation-choice">
+          <input type="radio" name="presentation-orientation" value="auto" checked>
+          <span data-i18n="presentationOrientationAuto">Auto</span>
+        </label>
+        <label class="presentation-orientation-choice">
+          <input type="radio" name="presentation-orientation" value="landscape">
+          <span data-i18n="presentationOrientationLandscape">Landscape</span>
+        </label>
+        <label class="presentation-orientation-choice">
+          <input type="radio" name="presentation-orientation" value="portrait">
+          <span data-i18n="presentationOrientationPortrait">Portrait</span>
+        </label>
+      </fieldset>
+      <div id="presentation-alignment-label" hidden>
+        <span id="presentation-alignment-heading" class="sr-only" data-i18n="presentationAlignmentLabel">Alignment</span>
+        <button id="presentation-alignment-trigger" type="button" aria-expanded="false" aria-controls="presentation-alignment-picker" aria-label="Alignment: Center. Open position picker." data-presentation-alignment="center">
+          <span class="presentation-alignment-preview" aria-hidden="true"></span>
+        </button>
+        <div id="presentation-alignment-picker" role="radiogroup" aria-labelledby="presentation-alignment-heading" hidden>
+          <label class="presentation-alignment-choice" data-presentation-alignment="top-left">
+            <input type="radio" name="presentation-alignment-choice" value="top-left" aria-label="Top left" data-i18n-aria-label="presentationAlignTopLeft">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="top">
+            <input type="radio" name="presentation-alignment-choice" value="top" aria-label="Top" data-i18n-aria-label="presentationAlignTop">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="top-right">
+            <input type="radio" name="presentation-alignment-choice" value="top-right" aria-label="Top right" data-i18n-aria-label="presentationAlignTopRight">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="left">
+            <input type="radio" name="presentation-alignment-choice" value="left" aria-label="Left" data-i18n-aria-label="presentationAlignLeft">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="center">
+            <input type="radio" name="presentation-alignment-choice" value="center" aria-label="Center" data-i18n-aria-label="presentationAlignCenter">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="right">
+            <input type="radio" name="presentation-alignment-choice" value="right" aria-label="Right" data-i18n-aria-label="presentationAlignRight">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="bottom-left">
+            <input type="radio" name="presentation-alignment-choice" value="bottom-left" aria-label="Bottom left" data-i18n-aria-label="presentationAlignBottomLeft">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="bottom">
+            <input type="radio" name="presentation-alignment-choice" value="bottom" aria-label="Bottom" data-i18n-aria-label="presentationAlignBottom">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+          <label class="presentation-alignment-choice" data-presentation-alignment="bottom-right">
+            <input type="radio" name="presentation-alignment-choice" value="bottom-right" aria-label="Bottom right" data-i18n-aria-label="presentationAlignBottomRight">
+            <span class="presentation-alignment-preview" aria-hidden="true"></span>
+          </label>
+        </div>
+        <select id="presentation-alignment" hidden aria-hidden="true" tabindex="-1">
+          <option value="center" data-i18n="presentationAlignCenter">Center</option>
+          <option value="top" data-i18n="presentationAlignTop">Top</option>
+          <option value="bottom" data-i18n="presentationAlignBottom">Bottom</option>
+          <option value="left" data-i18n="presentationAlignLeft">Left</option>
+          <option value="right" data-i18n="presentationAlignRight">Right</option>
+          <option value="top-left" data-i18n="presentationAlignTopLeft">Top left</option>
+          <option value="top-right" data-i18n="presentationAlignTopRight">Top right</option>
+          <option value="bottom-left" data-i18n="presentationAlignBottomLeft">Bottom left</option>
+          <option value="bottom-right" data-i18n="presentationAlignBottomRight">Bottom right</option>
+          <option value="custom" data-i18n="presentationAlignCustom" disabled>Custom</option>
+        </select>
+      </div>
       <button id="fullscreen" type="button" aria-label="View Android Auto in fullscreen" data-i18n="fullscreenEnter" data-i18n-aria-label="fullscreenEnterLabel" aria-pressed="false">Fullscreen</button>
     </div>
+    <section id="presentation-guide" role="dialog" aria-modal="false" aria-labelledby="presentation-guide-title" aria-describedby="presentation-guide-list presentation-guide-countdown-text" hidden>
+      <div id="presentation-guide-card">
+        <h2 id="presentation-guide-title" data-i18n="presentationGuideTitle">Fullscreen display controls</h2>
+        <ul id="presentation-guide-list">
+          <li data-i18n="presentationGuideOrientation">Choose Auto, Landscape, or Portrait before entering fullscreen.</li>
+          <li data-i18n="presentationGuideAlignment">Before entering fullscreen, choose where letterboxed video is aligned.</li>
+          <li data-i18n="presentationGuideMove">Move two fingers together to reposition video inside the available margins.</li>
+          <li data-i18n="presentationGuideExit">Before movement locks, a clear inward pinch exits fullscreen.</li>
+          <li data-i18n="presentationGuideReset">Press with three fingers to reset the video position.</li>
+        </ul>
+        <div id="presentation-guide-actions">
+          <label id="presentation-guide-dismiss-label" for="presentation-guide-dismiss-forever">
+            <input id="presentation-guide-dismiss-forever" type="checkbox">
+            <span data-i18n="presentationGuideDoNotShowAgain">Don't show again</span>
+          </label>
+          <button id="presentation-guide-dismiss" type="button" data-i18n="presentationGuideDismiss">OK</button>
+        </div>
+        <div id="presentation-guide-countdown" role="timer" aria-live="off" hidden>
+          <span id="presentation-guide-countdown-text"></span>
+          <progress id="presentation-guide-progress" max="10000" value="10000" aria-label="Time until this guide closes automatically" data-i18n-aria-label="presentationGuideCountdownLabel"></progress>
+        </div>
+      </div>
+    </section>
     <section id="premium-prompt" role="dialog" aria-modal="false" aria-labelledby="premium-prompt-message" hidden>
       <div id="premium-prompt-card">
         <p id="premium-prompt-message" data-i18n="premiumUpgradeMessage">Please purchase the Premium tier to use high-resolution (1080p) video and stereo audio.</p>

@@ -35,7 +35,7 @@ class AndroidAutoConnectionStatusTest {
 
         val disconnected = reduce(
             streaming,
-            "AASDK TRANSPORT_DISCONNECTED endpoint=10.0.0.231 secret=do-not-expose",
+            "AASDK TRANSPORT_DISCONNECTED endpoint=192.168.50.10 secret=do-not-expose",
             4_000L,
             400L,
         )

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "check": "node --check worker/src/protocol.mjs && node --check worker/src/index.mjs && node --check scripts/build-pages.mjs",
@@ -13,7 +13,7 @@
     "dev:worker": "wrangler dev --config worker/wrangler.toml --port 8787",
     "dev:pages": "node scripts/build-pages.mjs --signal-origin=ws://localhost:8787 && wrangler pages dev dist/pages --port 8788",
     "deploy:worker": "wrangler deploy --config worker/wrangler.toml",
-    "deploy:pages": "node scripts/build-pages.mjs --require-secure --signal-path-prefix=/_nw && wrangler pages deploy dist/pages --project-name navonweb-web-staging"
+    "deploy:pages": "node scripts/build-pages.mjs --require-secure --signal-path-prefix=/_nw && wrangler pages deploy dist/pages"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

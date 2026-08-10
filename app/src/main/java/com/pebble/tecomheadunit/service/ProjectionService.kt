@@ -20,7 +20,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.pebble.tecomheadunit.MainActivity
 import com.pebble.tecomheadunit.R
+import com.pebble.tecomheadunit.automation.AndroidAutomationControlStateStore
+import com.pebble.tecomheadunit.automation.AutomationProjectionOwner
+import com.pebble.tecomheadunit.automation.AutomationTriggerMode
 import com.pebble.tecomheadunit.automation.ProjectionStartCancellationSignal
+import com.pebble.tecomheadunit.automation.ProjectionAutomationSessionOwnership
+import com.pebble.tecomheadunit.automation.isAutomationProjectionStartAuthorized
 import com.pebble.tecomheadunit.browser.BrowserFrameStore
 import com.pebble.tecomheadunit.browser.BrowserJpegFallbackPolicy
 import com.pebble.tecomheadunit.browser.BrowserProbeServer
@@ -90,6 +95,10 @@ import com.pebble.tecomheadunit.openauto.sensor.AndroidNightModeLocationSource
 import com.pebble.tecomheadunit.openauto.sensor.NightModeDecision
 import com.pebble.tecomheadunit.openauto.sensor.ProjectionNightModeLocation
 import com.pebble.tecomheadunit.session.BrowserTrustStore
+import com.pebble.tecomheadunit.session.BrowserDevicePermission
+import com.pebble.tecomheadunit.session.PairedBrowserDevice
+import com.pebble.tecomheadunit.session.PairedBrowserMutationResult
+import com.pebble.tecomheadunit.session.PairedBrowserRemovalResult
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
 import com.pebble.tecomheadunit.session.PairingToken
@@ -115,6 +124,79 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+internal fun projectionReconfigurationCooldownDelayMillis(
+    lastMediaAcceptedElapsedRealtime: Long,
+    lastCommitElapsedRealtime: Long,
+    nowElapsedRealtime: Long,
+    minimumIntervalMillis: Long,
+): Long {
+    require(minimumIntervalMillis >= 0L) { "minimum interval must be non-negative" }
+    val anchor = maxOf(lastMediaAcceptedElapsedRealtime, lastCommitElapsedRealtime)
+    if (anchor <= 0L || minimumIntervalMillis == 0L) return 0L
+    if (nowElapsedRealtime < anchor) return minimumIntervalMillis
+    return (minimumIntervalMillis - (nowElapsedRealtime - anchor)).coerceAtLeast(0L)
+}
+
+internal fun shouldTriggerPortraitPreVideoFallback(
+    portraitViewport: Boolean,
+    serviceDiscoveryResponseSent: Boolean,
+    videoMediaAccepted: Boolean,
+    runtimeStatus: String,
+): Boolean =
+    portraitViewport &&
+        serviceDiscoveryResponseSent &&
+        !videoMediaAccepted &&
+        (
+            runtimeStatus.startsWith("DISCONNECTED reason=") ||
+                runtimeStatus == "AV_STREAM_STOPPED channel=3"
+            )
+
+internal class ProjectionMediaAttemptState {
+    var generation: Long = 0L
+        private set
+    var serviceDiscoveryResponseSent: Boolean = false
+        private set
+    var videoMediaAccepted: Boolean = false
+        private set
+
+    fun beginAttempt(): Long {
+        generation += 1L
+        serviceDiscoveryResponseSent = false
+        videoMediaAccepted = false
+        return generation
+    }
+
+    fun markServiceDiscoveryResponseSent(): Long {
+        serviceDiscoveryResponseSent = true
+        return generation
+    }
+
+    /** Returns true exactly once per connection attempt. */
+    fun markVideoMediaAccepted(): Boolean {
+        if (videoMediaAccepted) return false
+        videoMediaAccepted = true
+        return true
+    }
+
+    fun isAwaitingFirstVideo(expectedGeneration: Long): Boolean =
+        generation == expectedGeneration && serviceDiscoveryResponseSent && !videoMediaAccepted
+}
+
+internal fun <T : Any> replaceBrowserSessionControllerAtomically(
+    lock: Any,
+    current: () -> T?,
+    replacement: T?,
+    replaceDelegate: (expected: T?, replacement: T?) -> Boolean,
+    updateCurrent: (T?) -> Unit,
+    retire: (T) -> Unit,
+): Boolean = synchronized(lock) {
+    val previous = current()
+    if (!replaceDelegate(previous, replacement)) return@synchronized false
+    updateCurrent(replacement)
+    previous?.let(retire)
+    true
+}
+
 class ProjectionService : Service() {
     private var server: BrowserProbeServer? = null
     private var cloudRelayClient: CloudBrowserRelayClient? = null
@@ -133,7 +215,9 @@ class ProjectionService : Service() {
     @Volatile
     private var projectionRuntime: AasdkProjectionRuntime? = null
     private var projectionDecoderController: WebRtcProjectionController? = null
+    private var projectionDecoderFrameCapture: BrowserSurfaceFrameCapture? = null
     private val projectionSurfaceLock = Any()
+    private val browserSessionAdmissionLock = Any()
     private val localBinder = LocalBinder()
     private var projectionSurface: Surface? = null
     private var projectionSurfaceGeneration = NO_SURFACE_GENERATION
@@ -150,12 +234,15 @@ class ProjectionService : Service() {
     private var noticeRefreshJob: Job? = null
     private var pendingProjectionProfile: ProjectionVideoProfile? = null
     private var pendingProjectionViewport: ProjectionViewportLayout? = null
+    private var lastProjectionMediaAcceptedElapsedRealtime = 0L
+    private var lastProjectionReconfigurationCommitElapsedRealtime = 0L
     private val videoEventsSinceDiagnostic = AtomicLong(0L)
     private val touchEventsSinceDiagnostic = AtomicLong(0L)
     private val webRtcCodecPreferenceStore by lazy { WebRtcCodecPreferenceStore(applicationContext) }
     private val nightModeStateProvider by lazy { AndroidNightModeStateProvider(applicationContext) }
     private val nightModeLocationSource by lazy { AndroidNightModeLocationSource(applicationContext) }
     private val projectionStartupStore by lazy { ProjectionStartupStore(applicationContext) }
+    private val browserTrustStore by lazy { BrowserTrustStore(applicationContext) }
     private val projectionDpiSettings by lazy {
         ProjectionDpiSettingsManager(AndroidProjectionDpiPreferenceStore(applicationContext))
     }
@@ -240,6 +327,84 @@ class ProjectionService : Service() {
         fun browserAudioSnapshot(): Map<BrowserAudioTrack, BrowserAudioTrackSnapshot> =
             browserAudioPipeline?.streamHub?.snapshot().orEmpty()
 
+        fun pairedBrowserDevices(): List<PairedBrowserDevice> {
+            server?.let { return it.pairedBrowserDevices() }
+            val liveColorSlots = webRtcSignaling
+                ?.connectedSessionMetadata()
+                .orEmpty()
+                .associate { it.deviceId to it.colorSlot }
+            return browserTrustStore.devices().map { device ->
+                liveColorSlots[device.deviceId]
+                    ?.let { activeSlot -> device.copy(colorSlot = activeSlot) }
+                    ?: device
+            }
+        }
+
+        fun connectedBrowserDeviceIds(): Set<String> =
+            server?.connectedBrowserDeviceIds()
+                ?: webRtcSignaling?.connectedDeviceIds().orEmpty()
+
+        fun renamePairedBrowserDevice(
+            deviceId: String,
+            displayName: String,
+        ): PairedBrowserMutationResult {
+            server?.let { return it.renamePairedBrowserDevice(deviceId, displayName) }
+            return synchronized(browserSessionAdmissionLock) {
+                browserTrustStore.renameDevice(deviceId, displayName).also { result ->
+                    if (result is PairedBrowserMutationResult.Updated) {
+                        result.device?.let { renamed ->
+                            webRtcSignaling?.updateDeviceDisplayName(deviceId, renamed.displayName)
+                        }
+                    }
+                }
+            }
+        }
+
+        fun updatePairedBrowserAccess(
+            deviceId: String,
+            permission: BrowserDevicePermission,
+        ): PairedBrowserMutationResult {
+            server?.let { return it.updatePairedBrowserAccess(deviceId, permission) }
+            return synchronized(browserSessionAdmissionLock) {
+                val previousPermission = browserTrustStore.devices()
+                    .firstOrNull { it.deviceId == deviceId }
+                    ?.permission
+                val result = browserTrustStore.updateAccess(deviceId, permission)
+                if (
+                    result is PairedBrowserMutationResult.Updated &&
+                    previousPermission != permission
+                ) {
+                    webRtcSignaling?.closeSessionsForDevice(deviceId)
+                    ensurePreferredMainFromLiveSession()
+                }
+                result
+            }
+        }
+
+        fun setPreferredMainBrowserDevice(deviceId: String?): PairedBrowserMutationResult {
+            server?.let { return it.setPreferredMainBrowserDevice(deviceId) }
+            return synchronized(browserSessionAdmissionLock) {
+                val result = browserTrustStore.setPreferredMain(deviceId)
+                if (result is PairedBrowserMutationResult.Updated && deviceId == null) {
+                    ensurePreferredMainFromLiveSession() ?: result
+                } else {
+                    result
+                }
+            }
+        }
+
+        fun removePairedBrowserDevice(deviceId: String): PairedBrowserRemovalResult {
+            server?.let { return it.removePairedBrowserDevice(deviceId) }
+            return synchronized(browserSessionAdmissionLock) {
+                val result = browserTrustStore.remove(deviceId)
+                if (result is PairedBrowserRemovalResult.Removed) {
+                    webRtcSignaling?.closeSessionsForOwner(result.ownerKey)
+                    ensurePreferredMainFromLiveSession()
+                }
+                result
+            }
+        }
+
         /** Opens (or returns) one explicit ten-minute code without touching trusted credentials. */
         fun requestNewBrowserPairing(): Boolean =
             server?.let {
@@ -247,6 +412,21 @@ class ProjectionService : Service() {
                 true
             } == true
     }
+
+    private fun ensurePreferredMainFromLiveSession(): PairedBrowserMutationResult? =
+        synchronized(browserSessionAdmissionLock) {
+            if (browserTrustStore.preferredMainDeviceId() != null) return@synchronized null
+            val candidate = webRtcSignaling?.oldestInteractiveDeviceId()
+                ?: return@synchronized null
+            browserTrustStore.setPreferredMainIfUnset(candidate)
+        }
+
+    private fun claimPreferredMainBrowserDeviceIfUnset(deviceId: String): Boolean =
+        synchronized(browserSessionAdmissionLock) {
+            val mutation = browserTrustStore.setPreferredMainIfUnset(deviceId)
+            (mutation as? PairedBrowserMutationResult.Updated)
+                ?.preferredMainDeviceId == deviceId
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -270,23 +450,79 @@ class ProjectionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSession(getString(R.string.session_stopped_by_user))
-            ACTION_START -> {
-                val begin = {
-                    beginStartSession(
-                        benchConfirmed = intent.getBooleanExtra(EXTRA_BENCH_CONFIRMED, false),
-                    )
-                }
-                if (intent.hasExtra(EXTRA_START_CANCELLATION_GENERATION)) {
-                    ProjectionStartCancellationSignal.runIfCurrent(
-                        intent.getLongExtra(EXTRA_START_CANCELLATION_GENERATION, Long.MIN_VALUE),
-                        begin,
-                    )
-                } else {
-                    begin()
-                }
-            }
+            ACTION_STOP_IF_AUTOMATION_OWNER -> stopIfAutomationOwnerMatches(intent, startId)
+            ACTION_START -> handleStartRequest(intent, startId)
         }
         return START_NOT_STICKY
+    }
+
+    private fun handleStartRequest(intent: Intent, startId: Int) {
+        val hasAutomationOwner =
+            intent.hasExtra(EXTRA_AUTOMATION_SOURCE) ||
+                intent.hasExtra(EXTRA_AUTOMATION_GENERATION)
+        val automationOwner = automationOwnerFrom(intent)
+        if (
+            hasAutomationOwner &&
+            (
+                automationOwner == null ||
+                    !runCatching {
+                        isAutomationProjectionStartAuthorized(
+                            owner = automationOwner,
+                            state = AndroidAutomationControlStateStore(applicationContext).load(),
+                        )
+                    }.getOrDefault(false)
+                )
+        ) {
+            if (!hasActiveSession()) stopSelf(startId)
+            return
+        }
+
+        val begin = {
+            val alreadyActive = hasActiveSession()
+            if (automationOwner == null) {
+                ProjectionAutomationSessionOwnership.clearForManualStart()
+            } else if (!alreadyActive) {
+                ProjectionAutomationSessionOwnership.claim(automationOwner)
+            }
+            beginStartSession(
+                benchConfirmed = intent.getBooleanExtra(EXTRA_BENCH_CONFIRMED, false),
+            )
+        }
+        if (intent.hasExtra(EXTRA_START_CANCELLATION_GENERATION)) {
+            ProjectionStartCancellationSignal.runIfCurrent(
+                intent.getLongExtra(EXTRA_START_CANCELLATION_GENERATION, Long.MIN_VALUE),
+                begin,
+            )
+        } else {
+            begin()
+        }
+    }
+
+    private fun stopIfAutomationOwnerMatches(intent: Intent, startId: Int) {
+        val owner = automationOwnerFrom(intent)
+        if (owner != null && ProjectionAutomationSessionOwnership.matches(owner)) {
+            stopSession(getString(R.string.session_stopped_by_user))
+        } else if (!hasActiveSession()) {
+            stopSelf(startId)
+        }
+    }
+
+    private fun hasActiveSession(): Boolean =
+        server != null ||
+            startJob?.isActive == true ||
+            projectionJob?.isActive == true ||
+            SessionController.state.value.phase == SessionPhase.STARTING ||
+            SessionController.state.value.phase == SessionPhase.READY
+
+    private fun automationOwnerFrom(intent: Intent): AutomationProjectionOwner? {
+        val source = intent.getStringExtra(EXTRA_AUTOMATION_SOURCE)
+            ?.let { stored -> AutomationTriggerMode.entries.firstOrNull { it.name == stored } }
+            ?.takeUnless { it == AutomationTriggerMode.NONE }
+            ?: return null
+        if (!intent.hasExtra(EXTRA_AUTOMATION_GENERATION)) return null
+        val generation = intent.getLongExtra(EXTRA_AUTOMATION_GENERATION, Long.MIN_VALUE)
+        if (generation < 0L) return null
+        return AutomationProjectionOwner(source, generation)
     }
 
     private fun beginStartSession(
@@ -436,7 +672,12 @@ class ProjectionService : Service() {
             config = webRtcConfig,
             microphoneSource = newMicrophoneSource,
             audioStreams = newAudioPipeline.streamHub,
-            controlRequestHandler = { request -> newServer.dispatchWebRtcControl(request) },
+            controlRequestHandler = { ownerKey, request ->
+                newServer.dispatchWebRtcControl(ownerKey, request)
+            },
+            preferredMainDeviceId = browserTrustStore::preferredMainDeviceId,
+            claimMainDeviceIfUnset = ::claimPreferredMainBrowserDeviceIfUnset,
+            sessionAdmissionLock = browserSessionAdmissionLock,
         ).let { candidate ->
             candidate.start().fold(
                 onSuccess = { candidate },
@@ -454,12 +695,12 @@ class ProjectionService : Service() {
             newWebRtcController ?: BrowserWebRtcSignaling.Unavailable,
         )
         val cloudRelayConfig = CloudBrowserRelayConfig.configuredOrNull()
-        val browserTrustStore = BrowserTrustStore(applicationContext)
         var newLanStunServer: LanStunServer? = null
         newServer = BrowserProbeServer(
             context = applicationContext,
             pairingCode = pairingCode,
             browserTrustStore = browserTrustStore,
+            pairingCodeOperationLock = browserSessionAdmissionLock,
             frameStore = newFrameStore,
             snapshot = { coordinator?.snapshot() ?: newCoordinator.snapshot() },
             androidAutoConnection = { SessionController.state.value.androidAutoConnection },
@@ -643,7 +884,10 @@ class ProjectionService : Service() {
             viewportControl = newViewportControl
             sessionPreflight = preflight
             sessionBenchConfirmed = benchConfirmed
+            lastProjectionMediaAcceptedElapsedRealtime = 0L
+            lastProjectionReconfigurationCommitElapsedRealtime = 0L
             activeProjectionConfig = projectionConfig
+            connectBrowserFrameSink()
             attachWebRtcPreviewToCurrentSurface()
             newCloudRelayClient?.let { relay ->
                 runCatching { relay.start() }
@@ -669,6 +913,7 @@ class ProjectionService : Service() {
             )
             SessionController.ready(
                 url = initialBrowserUrl,
+                localUrl = localUrl,
                 pairingCode = newServer.publishedPairingCode(),
                 nativeStatus = preflight.summary,
                 cloudPairingRegistrationStatus =
@@ -690,7 +935,8 @@ class ProjectionService : Service() {
                 fields = mapOf(
                     "endpoint_mode" to preflight.endpointMode.name,
                     "profile" to activeProfile.name,
-                    "webrtc_available" to (newWebRtcController != null),
+                    "webrtc_available" to
+                        (newWebRtcController?.capabilities()?.available == true),
                     "browser_transport" to if (newCloudRelayClient == null) "lan_http" else "cloud_wss",
                     "lan_stun_available" to (newLanStunServer != null),
                 ),
@@ -771,11 +1017,19 @@ class ProjectionService : Service() {
                     localUrl = localUrl,
                     cloudAvailability = availability,
                 )
-                if (SessionController.state.value.browserUrl != displayedUrl) {
-                    SessionController.updateBrowserUrl(displayedUrl)
-                    updateNotification(
-                        getString(R.string.browser_ready_notification, displayedUrl),
+                val currentBrowserState = SessionController.state.value
+                if (currentBrowserState.browserUrl != displayedUrl ||
+                    currentBrowserState.localBrowserUrl != localUrl
+                ) {
+                    SessionController.updateBrowserAddresses(
+                        browserUrl = displayedUrl,
+                        localBrowserUrl = localUrl,
                     )
+                    if (currentBrowserState.browserUrl != displayedUrl) {
+                        updateNotification(
+                            getString(R.string.browser_ready_notification, displayedUrl),
+                        )
+                    }
                 }
                 delay(
                     when (availability) {
@@ -845,11 +1099,41 @@ class ProjectionService : Service() {
         }
     }
 
+    private fun currentProjectionReconfigurationCooldownDelayMillis(): Long =
+        projectionReconfigurationCooldownDelayMillis(
+            lastMediaAcceptedElapsedRealtime = lastProjectionMediaAcceptedElapsedRealtime,
+            lastCommitElapsedRealtime = lastProjectionReconfigurationCommitElapsedRealtime,
+            nowElapsedRealtime = SystemClock.elapsedRealtime(),
+            minimumIntervalMillis = MIN_PROJECTION_RECONFIGURATION_INTERVAL_MILLIS,
+        )
+
     private suspend fun applyProjectionProfile(
         profile: ProjectionVideoProfile,
         epoch: Long,
-    ): Boolean = projectionReconfigurationMutex.withLock {
-        applyProjectionProfileLocked(profile, epoch)
+    ): Boolean {
+        while (true) {
+            var cooldownDelayMillis = 0L
+            val result: Boolean? = projectionReconfigurationMutex.withLock {
+                val manager = profileControl ?: return@withLock false
+                if (epoch != sessionEpoch) return@withLock false
+                val snapshot = manager.snapshot()
+                if (snapshot.requestedProfile != profile) return@withLock true
+                if (snapshot.activeProfile == profile) {
+                    manager.confirmActive(profile)
+                    return@withLock true
+                }
+                cooldownDelayMillis =
+                    currentProjectionReconfigurationCooldownDelayMillis()
+                if (cooldownDelayMillis > 0L) null else applyProjectionProfileLocked(profile, epoch)
+            }
+            if (result != null) return result
+            Log.i(
+                LOG_TAG,
+                "PROJECTION_RECONFIGURATION_DEFERRED reason=PROFILE_CHANGE " +
+                    "target=${profile.profileId} delayMs=$cooldownDelayMillis",
+            )
+            delay(cooldownDelayMillis)
+        }
     }
 
     private suspend fun applyProjectionProfileLocked(
@@ -860,7 +1144,9 @@ class ProjectionService : Service() {
         val preflight = sessionPreflight ?: return false
         val signaling = webRtcSignaling ?: return false
         if (epoch != sessionEpoch) return false
-        if (manager.snapshot().activeProfile == profile) {
+        val snapshot = manager.snapshot()
+        if (snapshot.requestedProfile != profile) return true
+        if (snapshot.activeProfile == profile) {
             manager.confirmActive(profile)
             return true
         }
@@ -898,10 +1184,13 @@ class ProjectionService : Service() {
                     ),
                     microphoneSource = browserMicrophoneSource,
                     audioStreams = browserAudioPipeline?.streamHub,
-                    controlRequestHandler = { request ->
+                    controlRequestHandler = { ownerKey, request ->
                         checkNotNull(server) { "Browser relay gateway is unavailable" }
-                            .dispatchWebRtcControl(request)
+                            .dispatchWebRtcControl(ownerKey, request)
                     },
+                    preferredMainDeviceId = browserTrustStore::preferredMainDeviceId,
+                    claimMainDeviceIfUnset = ::claimPreferredMainBrowserDeviceIfUnset,
+                    sessionAdmissionLock = browserSessionAdmissionLock,
                 )
                 candidateForCancellation = candidate
                 candidate.start().fold(
@@ -930,8 +1219,9 @@ class ProjectionService : Service() {
         }
         if (
             !ProjectionViewportTransportReplacementPolicy.canCommit(
-                currentWebRtcAvailable = webRtcController != null,
-                replacementWebRtcAvailable = replacementController != null,
+                currentWebRtcAvailable = webRtcController?.capabilities()?.available == true,
+                replacementWebRtcAvailable =
+                    replacementController?.capabilities()?.available == true,
             )
         ) {
             replacementController?.close()
@@ -968,13 +1258,23 @@ class ProjectionService : Service() {
             replacementCoordinator.stop()
             return epoch == sessionEpoch
         }
+        if (currentProjectionReconfigurationCooldownDelayMillis() > 0L) {
+            // The old AA runtime may have completed a reconnect while encoder probing was in
+            // flight. Preserve the latest request, discard the prepared candidate, and let the
+            // outer admission loop wait without holding the shared reconfiguration mutex.
+            replacementController?.close()
+            replacementCoordinator.stop()
+            pendingProjectionProfile = profile
+            return true
+        }
 
         // Commit order: stop AA input/decoder first, install the new geometry and optional WebRTC
         // source, then perform a fresh ServiceDiscovery exchange. The HTTP server and pairing
-        // survive. If no non-H.264 encoder exists, AA continues on the app Surface/JPEG fallback.
+        // survive. If no browser encoder exists, AA continues on the service-owned JPEG decoder.
         val previousRuntime = projectionRuntime
         projectionRuntime = null
         projectionDecoderController = null
+        projectionDecoderFrameCapture = null
         val previousProjectionJob = projectionJob
         projectionJob = null
         try {
@@ -986,10 +1286,27 @@ class ProjectionService : Service() {
             throw error
         }
 
-        val previousController = webRtcController
-        previousController?.detachPreviewSurface()
-        signaling.replace(replacementController ?: BrowserWebRtcSignaling.Unavailable)
-        webRtcController = replacementController
+        val controllerCommitted = replaceBrowserSessionControllerAtomically(
+            lock = browserSessionAdmissionLock,
+            current = { webRtcController },
+            replacement = replacementController,
+            replaceDelegate = { expected, replacement ->
+                signaling.replaceIfCurrent(
+                    expected ?: BrowserWebRtcSignaling.Unavailable,
+                    replacement ?: BrowserWebRtcSignaling.Unavailable,
+                )
+            },
+            updateCurrent = { webRtcController = it },
+            retire = { previous ->
+                previous.detachPreviewSurface()
+                previous.close()
+            },
+        )
+        if (!controllerCommitted) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            return false
+        }
         activeProjectionConfig = replacementConfig
 
         replaceBrowserFrameCapture(profile, replacementViewport)
@@ -997,20 +1314,22 @@ class ProjectionService : Service() {
         coordinator?.stop()
         coordinator = replacementCoordinator
         attachWebRtcPreviewToCurrentSurface()
-        previousController?.close()
 
         manager.confirmActive(profile)
         viewportControl?.activateProfile(profile, replacementLayout)
+        lastProjectionReconfigurationCommitElapsedRealtime = SystemClock.elapsedRealtime()
         launchProjection(
             preflight = preflight,
             benchConfirmed = sessionBenchConfirmed,
             projectionConfig = replacementConfig,
             epoch = epoch,
         )
+        val replacementWebRtcAvailable =
+            replacementController?.capabilities()?.available == true
         publishNativeStatus(
             nativeStatus = "${preflight.summary} • AASDK PROFILE_APPLIED ${profile.profileId} " +
-                "RECONNECTING WEBRTC=${if (replacementController == null) "UNAVAILABLE" else "READY"}",
-            message = if (replacementController == null) {
+                "RECONNECTING WEBRTC=${if (replacementWebRtcAvailable) "READY" else "UNAVAILABLE"}",
+            message = if (!replacementWebRtcAvailable) {
                 getString(
                     R.string.projection_profile_applied_jpeg_fallback,
                     replacementViewport.width,
@@ -1065,26 +1384,55 @@ class ProjectionService : Service() {
     private suspend fun applyProjectionViewport(
         layout: ProjectionViewportLayout,
         epoch: Long,
-    ): Boolean = projectionReconfigurationMutex.withLock {
-        val manager = viewportControl ?: return@withLock false
-        val preflight = sessionPreflight ?: return@withLock false
-        if (epoch != sessionEpoch) return@withLock false
+    ): Boolean {
+        while (true) {
+            var cooldownDelayMillis = 0L
+            val result: Boolean? = projectionReconfigurationMutex.withLock {
+                val manager = viewportControl ?: return@withLock false
+                if (epoch != sessionEpoch) return@withLock false
+                val snapshot = manager.snapshot()
+                if (snapshot.requestedLayout != layout) return@withLock true
+                if (snapshot.activeLayout == layout) {
+                    manager.confirmActive(layout)
+                    return@withLock true
+                }
+                cooldownDelayMillis =
+                    currentProjectionReconfigurationCooldownDelayMillis()
+                if (cooldownDelayMillis > 0L) null else applyProjectionViewportLocked(layout, epoch)
+            }
+            if (result != null) return result
+            Log.i(
+                LOG_TAG,
+                "PROJECTION_RECONFIGURATION_DEFERRED reason=VIEWPORT_CHANGE " +
+                    "delayMs=$cooldownDelayMillis",
+            )
+            delay(cooldownDelayMillis)
+        }
+    }
+
+    private suspend fun applyProjectionViewportLocked(
+        layout: ProjectionViewportLayout,
+        epoch: Long,
+    ): Boolean {
+        val manager = viewportControl ?: return false
+        val preflight = sessionPreflight ?: return false
+        if (epoch != sessionEpoch) return false
         val viewportSnapshot = manager.snapshot()
-        if (viewportSnapshot.requestedLayout != layout) return@withLock true
+        if (viewportSnapshot.requestedLayout != layout) return true
         if (viewportSnapshot.activeLayout == layout) {
             manager.confirmActive(layout)
-            return@withLock true
+            return true
         }
 
-        val profileSnapshot = profileControl?.snapshot() ?: return@withLock false
+        val profileSnapshot = profileControl?.snapshot() ?: return false
         if (profileSnapshot.activationState !=
             com.pebble.tecomheadunit.openauto.ProjectionProfileActivationState.ACTIVE
         ) {
-            return@withLock false
+            return false
         }
         val activeProfile = profileSnapshot.activeProfile
         if (!activeProfile.supportsEncodedViewport(layout.encodedViewport)) {
-            return@withLock false
+            return false
         }
         check(
             layout.densityDpi == activeProfile.effectiveDensityDpi(
@@ -1117,10 +1465,13 @@ class ProjectionService : Service() {
                         ),
                         microphoneSource = browserMicrophoneSource,
                         audioStreams = browserAudioPipeline?.streamHub,
-                        controlRequestHandler = { request ->
+                        controlRequestHandler = { ownerKey, request ->
                             checkNotNull(server) { "Browser relay gateway is unavailable" }
-                                .dispatchWebRtcControl(request)
+                                .dispatchWebRtcControl(ownerKey, request)
                         },
+                        preferredMainDeviceId = browserTrustStore::preferredMainDeviceId,
+                        claimMainDeviceIfUnset = ::claimPreferredMainBrowserDeviceIfUnset,
+                        sessionAdmissionLock = browserSessionAdmissionLock,
                     )
                     candidateForCancellation = candidate
                     candidate.start().fold(
@@ -1152,21 +1503,23 @@ class ProjectionService : Service() {
         if (
             encodedViewportChanged &&
             !ProjectionViewportTransportReplacementPolicy.canCommit(
-                currentWebRtcAvailable = webRtcController != null,
-                replacementWebRtcAvailable = replacementController != null,
+                currentWebRtcAvailable = webRtcController?.capabilities()?.available == true,
+                replacementWebRtcAvailable =
+                    replacementController?.capabilities()?.available == true,
             )
         ) {
+            replacementController?.close()
             Log.w(
                 WEBRTC_LOG_TAG,
                 "VIEWPORT_APPLY_REJECTED reason=WEBRTC_REPLACEMENT_UNAVAILABLE " +
                     "size=${layout.encodedViewport.width}x${layout.encodedViewport.height}",
             )
-            return@withLock false
+            return false
         }
         val replacementSignaling = if (encodedViewportChanged) {
             webRtcSignaling ?: run {
                 replacementController?.close()
-                return@withLock false
+                return false
             }
         } else {
             null
@@ -1186,7 +1539,7 @@ class ProjectionService : Service() {
                 nativeStatus = "${preflight.summary} — AASDK VIEWPORT_APPLY_FAILED reason=SAFETY_GATE",
                 message = getString(R.string.projection_viewport_safety_cancelled),
             )
-            return@withLock false
+            return false
         }
 
         // Encoder probing and coordinator preparation suspend. A newer resize can win meanwhile;
@@ -1194,7 +1547,13 @@ class ProjectionService : Service() {
         if (epoch != sessionEpoch || manager.snapshot().requestedLayout != layout) {
             replacementController?.close()
             replacementCoordinator.stop()
-            return@withLock epoch == sessionEpoch
+            return epoch == sessionEpoch
+        }
+        if (currentProjectionReconfigurationCooldownDelayMillis() > 0L) {
+            replacementController?.close()
+            replacementCoordinator.stop()
+            pendingProjectionViewport = layout
+            return true
         }
 
         publishNativeStatus(
@@ -1207,6 +1566,7 @@ class ProjectionService : Service() {
         val previousRuntime = projectionRuntime
         projectionRuntime = null
         projectionDecoderController = null
+        projectionDecoderFrameCapture = null
         val previousProjectionJob = projectionJob
         projectionJob = null
         try {
@@ -1222,25 +1582,40 @@ class ProjectionService : Service() {
         if (epoch != sessionEpoch) {
             replacementController?.close()
             replacementCoordinator.stop()
-            return@withLock false
+            return false
         }
 
-        val previousController = if (encodedViewportChanged) webRtcController else null
         if (encodedViewportChanged) {
-            previousController?.detachPreviewSurface()
-            checkNotNull(replacementSignaling).replace(
-                replacementController ?: BrowserWebRtcSignaling.Unavailable,
+            val controllerCommitted = replaceBrowserSessionControllerAtomically(
+                lock = browserSessionAdmissionLock,
+                current = { webRtcController },
+                replacement = replacementController,
+                replaceDelegate = { expected, replacement ->
+                    checkNotNull(replacementSignaling).replaceIfCurrent(
+                        expected ?: BrowserWebRtcSignaling.Unavailable,
+                        replacement ?: BrowserWebRtcSignaling.Unavailable,
+                    )
+                },
+                updateCurrent = { webRtcController = it },
+                retire = { previous ->
+                    previous.detachPreviewSurface()
+                    previous.close()
+                },
             )
-            webRtcController = replacementController
+            if (!controllerCommitted) {
+                replacementController?.close()
+                replacementCoordinator.stop()
+                return false
+            }
             replaceBrowserFrameCapture(activeProfile, layout.encodedViewport)
         }
         coordinator?.stop()
         coordinator = replacementCoordinator
         activeProjectionConfig = replacementConfig
         manager.confirmTransportActive(layout)
+        lastProjectionReconfigurationCommitElapsedRealtime = SystemClock.elapsedRealtime()
         if (encodedViewportChanged) {
             attachWebRtcPreviewToCurrentSurface()
-            previousController?.close()
         }
         launchProjection(
             preflight = preflight,
@@ -1269,7 +1644,7 @@ class ProjectionService : Service() {
                 },
             message = getString(R.string.projection_viewport_applied),
         )
-        true
+        return true
     }
 
     private fun launchProjection(
@@ -1291,10 +1666,27 @@ class ProjectionService : Service() {
             return
         }
 
+        connectBrowserFrameSink()
         val decoderController = webRtcController
-        val videoSurfaceProvider: () -> Surface? = decoderController
-            ?.let { controller -> { controller.decoderSurface() } }
-            ?: ::currentProjectionSurface
+        val nativeDecoderSurface = decoderController
+            ?.decoderSurface()
+            ?.takeIf(Surface::isValid)
+        val fallbackCapture = browserFrameCapture
+        val fallbackDecoderSurface = fallbackCapture
+            ?.decoderSurface
+            ?.takeIf(Surface::isValid)
+        val decoderSurface = nativeDecoderSurface ?: fallbackDecoderSurface
+        if (decoderSurface == null) {
+            Log.e(LOG_TAG, "VIDEO_DECODER_SURFACE_UNAVAILABLE owner=SERVICE")
+            publishNativeStatus("${preflight.summary} ??AASDK DECODER_SURFACE_UNAVAILABLE")
+            return
+        }
+        // Freeze one service-owned target for this runtime. MediaCodec cannot switch Surface
+        // identity while configured, so an invalid native target must stop instead of silently
+        // rebinding to the fallback target.
+        val videoSurfaceProvider: () -> Surface? = {
+            decoderSurface.takeIf(Surface::isValid)
+        }
         val runtime = AasdkProjectionRuntime(
             videoSink = MediaCodecVideoSink(videoSurfaceProvider),
             audioSink = browserAudioPipeline,
@@ -1319,49 +1711,93 @@ class ProjectionService : Service() {
             },
         )
         latestNightModeDecision = runtime.currentNightModeDecision()
-        projectionDecoderController = decoderController
+        projectionDecoderController = decoderController.takeIf { nativeDecoderSurface != null }
+        projectionDecoderFrameCapture = fallbackCapture.takeIf { nativeDecoderSurface == null }
         projectionRuntime = runtime
-        attachBrowserCaptureToCurrentSurface()
-        var serviceDiscoveryResponseSent = false
-        var videoMediaAccepted = false
+        attachWebRtcPreviewToCurrentSurface()
+        val portraitViewport =
+            projectionConfig.viewport.height > projectionConfig.viewport.width
+        val mediaAttemptState = ProjectionMediaAttemptState()
+        var portraitFallbackAttemptGeneration = -1L
+        fun triggerPortraitProtocolFallback(
+            reason: String,
+            expectedAttemptGeneration: Long,
+        ) {
+            if (
+                portraitFallbackAttemptGeneration == expectedAttemptGeneration ||
+                !portraitViewport ||
+                !mediaAttemptState.isAwaitingFirstVideo(expectedAttemptGeneration) ||
+                epoch != sessionEpoch ||
+                projectionRuntime !== runtime ||
+                activeProjectionConfig != projectionConfig
+            ) {
+                return
+            }
+            portraitFallbackAttemptGeneration = expectedAttemptGeneration
+            val watchdogJob = portraitMediaAcceptanceWatchdogJob
+            portraitMediaAcceptanceWatchdogJob = null
+            Log.w(
+                LOG_TAG,
+                "PORTRAIT_PROTOCOL_FALLBACK reason=$reason " +
+                    "size=${projectionConfig.viewport.width}x${projectionConfig.viewport.height}",
+            )
+            viewportControl?.disablePortraitEncodedViewportsForSession()
+            // Interrupt the failed read/reconnect loop. The idempotent viewport fallback
+            // scheduler starts a landscape+margin session after the shared cooldown admits it.
+            runtime.close()
+            watchdogJob?.cancel()
+        }
         projectionJob = serviceScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     runtime.runWithReconnect(config) { status ->
                         withContext(Dispatchers.Main.immediate) {
                             if (epoch == sessionEpoch && projectionRuntime === runtime) {
-                                if (status.startsWith(VIDEO_MEDIA_ACCEPTED_STATUS)) {
-                                    videoMediaAccepted = true
+                                if (status == CONNECTING_STATUS) {
+                                    mediaAttemptState.beginAttempt()
+                                    portraitMediaAcceptanceWatchdogJob?.cancel()
+                                    portraitMediaAcceptanceWatchdogJob = null
+                                } else if (status.startsWith(VIDEO_MEDIA_ACCEPTED_STATUS)) {
+                                    if (mediaAttemptState.markVideoMediaAccepted()) {
+                                        lastProjectionMediaAcceptedElapsedRealtime =
+                                            SystemClock.elapsedRealtime()
+                                    }
                                     portraitMediaAcceptanceWatchdogJob?.cancel()
                                     portraitMediaAcceptanceWatchdogJob = null
                                 } else if (
                                     status.startsWith(SERVICE_DISCOVERY_RESPONSE_SENT_STATUS) &&
-                                    projectionConfig.viewport.height >
-                                    projectionConfig.viewport.width &&
+                                    portraitViewport &&
                                     viewportControl
                                         ?.portraitEncodedViewportsEnabledForSession() == true &&
                                     portraitMediaAcceptanceWatchdogJob == null
                                 ) {
-                                    serviceDiscoveryResponseSent = true
+                                    val watchdogAttemptGeneration =
+                                        mediaAttemptState.markServiceDiscoveryResponseSent()
                                     portraitMediaAcceptanceWatchdogJob = serviceScope.launch {
                                         delay(PORTRAIT_MEDIA_ACCEPTANCE_TIMEOUT_MILLIS)
-                                        if (
-                                            epoch == sessionEpoch &&
-                                            projectionRuntime === runtime &&
-                                            activeProjectionConfig == projectionConfig
-                                        ) {
-                                            portraitMediaAcceptanceWatchdogJob = null
-                                            Log.w(
-                                                LOG_TAG,
-                                                "PORTRAIT_PROTOCOL_FALLBACK " +
-                                                    "reason=VIDEO_MEDIA_ACCEPT_TIMEOUT " +
-                                                    "size=${projectionConfig.viewport.width}x" +
-                                                    projectionConfig.viewport.height,
-                                            )
-                                            viewportControl
-                                                ?.disablePortraitEncodedViewportsForSession()
-                                        }
+                                        triggerPortraitProtocolFallback(
+                                            "VIDEO_MEDIA_ACCEPT_TIMEOUT",
+                                            watchdogAttemptGeneration,
+                                        )
                                     }
+                                }
+                                if (
+                                    shouldTriggerPortraitPreVideoFallback(
+                                        portraitViewport = portraitViewport,
+                                        serviceDiscoveryResponseSent =
+                                        mediaAttemptState.serviceDiscoveryResponseSent,
+                                        videoMediaAccepted = mediaAttemptState.videoMediaAccepted,
+                                        runtimeStatus = status,
+                                    )
+                                ) {
+                                    triggerPortraitProtocolFallback(
+                                        if (status.startsWith("DISCONNECTED reason=")) {
+                                            "DISCONNECTED_BEFORE_VIDEO"
+                                        } else {
+                                            "VIDEO_STREAM_STOPPED_BEFORE_VIDEO"
+                                        },
+                                        mediaAttemptState.generation,
+                                    )
                                 }
                                 publishNativeStatus(
                                     "${preflight.summary} • AASDK ${endpointAwareStatus(preflight, status)}",
@@ -1374,20 +1810,10 @@ class ProjectionService : Service() {
                 throw error
             } catch (error: Throwable) {
                 if (epoch == sessionEpoch && projectionRuntime === runtime) {
-                    if (
-                        projectionConfig.viewport.height > projectionConfig.viewport.width &&
-                        serviceDiscoveryResponseSent &&
-                        !videoMediaAccepted
-                    ) {
-                        portraitMediaAcceptanceWatchdogJob?.cancel()
-                        portraitMediaAcceptanceWatchdogJob = null
-                        Log.w(
-                            LOG_TAG,
-                            "PORTRAIT_PROTOCOL_FALLBACK reason=TERMINAL_BEFORE_VIDEO " +
-                                error.javaClass.simpleName,
-                        )
-                        viewportControl?.disablePortraitEncodedViewportsForSession()
-                    }
+                    triggerPortraitProtocolFallback(
+                        "TERMINAL_BEFORE_VIDEO_${error.javaClass.simpleName}",
+                        mediaAttemptState.generation,
+                    )
                     AppDiagnostics.recordFailure(
                         DiagnosticEventCode.SESSION_FAILED,
                         error,
@@ -1410,9 +1836,11 @@ class ProjectionService : Service() {
                     portraitMediaAcceptanceWatchdogJob = null
                     projectionRuntime = null
                     projectionDecoderController = null
+                    projectionDecoderFrameCapture = null
                     projectionJob = null
                     webRtcController?.detachPreviewSurface()
-                    detachBrowserCaptureFromCurrentSurface()
+                    synchronized(projectionSurfaceLock) { projectionSurfaceGeneration }
+                        .let { generation -> browserFrameCapture?.detach(generation) }
                 }
             }
         }
@@ -1476,15 +1904,7 @@ class ProjectionService : Service() {
                     "size=${activeProjectionConfig.viewport.width}x" +
                     "${activeProjectionConfig.viewport.height}",
             )
-            webRtcController?.attachPreviewSurface(surface)?.onFailure { error ->
-                Log.w(
-                    WEBRTC_LOG_TAG,
-                    "WEBRTC_PREVIEW_ATTACH_FAILED ${error.javaClass.simpleName}: ${error.message}",
-                )
-            }
-            if (projectionRuntime != null) {
-                browserFrameCapture?.attach(surface, generation)
-            }
+            attachWebRtcPreviewToCurrentSurface()
         }
         return attached
     }
@@ -1500,9 +1920,8 @@ class ProjectionService : Service() {
         }
         if (!detached) return
 
-        webRtcController?.detachPreviewSurface()
+        webRtcController?.detachPreviewSurface(generation)
         browserFrameCapture?.detach(generation)
-        browserFrameStore?.clear()
         AppDiagnostics.record(
             DiagnosticEventCode.PROJECTION_SURFACE_CHANGED,
             fields = mapOf("state" to "detached"),
@@ -1513,11 +1932,15 @@ class ProjectionService : Service() {
         val detachAction = ProjectionSurfaceLossPolicy.decide(
             runtimeUsesNativeWebRtcDecoder = controller != null,
             nativeWebRtcDecoderSurfaceValid = controller?.decoderSurface()?.isValid == true,
+            fallbackDecoderSurfaceValid = projectionDecoderFrameCapture
+                ?.decoderSurface
+                ?.isValid == true,
         )
         if (detachAction == ProjectionSurfaceDetachAction.KEEP_RUNTIME) {
-            // MediaCodec renders into the controller-owned SurfaceTexture. Only
-            // the Activity preview and its PixelCopy fallback disappeared.
-            Log.i(LOG_TAG, "VIDEO_SURFACE_BACKGROUND_CONTINUE decoder=WEBRTC generation=$generation")
+            // MediaCodec and browser capture use a service-owned SurfaceTexture. Only the
+            // Activity preview disappeared, so AA and browser frame counters keep advancing.
+            val owner = if (controller != null) "WEBRTC" else "JPEG_FALLBACK"
+            Log.i(LOG_TAG, "VIDEO_SURFACE_BACKGROUND_CONTINUE decoder=$owner generation=$generation")
         } else {
             stopProjectionForSurfaceLoss()
         }
@@ -1530,47 +1953,57 @@ class ProjectionService : Service() {
         detachProjectionSurface(generation)
     }
 
-    private fun currentProjectionSurface(): Surface? = synchronized(projectionSurfaceLock) {
-        projectionSurface?.takeIf(Surface::isValid)
-    }
-
-    private fun attachBrowserCaptureToCurrentSurface() {
-        val target = synchronized(projectionSurfaceLock) {
-            projectionSurface
-                ?.takeIf(Surface::isValid)
-                ?.let { it to projectionSurfaceGeneration }
-        } ?: return
-        browserFrameCapture?.attach(target.first, target.second)
-    }
-
     private fun replaceBrowserFrameCapture(
         profile: ProjectionVideoProfile,
         viewport: VideoViewport = VideoViewport(profile.width, profile.height),
     ) {
         val frameStore = browserFrameStore ?: return
-        browserFrameCapture?.close()
-        browserFrameCapture = createBrowserFrameCapture(frameStore, profile, viewport)
-        attachBrowserCaptureToCurrentSurface()
+        // A controller swap happens before the geometry-specific capture replacement. Keep the
+        // old capture connected if replacement allocation fails, then commit the new owner.
+        connectBrowserFrameSink()
+        val replacement = createBrowserFrameCapture(frameStore, profile, viewport)
+        webRtcController?.setBrowserFrameSink(null)
+        val previous = browserFrameCapture
+        browserFrameCapture = replacement
+        connectBrowserFrameSink()
+        previous?.close()
     }
 
     private fun attachWebRtcPreviewToCurrentSurface() {
         val target = synchronized(projectionSurfaceLock) {
-            projectionSurface?.takeIf(Surface::isValid)
+            val surface = projectionSurface?.takeIf(Surface::isValid) ?: return@synchronized null
+            surface to projectionSurfaceGeneration
         } ?: return
-        webRtcController?.attachPreviewSurface(target)?.onFailure { error ->
-            Log.w(
-                WEBRTC_LOG_TAG,
-                "WEBRTC_PREVIEW_ATTACH_FAILED ${error.javaClass.simpleName}: ${error.message}",
-            )
+        val controller = if (projectionRuntime != null) {
+            projectionDecoderController
+        } else {
+            webRtcController?.takeIf { it.decoderSurface()?.isValid == true }
+        }
+        if (controller != null) {
+            // Owner switching is not an Activity stale-callback check. Unconditionally retire the
+            // inactive producer before the selected owner connects the native window target.
+            browserFrameCapture?.detach()
+            controller.attachPreviewSurface(target.first, target.second).onFailure { error ->
+                Log.w(
+                    WEBRTC_LOG_TAG,
+                    "WEBRTC_PREVIEW_ATTACH_FAILED ${error.javaClass.simpleName}: ${error.message}",
+                )
+            }
+        } else {
+            webRtcController?.detachPreviewSurface()
+            runCatching { browserFrameCapture?.attach(target.first, target.second) }
+                .onFailure { error ->
+                    Log.w(
+                        WEBRTC_LOG_TAG,
+                        "JPEG_FALLBACK_PREVIEW_ATTACH_FAILED " +
+                            "${error.javaClass.simpleName}: ${error.message}",
+                    )
+                }
         }
     }
 
-    private fun detachBrowserCaptureFromCurrentSurface() {
-        val generation = synchronized(projectionSurfaceLock) {
-            if (projectionSurface == null) null else projectionSurfaceGeneration
-        }
-        if (generation != null) browserFrameCapture?.detach(generation)
-        browserFrameStore?.clear()
+    private fun connectBrowserFrameSink() {
+        webRtcController?.setBrowserFrameSink(browserFrameCapture)
     }
 
     private fun stopProjectionForSurfaceLoss() {
@@ -1579,6 +2012,7 @@ class ProjectionService : Service() {
         portraitMediaAcceptanceWatchdogJob = null
         projectionRuntime = null
         projectionDecoderController = null
+        projectionDecoderFrameCapture = null
         val activeJob = projectionJob
         projectionJob = null
 
@@ -1595,6 +2029,7 @@ class ProjectionService : Service() {
 
     private fun stopSession(message: String) {
         if (stopJob?.isActive == true) return
+        ProjectionAutomationSessionOwnership.clear()
         AppDiagnostics.record(
             DiagnosticEventCode.SESSION_STOPPED,
             fields = mapOf("reason" to "user_or_service_request"),
@@ -1631,6 +2066,8 @@ class ProjectionService : Service() {
         viewportControl = null
         sessionPreflight = null
         sessionBenchConfirmed = false
+        lastProjectionMediaAcceptedElapsedRealtime = 0L
+        lastProjectionReconfigurationCommitElapsedRealtime = 0L
 
         coordinator?.stop()
         coordinator = null
@@ -1638,6 +2075,7 @@ class ProjectionService : Service() {
         val runtime = projectionRuntime
         projectionRuntime = null
         projectionDecoderController = null
+        projectionDecoderFrameCapture = null
         runtime?.close()
 
         val activeProjectionJob = projectionJob
@@ -1697,6 +2135,7 @@ class ProjectionService : Service() {
             fields = mapOf("session_phase" to phase.name),
         )
         releaseResources()
+        ProjectionAutomationSessionOwnership.clear()
         synchronized(projectionSurfaceLock) {
             projectionSurface = null
             projectionSurfaceGeneration = NO_SURFACE_GENERATION
@@ -1927,8 +2366,12 @@ class ProjectionService : Service() {
     companion object {
         private const val ACTION_START = "com.pebble.tecomheadunit.action.START"
         private const val ACTION_STOP = "com.pebble.tecomheadunit.action.STOP"
+        private const val ACTION_STOP_IF_AUTOMATION_OWNER =
+            "com.pebble.tecomheadunit.action.STOP_IF_AUTOMATION_OWNER"
         private const val EXTRA_BENCH_CONFIRMED = "bench_confirmed"
         private const val EXTRA_START_CANCELLATION_GENERATION = "start_cancellation_generation"
+        private const val EXTRA_AUTOMATION_SOURCE = "automation_source"
+        private const val EXTRA_AUTOMATION_GENERATION = "automation_generation"
         private const val CHANNEL_ID = "projection_session"
         private const val CONNECTION_ALERT_CHANNEL_ID = "android_auto_connection_alert"
         private const val NOTIFICATION_ID = 5277
@@ -1938,15 +2381,17 @@ class ProjectionService : Service() {
         private const val CLOUD_RELAY_STATE_LOG_TAG = "NavOnWebCloudState"
         private const val NO_SURFACE_GENERATION = 0L
         private const val VIEWPORT_APPLY_SETTLE_MILLIS = 850L
-        private const val PORTRAIT_MEDIA_ACCEPTANCE_TIMEOUT_MILLIS = 15_000L
+        private const val MIN_PROJECTION_RECONFIGURATION_INTERVAL_MILLIS = 10_000L
+        private const val PORTRAIT_MEDIA_ACCEPTANCE_TIMEOUT_MILLIS = 5_000L
+        private const val CONNECTING_STATUS = "CONNECTING"
         private const val VIDEO_MEDIA_ACCEPTED_STATUS = "VIDEO_MEDIA_ACCEPTED"
         private const val SERVICE_DISCOVERY_RESPONSE_SENT_STATUS =
             "SERVICE_DISCOVERY_RESPONSE_SENT"
         private const val DIAGNOSTIC_HEARTBEAT_MILLIS = 60_000L
         private const val NOTICE_REFRESH_INTERVAL_MILLIS = 15L * 60L * 1_000L
         private const val CLOUD_BROWSER_INITIAL_RETRY_MILLIS = 1_500L
-        private const val CLOUD_BROWSER_REACHABLE_CHECK_MILLIS = 30_000L
-        private const val CLOUD_BROWSER_FALLBACK_CHECK_MILLIS = 10_000L
+        private const val CLOUD_BROWSER_REACHABLE_CHECK_MILLIS = 5_000L
+        private const val CLOUD_BROWSER_FALLBACK_CHECK_MILLIS = 5_000L
 
         fun start(
             context: Context,
@@ -1962,8 +2407,39 @@ class ProjectionService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
+        internal fun startForAutomation(
+            context: Context,
+            benchConfirmed: Boolean,
+            startCancellationGeneration: Long,
+            owner: AutomationProjectionOwner,
+        ) {
+            val intent = Intent(context, ProjectionService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_BENCH_CONFIRMED, benchConfirmed)
+                .putExtra(EXTRA_START_CANCELLATION_GENERATION, startCancellationGeneration)
+                .putExtra(EXTRA_AUTOMATION_SOURCE, owner.source.name)
+                .putExtra(EXTRA_AUTOMATION_GENERATION, owner.generation)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
         fun stop(context: Context) {
             context.startService(stopIntent(context))
+        }
+
+        internal fun stopIfStartedByAutomation(
+            context: Context,
+            owner: AutomationProjectionOwner,
+        ): Boolean {
+            if (!ProjectionAutomationSessionOwnership.matches(owner)) return false
+            return runCatching {
+                context.startService(
+                    Intent(context, ProjectionService::class.java)
+                        .setAction(ACTION_STOP_IF_AUTOMATION_OWNER)
+                        .putExtra(EXTRA_AUTOMATION_SOURCE, owner.source.name)
+                        .putExtra(EXTRA_AUTOMATION_GENERATION, owner.generation),
+                )
+                true
+            }.getOrDefault(false)
         }
 
         private fun stopIntent(context: Context): Intent =

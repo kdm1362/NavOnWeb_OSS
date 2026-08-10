@@ -47,7 +47,7 @@ class PairingCodeFormattingTest {
     fun lanCodeRemainsVisibleWithoutCloudReadiness() {
         assertTrue(
             shouldDisplayPairingCode(
-                browserUrl = "http://192.168.1.20:8787",
+                browserUrl = "http://192.168.50.20:8787",
                 pairingCode = "12345678",
                 cloudPairingRegistrationStatus = CloudPairingRegistrationStatus.RETRY,
             ),

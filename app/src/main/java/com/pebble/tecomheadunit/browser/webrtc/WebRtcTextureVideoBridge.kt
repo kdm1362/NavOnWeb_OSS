@@ -4,6 +4,8 @@
 package com.pebble.tecomheadunit.browser.webrtc
 
 import android.view.Surface
+import com.pebble.tecomheadunit.browser.PreviewRendererBinding
+import com.pebble.tecomheadunit.browser.createInitializedPreviewRenderer
 import java.io.Closeable
 import org.webrtc.CapturerObserver
 import org.webrtc.EglBase
@@ -35,7 +37,11 @@ class WebRtcTextureVideoBridge internal constructor(
 
     val decoderSurface: Surface
 
-    private var previewRenderer: EglRenderer? = null
+    private val previewBinding = PreviewRendererBinding<Surface, EglRenderer>(
+        sameTarget = { first, second -> first === second },
+        releaseRenderer = EglRenderer::release,
+    )
+    private var auxiliaryFrameSink: VideoSink? = null
     private var closed = false
 
     init {
@@ -51,42 +57,54 @@ class WebRtcTextureVideoBridge internal constructor(
     /** Replaces the raw UI preview target while preserving the WebRTC sender. */
     fun attachPreviewSurface(
         surface: Surface,
+        generation: Long,
         sharedContext: EglBase.Context,
     ) {
+        require(generation >= 0L) { "invalid preview Surface generation" }
         require(surface.isValid) { "preview Surface is invalid" }
-        val replacement = EglRenderer(PREVIEW_RENDERER_NAME).apply {
-            init(sharedContext, EglBase.CONFIG_PLAIN, GlRectDrawer())
-            setFpsReduction(framesPerSecond.toFloat())
-            createEglSurface(surface)
-        }
-        val previous = synchronized(lifecycleLock) {
+        synchronized(lifecycleLock) {
             check(!closed) { "WebRTC texture bridge is closed" }
-            previewRenderer.also { previewRenderer = replacement }
         }
-        previous?.release()
+        previewBinding.attach(surface, generation) {
+            createInitializedPreviewRenderer(
+                allocate = { EglRenderer(PREVIEW_RENDERER_NAME) },
+                initialize = { candidate ->
+                    candidate.init(sharedContext, EglBase.CONFIG_PLAIN, GlRectDrawer())
+                    candidate.setFpsReduction(framesPerSecond.toFloat())
+                    candidate.createEglSurface(surface)
+                },
+                release = EglRenderer::release,
+            )
+        }
     }
 
-    fun detachPreviewSurface() {
-        val previous = synchronized(lifecycleLock) {
-            previewRenderer.also { previewRenderer = null }
+    fun detachPreviewSurface(generation: Long? = null) {
+        previewBinding.detach(generation)
+    }
+
+    /** Installs a service-owned JPEG sink without changing the WebRTC or preview consumers. */
+    fun setAuxiliaryFrameSink(sink: VideoSink?) {
+        synchronized(lifecycleLock) {
+            if (!closed) auxiliaryFrameSink = sink
         }
-        previous?.release()
     }
 
     private fun onTextureFrame(frame: VideoFrame) {
         capturerObserver.onFrameCaptured(frame)
-        synchronized(lifecycleLock) { previewRenderer }?.onFrame(frame)
+        previewBinding.dispatch { renderer -> renderer.onFrame(frame) }
+        val auxiliarySink = synchronized(lifecycleLock) { auxiliaryFrameSink }
+        auxiliarySink?.onFrame(frame)
     }
 
     override fun close() {
-        val renderer = synchronized(lifecycleLock) {
+        synchronized(lifecycleLock) {
             if (closed) return
             closed = true
-            previewRenderer.also { previewRenderer = null }
+            auxiliaryFrameSink = null
         }
         textureHelper.stopListening()
         capturerObserver.onCapturerStopped()
-        renderer?.release()
+        previewBinding.close()
         decoderSurface.release()
         textureHelper.dispose()
     }

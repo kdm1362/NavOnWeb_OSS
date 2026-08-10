@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.pebble.tecomheadunit.BuildConfig
 import com.pebble.tecomheadunit.audio.Pcm16Format
+import com.pebble.tecomheadunit.billing.PremiumAccessGate
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioStreamHub
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioSubscription
 import com.pebble.tecomheadunit.browser.audio.BrowserAudioTrack
@@ -23,6 +24,10 @@ import com.pebble.tecomheadunit.openauto.ProjectionViewportControl
 import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
 import com.pebble.tecomheadunit.openauto.ProjectionViewportSnapshot
 import com.pebble.tecomheadunit.session.BrowserTrustStore
+import com.pebble.tecomheadunit.session.AuthenticatedBrowserDevice
+import com.pebble.tecomheadunit.session.BrowserCredentialIssueResult
+import com.pebble.tecomheadunit.session.BrowserDevicePermission
+import com.pebble.tecomheadunit.session.PairedBrowserMutationResult
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionStatus
 import com.pebble.tecomheadunit.session.AndroidAutoConnectionState
 import com.pebble.tecomheadunit.session.PairingCodeDecision
@@ -59,6 +64,15 @@ internal fun shouldRotateAfterBootstrapConflict(
 ): Boolean = currentPublication != null &&
     (expectedPublication == null || currentPublication == expectedPublication)
 
+/** Shared local/cloud pairing issuance boundary after the one-time code is accepted. */
+internal fun issuePairedBrowserDeviceFromPairingHeaders(
+    browserTrustStore: BrowserTrustStore,
+    headers: Map<String, String>,
+): BrowserCredentialIssueResult = browserTrustStore.pairNewDevice(
+    displayName = headers["x-browser-device-name"],
+    permission = BrowserDevicePermission.CONTROL,
+)
+
 class BrowserProbeServer(
     private val context: Context,
     private val pairingCode: String,
@@ -80,6 +94,10 @@ class BrowserProbeServer(
     private val noticeFeed: () -> BrowserNoticeFeed = { BrowserNoticeFeed.UNAVAILABLE },
     /** A null value closes the public pairing window without revoking trusted browsers. */
     private val onPairingCodePublicationChanged: (PairingCodeLease?) -> Unit = {},
+    private val browserSessionLimitProvider: () -> Int = {
+        browserWebRtcSessionLimit(PremiumAccessGate.isPremium(context.applicationContext))
+    },
+    private val pairingCodeOperationLock: Any = Any(),
 ) : Closeable {
     private data class CoherentProjectionSnapshot(
         val profile: ProjectionProfileSnapshot,
@@ -94,12 +112,15 @@ class BrowserProbeServer(
         initialCode = pairingCode,
         hasStoredBrowserCredential = browserTrustStore.hasStoredCredential(),
     )
-    private val pairingCodeOperationLock = Any()
     private val viewportControllerGate = BrowserViewportControllerGate(SystemClock::elapsedRealtime)
     private val clientSlots = Semaphore(MAX_CLIENTS, true)
     private val frameClientSlots = Semaphore(MAX_FRAME_CLIENTS, true)
     private val audioClientSlots = Semaphore(MAX_AUDIO_CLIENTS, true)
     private val activeClientSockets = ActiveClientSocketRegistry()
+    private val touchPresenceSequence = AtomicLong(0L)
+    private val touchGestureGate = BrowserTouchGestureGate(SystemClock::elapsedRealtime)
+    private val deviceSeenLock = Any()
+    private val lastDeviceSeenRecordMillis = mutableMapOf<String, Long>()
 
     fun start(port: Int = DEFAULT_PORT): Int {
         check(serverSocket == null) { "Server already started" }
@@ -107,7 +128,7 @@ class BrowserProbeServer(
 
         val socket = ServerSocket()
         socket.reuseAddress = true
-        socket.bind(InetSocketAddress("0.0.0.0", port), 8)
+        socket.bind(InetSocketAddress("0.0.0.0", port), MAX_ACCEPT_BACKLOG)
         serverSocket = socket
 
         acceptJob = scope.launch {
@@ -176,6 +197,72 @@ class BrowserProbeServer(
             .code
     }
 
+    fun pairedBrowserDevices(): List<com.pebble.tecomheadunit.session.PairedBrowserDevice> {
+        val liveColors = webRtcSignaling.connectedSessionMetadata()
+            .associate { it.deviceId to it.colorSlot }
+        return browserTrustStore.devices().map { device ->
+            liveColors[device.deviceId]?.let { device.copy(colorSlot = it) } ?: device
+        }
+    }
+
+    fun connectedBrowserDeviceIds(): Set<String> = webRtcSignaling.connectedDeviceIds()
+
+    fun renamePairedBrowserDevice(
+        deviceId: String,
+        displayName: String,
+    ): PairedBrowserMutationResult = synchronized(pairingCodeOperationLock) {
+        browserTrustStore.renameDevice(deviceId, displayName).also { result ->
+            if (result is PairedBrowserMutationResult.Updated) {
+                result.device?.let { renamed ->
+                    webRtcSignaling.updateDeviceDisplayName(deviceId, renamed.displayName)
+                }
+            }
+        }
+    }
+
+    fun updatePairedBrowserAccess(
+        deviceId: String,
+        permission: BrowserDevicePermission,
+    ): PairedBrowserMutationResult = synchronized(pairingCodeOperationLock) {
+        val previous = browserTrustStore.devices()
+            .firstOrNull { it.deviceId == deviceId }
+            ?.permission
+        browserTrustStore.updateAccess(deviceId, permission).also { result ->
+            if (result is PairedBrowserMutationResult.Updated && previous != permission) {
+                webRtcSignaling.closeSessionsForDevice(deviceId)
+                ensurePreferredMainFromLiveSessionLocked()
+            }
+        }
+    }
+
+    fun setPreferredMainBrowserDevice(deviceId: String?): PairedBrowserMutationResult =
+        synchronized(pairingCodeOperationLock) {
+            val result = browserTrustStore.setPreferredMain(deviceId)
+            if (result is PairedBrowserMutationResult.Updated && deviceId == null) {
+                ensurePreferredMainFromLiveSessionLocked() ?: result
+            } else {
+                result
+            }
+        }
+
+    fun removePairedBrowserDevice(
+        deviceId: String,
+    ): com.pebble.tecomheadunit.session.PairedBrowserRemovalResult =
+        synchronized(pairingCodeOperationLock) {
+            browserTrustStore.remove(deviceId).also { result ->
+                if (result is com.pebble.tecomheadunit.session.PairedBrowserRemovalResult.Removed) {
+                    webRtcSignaling.closeSessionsForOwner(result.ownerKey)
+                    ensurePreferredMainFromLiveSessionLocked()
+                }
+            }
+        }
+
+    private fun ensurePreferredMainFromLiveSessionLocked(): PairedBrowserMutationResult? {
+        if (browserTrustStore.preferredMainDeviceId() != null) return null
+        val candidate = webRtcSignaling.oldestInteractiveDeviceId() ?: return null
+        return browserTrustStore.setPreferredMainIfUnset(candidate)
+    }
+
     fun rotatePairingCodeAfterBootstrapConflict(
         expectedPublication: PairingCodeLease? = null,
     ): String? {
@@ -236,15 +323,27 @@ class BrowserProbeServer(
     }
 
     /** Executes post-connect browser control exclusively on the local WebRTC DataChannel. */
-    fun dispatchWebRtcControl(request: BrowserRelayRequest): BrowserRelayResponse {
+    fun dispatchWebRtcControl(request: BrowserRelayRequest): BrowserRelayResponse =
+        dispatchWebRtcControl(expectedOwnerKey = null, request = request)
+
+    /**
+     * The DataChannel owner is authenticated again against the credential inside each RPC. This
+     * prevents one trusted device from copying its credential into another device's live channel.
+     */
+    fun dispatchWebRtcControl(
+        expectedOwnerKey: String?,
+        request: BrowserRelayRequest,
+    ): BrowserRelayResponse {
         val parsed = HttpRequest.fromRelay(request)
             ?: return BrowserRelayResponse(400, JSON_CONTENT_TYPE, ERROR_INVALID_RELAY_REQUEST)
         val output = ByteArrayOutputStream()
+        val authenticated = authenticatedDevice(parsed)
         when {
-            !isAuthorized(parsed) ->
+            authenticated == null ||
+                (expectedOwnerKey != null && authenticated.ownerKey != expectedOwnerKey) ->
                 writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
             parsed.method == "GET" && parsed.path == "/api/status" ->
-                serveStatus(parsed, output)
+                serveStatus(parsed, output, authenticated)
             parsed.method == "GET" && parsed.path == "/api/notices" ->
                 serveNotices(output)
             parsed.method == "GET" && parsed.path == "/api/projection/profile" ->
@@ -363,8 +462,22 @@ class BrowserProbeServer(
         writeResponse(output, 200, "application/javascript; charset=utf-8", body)
     }
 
-    private fun serveStatus(request: HttpRequest, output: OutputStream) {
+    private fun serveStatus(
+        request: HttpRequest,
+        output: OutputStream,
+        authenticated: AuthenticatedBrowserDevice? = authenticatedDevice(request),
+    ) {
+        val device = authenticated ?: run {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        reconcileBrowserSessionPolicy(
+            sessionLimitProvider = browserSessionLimitProvider,
+            preferredMainDeviceId = browserTrustStore::preferredMainDeviceId,
+            reconcile = webRtcSignaling::reconcileSessionLimit,
+        )
         refreshViewportController(request)
+        recordDeviceSeen(device)
         val projection = coherentProjectionSnapshot() ?: run {
             writeResponse(
                 output,
@@ -418,6 +531,8 @@ class BrowserProbeServer(
             append(",\"microphone\":{\"captureRequested\":")
             append(microphoneSource?.isCaptureRequested() == true)
             append('}')
+            append(",\"browserSession\":")
+            append(browserSessionJson(device))
             append('}')
         }.toByteArray(StandardCharsets.UTF_8)
         writeResponse(output, 200, "application/json; charset=utf-8", body)
@@ -564,8 +679,39 @@ class BrowserProbeServer(
         writeResponse(output, 200, "application/json; charset=utf-8", body)
     }
 
-    private fun serveProjectionViewportRequest(request: HttpRequest, output: OutputStream) {
-        val browserCredential = request.headers["x-browser-credential"].orEmpty()
+    private fun serveProjectionViewportRequest(
+        request: HttpRequest,
+        output: OutputStream,
+    ): Unit = synchronized(pairingCodeOperationLock) {
+        val device = authenticatedDevice(request) ?: run {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        if (device.device.permission == BrowserDevicePermission.READ_ONLY) {
+            writeResponse(
+                output,
+                403,
+                JSON_CONTENT_TYPE,
+                "{\"error\":\"read_only_session\"}".toByteArray(),
+            )
+            return
+        }
+        val preferredMain = browserTrustStore.preferredMainDeviceId()
+            ?: webRtcSignaling.oldestInteractiveDeviceId()?.let { candidate ->
+                when (val claim = browserTrustStore.setPreferredMainIfUnset(candidate)) {
+                    is PairedBrowserMutationResult.Updated -> claim.preferredMainDeviceId
+                    else -> browserTrustStore.preferredMainDeviceId()
+                }
+            }
+        if (preferredMain == null || preferredMain != device.device.deviceId) {
+            writeResponse(
+                output,
+                409,
+                JSON_CONTENT_TYPE,
+                "{\"error\":\"main_session_required\"}".toByteArray(),
+            )
+            return
+        }
         val suppliedClientId = request.headers["x-viewport-client-id"]
         val viewportClientId = when {
             suppliedClientId == null -> {
@@ -587,15 +733,6 @@ class BrowserProbeServer(
                 )
                 return
             }
-        }
-        if (!viewportControllerGate.tryAcquire(browserCredential, viewportClientId)) {
-            writeResponse(
-                output,
-                409,
-                "application/json; charset=utf-8",
-                "{\"error\":\"viewport_controller_busy\"}".toByteArray(),
-            )
-            return
         }
         val width = parseViewportDimension(request.query["width"])
         val height = parseViewportDimension(request.query["height"])
@@ -646,11 +783,8 @@ class BrowserProbeServer(
     }
 
     private fun refreshViewportController(request: HttpRequest) {
-        val browserCredential = request.headers["x-browser-credential"] ?: return
-        val viewportClientId = request.headers["x-viewport-client-id"]
-            ?.takeIf(::isValidViewportClientId)
-            ?: return
-        viewportControllerGate.refresh(browserCredential, viewportClientId)
+        // Main-device ownership is persistent in BrowserTrustStore. Status polling no longer
+        // transfers a short-lived viewport lease between tabs or devices.
     }
 
     private fun serveWebRtcOpen(
@@ -693,11 +827,42 @@ class BrowserProbeServer(
         val sdp = rewriteMdnsHostCandidateAddresses(originalSdp, resolvedDirectPeerIpv4)
         val phonePreferredCodec = runCatching(preferredWebRtcCodec)
             .getOrDefault(BrowserWebRtcCodec.AUTO)
-
+        val browserCredential = request.headers["x-browser-credential"]
+        if (browserCredential == null) {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        val authenticatedOpen = when (
+            val admission = commitAuthenticatedBrowserOperation(
+                lock = pairingCodeOperationLock,
+                authenticate = { browserTrustStore.authenticate(browserCredential) },
+                operation = { fresh ->
+                    fresh to runCatching {
+                        webRtcSignaling.openSession(
+                            BrowserWebRtcOffer(
+                                preferredCodec = phonePreferredCodec,
+                                sdp = sdp,
+                                ownerKey = fresh.ownerKey,
+                                deviceId = fresh.device.deviceId,
+                                accessMode = fresh.device.permission.toSessionAccessMode(),
+                                colorSlot = fresh.device.colorSlot,
+                                displayName = fresh.device.displayName,
+                            ),
+                        )
+                    }
+                },
+            )
+        ) {
+            BrowserCredentialAdmissionResult.Unauthorized -> {
+                writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+                return
+            }
+            is BrowserCredentialAdmissionResult.Authorized -> admission.value
+        }
+        val authenticated = authenticatedOpen.first
+        val openAttempt = authenticatedOpen.second
         when (
-            val result = runCatching {
-                webRtcSignaling.openSession(BrowserWebRtcOffer(phonePreferredCodec, sdp))
-            }.getOrElse {
+            val result = openAttempt.getOrElse {
                 writeResponse(
                     output,
                     503,
@@ -708,6 +873,7 @@ class BrowserProbeServer(
             }
         ) {
             is BrowserWebRtcOpenResult.Accepted -> {
+                recordDeviceSeen(authenticated)
                 writeResponse(
                     output,
                     201,
@@ -741,7 +907,14 @@ class BrowserProbeServer(
             writeResponse(output, 404, "application/json", "{\"error\":\"not_found\"}".toByteArray())
             return
         }
-        val current = runCatching { webRtcSignaling.session(sessionId) }.getOrElse {
+        val authenticated = authenticatedDevice(request)
+        if (authenticated == null) {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        val current = runCatching {
+            webRtcSignaling.session(sessionId, authenticated.ownerKey)
+        }.getOrElse {
             writeResponse(
                 output,
                 503,
@@ -754,7 +927,12 @@ class BrowserProbeServer(
             writeResponse(output, 404, "application/json", "{\"error\":\"not_found\"}".toByteArray())
             return
         }
-        writeResponse(output, 200, "application/json; charset=utf-8", webRtcSessionJson(current))
+        writeResponse(
+            output,
+            200,
+            "application/json; charset=utf-8",
+            webRtcSessionJson(current, authenticated.device.displayName),
+        )
     }
 
     private fun serveWebRtcClose(request: HttpRequest, output: OutputStream) {
@@ -763,7 +941,14 @@ class BrowserProbeServer(
             writeResponse(output, 404, "application/json", "{\"error\":\"not_found\"}".toByteArray())
             return
         }
-        val closed = runCatching { webRtcSignaling.closeSession(sessionId) }.getOrDefault(false)
+        val authenticated = authenticatedDevice(request)
+        if (authenticated == null) {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        val closed = runCatching {
+            webRtcSignaling.closeSession(sessionId, authenticated.ownerKey)
+        }.getOrDefault(false)
         if (closed) {
             writeResponse(output, 204, "application/json", ByteArray(0))
         } else {
@@ -771,7 +956,10 @@ class BrowserProbeServer(
         }
     }
 
-    private fun webRtcSessionJson(session: BrowserWebRtcSessionSnapshot): ByteArray = buildString {
+    private fun webRtcSessionJson(
+        session: BrowserWebRtcSessionSnapshot,
+        displayNameOverride: String? = null,
+    ): ByteArray = buildString {
         append("{\"sessionId\":")
         appendJsonString(session.sessionId)
         append(",\"state\":")
@@ -787,6 +975,22 @@ class BrowserProbeServer(
         if (session.detail.isNotEmpty()) {
             append(",\"detail\":")
             appendJsonString(session.detail)
+        }
+        session.publicMetadata?.let { metadata ->
+            append(",\"browserSession\":{")
+            append("\"deviceId\":")
+            appendJsonString(metadata.deviceId)
+            append(",\"access\":")
+            appendJsonString(metadata.accessMode.wireName)
+            append(",\"role\":")
+            appendJsonString(if (metadata.isMain) "main" else "viewer")
+            append(",\"colorSlot\":").append(metadata.colorSlot)
+            val displayName = displayNameOverride ?: metadata.displayName
+            if (displayName.isNotEmpty()) {
+                append(",\"displayName\":")
+                appendJsonString(displayName)
+            }
+            append('}')
         }
         append('}')
     }.toByteArray(StandardCharsets.UTF_8)
@@ -924,7 +1128,20 @@ class BrowserProbeServer(
         request: HttpRequest,
         remoteAddress: InetAddress,
         output: OutputStream,
-    ) {
+    ): Unit = synchronized(pairingCodeOperationLock) {
+        val device = authenticatedDevice(request) ?: run {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        if (device.device.permission == BrowserDevicePermission.READ_ONLY) {
+            writeResponse(
+                output,
+                403,
+                JSON_CONTENT_TYPE,
+                "{\"accepted\":false,\"error\":\"read_only_session\"}".toByteArray(),
+            )
+            return
+        }
         // This server is currently plain HTTP. Powerful browser media APIs allow
         // loopback as a trustworthy development origin, but LAN microphone PCM
         // must wait for the separately provisioned, browser-trusted HTTPS server.
@@ -1010,19 +1227,44 @@ class BrowserProbeServer(
                 PairingCodeDecision.ACCEPTED -> Unit
             }
 
-            runCatching {
-                issueBrowserCredentialAndRevokePriorSession(
-                    issueCredential = browserTrustStore::issue,
-                    revokePriorSession = webRtcSignaling::revokeActiveSessionForCredentialChange,
-                )
-            }
-                .onSuccess { browserCredential ->
+            when (
+                val issue = runCatching {
+                    issuePairedBrowserDeviceFromPairingHeaders(
+                        browserTrustStore = browserTrustStore,
+                        headers = request.headers,
+                    )
+                }.getOrDefault(BrowserCredentialIssueResult.PersistenceFailed)
+            ) {
+                is BrowserCredentialIssueResult.Issued -> {
                     if (pairingCodePublication.close()) publishPairingCode(null)
-                    val body = "{\"browserCredential\":\"${jsonEscape(browserCredential)}\"}"
+                    val grant = issue.grant
+                    val body = buildString {
+                        append("{\"browserCredential\":")
+                        appendJsonString(grant.credential)
+                        append(",\"browserSession\":")
+                        append(browserSessionJson(grant.authenticatedDevice))
+                        append('}')
+                    }
                         .toByteArray(StandardCharsets.UTF_8)
                     writeResponse(output, 200, "application/json; charset=utf-8", body)
                 }
-                .onFailure {
+                BrowserCredentialIssueResult.CapacityReached -> {
+                    verification.replacementCode?.let { replacementCode ->
+                        publishPairingCode(
+                            pairingCodePublication.afterRotation(
+                                code = replacementCode,
+                                keepOpen = true,
+                            ),
+                        )
+                    }
+                    writeResponse(
+                        output,
+                        409,
+                        JSON_CONTENT_TYPE,
+                        "{\"error\":\"paired_device_capacity_reached\"}".toByteArray(),
+                    )
+                }
+                BrowserCredentialIssueResult.PersistenceFailed -> {
                     verification.replacementCode?.let { replacementCode ->
                         publishPairingCode(
                             pairingCodePublication.afterRotation(
@@ -1033,6 +1275,7 @@ class BrowserProbeServer(
                     }
                     writeResponse(output, 500, "application/json", "{\"error\":\"pairing_store_failed\"}".toByteArray())
                 }
+            }
         }
     }
 
@@ -1050,7 +1293,23 @@ class BrowserProbeServer(
         return pairingCodeGate.currentLease().takeIf { it.code == publishedCode }
     }
 
-    private fun serveTouch(request: HttpRequest, output: OutputStream) {
+    private fun serveTouch(
+        request: HttpRequest,
+        output: OutputStream,
+    ): Unit = synchronized(pairingCodeOperationLock) {
+        val device = authenticatedDevice(request) ?: run {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        if (device.device.permission == BrowserDevicePermission.READ_ONLY) {
+            writeResponse(
+                output,
+                403,
+                JSON_CONTENT_TYPE,
+                "{\"accepted\":false,\"reason\":\"read_only_session\"}".toByteArray(),
+            )
+            return
+        }
         val connection = androidAutoConnection()
         val inputReady = touchInputReady()
         if (!isTouchAllowed(connection, inputReady)) {
@@ -1089,25 +1348,161 @@ class BrowserProbeServer(
             return
         }
 
-        val accepted = onTouch(
-            NormalizedTouch(
-                phase = checkNotNull(phase),
-                x = checkNotNull(x),
-                y = checkNotNull(y),
-                pointerId = checkNotNull(pointerId),
-            ),
+        val touchPhase = checkNotNull(phase)
+        val normalizedTouch = NormalizedTouch(
+            phase = touchPhase,
+            x = checkNotNull(x),
+            y = checkNotNull(y),
+            pointerId = checkNotNull(pointerId),
         )
+        val liveMetadata = webRtcSignaling.activeSessionMetadata(device.ownerKey)
+        val gestureSource = BrowserTouchGestureSource(
+            ownerKey = device.ownerKey,
+            deviceId = device.device.deviceId,
+            colorSlot = liveMetadata?.colorSlot ?: device.device.colorSlot,
+        )
+        when (
+            touchGestureGate.tryAdmit(
+                source = gestureSource,
+                touch = normalizedTouch,
+                cancelExpiredGesture = { expiredSource, expiredTouch ->
+                    val cancelTouch = expiredTouch.copy(
+                        phase = TouchPhase.CANCEL,
+                        timestampNanos = System.nanoTime(),
+                    )
+                    val cancelled = runCatching { onTouch(cancelTouch) }.getOrDefault(false)
+                    if (cancelled) {
+                        runCatching {
+                            webRtcSignaling.publishTouchPresence(
+                                sourceOwnerKey = expiredSource.ownerKey,
+                                event = BrowserTouchPresenceEvent(
+                                    sourceDeviceId = expiredSource.deviceId,
+                                    colorSlot = expiredSource.colorSlot,
+                                    phase = "cancel",
+                                    x = cancelTouch.x,
+                                    y = cancelTouch.y,
+                                    sequence = nextTouchPresenceSequence(),
+                                ),
+                            )
+                        }
+                    }
+                    cancelled
+                },
+            )
+        ) {
+            BrowserTouchGestureAdmission.ACCEPTED -> Unit
+            BrowserTouchGestureAdmission.BUSY -> {
+                writeResponse(
+                    output,
+                    409,
+                    JSON_CONTENT_TYPE,
+                    "{\"accepted\":false,\"reason\":\"touch_gesture_busy\"}".toByteArray(),
+                )
+                return
+            }
+            BrowserTouchGestureAdmission.OUT_OF_SEQUENCE -> {
+                writeResponse(
+                    output,
+                    409,
+                    JSON_CONTENT_TYPE,
+                    "{\"accepted\":false,\"reason\":\"touch_gesture_out_of_sequence\"}"
+                        .toByteArray(),
+                )
+                return
+            }
+            BrowserTouchGestureAdmission.RECOVERY_REJECTED -> {
+                writeResponse(
+                    output,
+                    409,
+                    JSON_CONTENT_TYPE,
+                    "{\"accepted\":false,\"reason\":\"touch_gesture_recovery_rejected\"}"
+                        .toByteArray(),
+                )
+                return
+            }
+        }
+        val accepted = runCatching {
+            onTouch(normalizedTouch)
+        }.getOrDefault(false)
         val status = if (accepted) 202 else 409
         val body = if (accepted) {
+            runCatching {
+                webRtcSignaling.publishTouchPresence(
+                    sourceOwnerKey = device.ownerKey,
+                    event = BrowserTouchPresenceEvent(
+                        sourceDeviceId = gestureSource.deviceId,
+                        colorSlot = gestureSource.colorSlot,
+                        phase = touchPhase.name.lowercase(),
+                        x = checkNotNull(x),
+                        y = checkNotNull(y),
+                        sequence = nextTouchPresenceSequence(),
+                    ),
+                )
+            }
             "{\"accepted\":true}"
         } else {
             "{\"accepted\":false,\"reason\":\"queue_rejected\"}"
         }
+        // Keep the pointer lease until the corresponding presence event has been sequenced and
+        // queued. Together with pairingCodeOperationLock this preserves native/presence ordering
+        // when ownership changes between browser sessions.
+        touchGestureGate.complete(device.ownerKey, touchPhase, accepted)
         writeResponse(output, status, "application/json", body.toByteArray())
     }
 
-    private fun isAuthorized(request: HttpRequest): Boolean =
-        browserTrustStore.isValid(request.headers["x-browser-credential"])
+    private fun authenticatedDevice(request: HttpRequest): AuthenticatedBrowserDevice? =
+        browserTrustStore.authenticate(request.headers["x-browser-credential"])
+
+    private fun isAuthorized(request: HttpRequest): Boolean = authenticatedDevice(request) != null
+
+    private fun BrowserDevicePermission.toSessionAccessMode(): BrowserSessionAccessMode = when (this) {
+        BrowserDevicePermission.CONTROL -> BrowserSessionAccessMode.CONTROL
+        BrowserDevicePermission.READ_ONLY -> BrowserSessionAccessMode.READ_ONLY
+    }
+
+    private fun browserSessionJson(authenticated: AuthenticatedBrowserDevice): String {
+        val liveMetadata = webRtcSignaling.activeSessionMetadata(authenticated.ownerKey)
+        val device = authenticated.device
+        return buildString(144) {
+            append("{\"deviceId\":")
+            appendJsonString(device.deviceId)
+            append(",\"access\":")
+            appendJsonString(device.permission.toSessionAccessMode().wireName)
+            append(",\"role\":")
+            appendJsonString(if (device.preferredMain) "main" else "viewer")
+            append(",\"colorSlot\":")
+            append(liveMetadata?.colorSlot ?: device.colorSlot)
+            append(",\"displayName\":")
+            appendJsonString(device.displayName)
+            append('}')
+        }
+    }
+
+    private fun recordDeviceSeen(authenticated: AuthenticatedBrowserDevice) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val shouldPersist = synchronized(deviceSeenLock) {
+            val previous = lastDeviceSeenRecordMillis[authenticated.device.deviceId]
+            if (previous != null &&
+                (nowElapsed - previous).coerceAtLeast(0L) < DEVICE_SEEN_WRITE_INTERVAL_MILLIS
+            ) {
+                false
+            } else {
+                if (lastDeviceSeenRecordMillis.size >= MAX_TRACKED_SEEN_DEVICES) {
+                    val oldest = lastDeviceSeenRecordMillis.minByOrNull { it.value }?.key
+                    if (oldest != null) lastDeviceSeenRecordMillis.remove(oldest)
+                }
+                lastDeviceSeenRecordMillis[authenticated.device.deviceId] = nowElapsed
+                true
+            }
+        }
+        if (shouldPersist) {
+            runCatching { browserTrustStore.recordSeen(authenticated.device.deviceId) }
+        }
+    }
+
+    private fun nextTouchPresenceSequence(): Long = touchPresenceSequence.updateAndGet { current ->
+        if (current >= MAX_JAVASCRIPT_SAFE_SEQUENCE) 1L else current + 1L
+    }
 
     override fun close() {
         acceptJob?.cancel()
@@ -1345,9 +1740,10 @@ class BrowserProbeServer(
         private const val DEVELOPMENT_VIEWPORT_FLAG_ENABLED =
             "const NAVONWEB_DEVELOPMENT_VIEWPORT_ENABLED = true;"
         private const val PAIRING_CODE_REFRESH_INTERVAL_MILLIS = 1_000L
-        private const val MAX_CLIENTS = 8
-        private const val MAX_FRAME_CLIENTS = 2
-        private const val MAX_AUDIO_CLIENTS = 3
+        internal const val MAX_FRAME_CLIENTS = 3
+        internal const val MAX_AUDIO_CLIENTS = 9
+        internal const val MAX_CLIENTS = 16
+        internal const val MAX_ACCEPT_BACKLOG = 16
         private const val PCM16_BYTES_PER_SAMPLE = 2
         private const val FRAME_WAIT_MILLIS = 850L
         private const val AUDIO_POLL_MILLIS = 1_000L
@@ -1686,6 +2082,9 @@ class BrowserProbeServer(
         private const val PROJECTION_SNAPSHOT_ATTEMPTS = 3
         private const val SDP_CONTENT_TYPE = "application/sdp"
         private const val WEBRTC_SESSION_PATH_PREFIX = "/api/webrtc/session/"
+        private const val DEVICE_SEEN_WRITE_INTERVAL_MILLIS = 60_000L
+        private const val MAX_TRACKED_SEEN_DEVICES = 64
+        private const val MAX_JAVASCRIPT_SAFE_SEQUENCE = 9_007_199_254_740_991L
         private const val MIN_WEBRTC_SESSION_ID_LENGTH = 16
         private const val MAX_WEBRTC_SESSION_ID_LENGTH = 64
         private const val MAX_WEBRTC_SDP_CHARS = 128 * 1024
@@ -1719,16 +2118,59 @@ class BrowserProbeServer(
     }
 }
 
-/** Issues first so a failed pairing-store write never interrupts the currently trusted browser. */
-internal fun issueBrowserCredentialAndRevokePriorSession(
-    issueCredential: () -> String,
-    revokePriorSession: () -> Boolean,
-): String {
-    val credential = issueCredential()
-    // Re-pairing replaces the sole stored credential. Code expiry and bootstrap-conflict rotation
-    // never call this function, so an established session survives those code-only transitions.
-    revokePriorSession()
-    return credential
+/**
+ * Single side-effect boundary for live entitlement changes. A failed entitlement read fails
+ * closed to the free one-session limit; policy reconciliation itself never escapes into the HTTP
+ * handler as an exception.
+ */
+internal fun reconcileBrowserSessionPolicy(
+    sessionLimitProvider: () -> Int,
+    preferredMainDeviceId: () -> String?,
+    reconcile: (maximumSessions: Int, preferredMainDeviceId: String?) -> Int,
+): Int {
+    val maximumSessions = runCatching(sessionLimitProvider)
+        .getOrDefault(MAX_FREE_BROWSER_SESSIONS)
+        .coerceIn(MAX_FREE_BROWSER_SESSIONS, MAX_PREMIUM_BROWSER_SESSIONS)
+    val preferred = runCatching(preferredMainDeviceId).getOrNull()
+    return runCatching { reconcile(maximumSessions, preferred) }.getOrDefault(0)
+}
+
+internal sealed interface BrowserCredentialAdmissionResult<out T> {
+    data object Unauthorized : BrowserCredentialAdmissionResult<Nothing>
+    data class Authorized<T>(val value: T) : BrowserCredentialAdmissionResult<T>
+}
+
+/**
+ * Serializes the final browser-credential check with credential replacement.
+ *
+ * Callers may do bounded parsing before entering this gate, but the credential must be checked
+ * again here and remain protected until the authenticated state mutation commits.
+ */
+internal fun <T> commitAuthorizedBrowserOperation(
+    lock: Any,
+    credentialStillValid: () -> Boolean,
+    operation: () -> T,
+): BrowserCredentialAdmissionResult<T> = synchronized(lock) {
+    if (!credentialStillValid()) {
+        BrowserCredentialAdmissionResult.Unauthorized
+    } else {
+        BrowserCredentialAdmissionResult.Authorized(operation())
+    }
+}
+
+/**
+ * Resolves the authenticated device inside the same admission lock that owns session insertion.
+ * Device permission and public metadata therefore cannot be stale relative to a binder mutation
+ * that also uses this lock.
+ */
+internal fun <A : Any, T> commitAuthenticatedBrowserOperation(
+    lock: Any,
+    authenticate: () -> A?,
+    operation: (A) -> T,
+): BrowserCredentialAdmissionResult<T> = synchronized(lock) {
+    val authenticated = authenticate()
+        ?: return@synchronized BrowserCredentialAdmissionResult.Unauthorized
+    BrowserCredentialAdmissionResult.Authorized(operation(authenticated))
 }
 
 internal data class BrowserMicrophoneUpload(

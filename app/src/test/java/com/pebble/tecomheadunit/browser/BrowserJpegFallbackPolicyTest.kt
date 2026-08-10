@@ -5,7 +5,6 @@ package com.pebble.tecomheadunit.browser
 
 import com.pebble.tecomheadunit.core.VideoViewport
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,29 +56,6 @@ class BrowserJpegFallbackPolicyTest {
         assertTrue(config.bitmapByteCount <= BrowserJpegFallbackPolicy.MAX_BITMAP_BYTES)
     }
 
-    @Test
-    fun `service wires initial and changed profiles into fallback capture`() {
-        val service = readSource("main/java/com/pebble/tecomheadunit/service/ProjectionService.kt")
-
-        assertTrue(
-            service.contains(
-                "createBrowserFrameCapture(newFrameStore, activeProfile)",
-            ),
-        )
-        assertTrue(service.contains("replaceBrowserFrameCapture(profile, replacementViewport)"))
-        assertTrue(service.contains("BrowserJpegFallbackPolicy.forProjectionViewport(profile, viewport)"))
-    }
-
     private fun configFor(profile: ProjectionVideoProfile): BrowserJpegFallbackConfig =
         BrowserJpegFallbackPolicy.forProjectionProfile(profile)
-
-    private fun readSource(relativePath: String): String {
-        val candidates = listOf(
-            File("app/src/$relativePath"),
-            File("src/$relativePath"),
-        )
-        val source = candidates.firstOrNull(File::isFile)
-            ?: error("missing source $relativePath")
-        return source.readText(Charsets.UTF_8)
-    }
 }

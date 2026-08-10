@@ -45,6 +45,7 @@
     <string name="hotspot_automation_title">핫스팟 이벤트 감시</string>
     <string name="hotspot_automation_waiting">최초 핫스팟 상태를 확인하는 중입니다</string>
     <string name="hotspot_automation_monitoring">핫스팟 상태가 바뀔 때만 서버를 시작하거나 종료합니다</string>
+    <string name="hotspot_automation_disable_action">자동화 끄기</string>
     <string name="service_automation_title">서비스 자동 실행 및 종료</string>
     <string name="service_automation_event_only">주기적으로 확인하지 않고 실제 시스템 이벤트만 감지합니다.</string>
     <string name="service_automation_off">사용 안 함</string>
@@ -81,6 +82,9 @@
     <string name="automation_companion_failed_fallback">컴패니언 장치 설정을 사용할 수 없어 시스템 블루투스 이벤트를 대신 사용합니다.</string>
     <string name="bluetooth_unnamed_device">이름 없는 Bluetooth 장치</string>
     <string name="browser_open_title">브라우저에서 열기</string>
+    <string name="browser_open_action">표시된 주소를 브라우저에서 열기: %1$s</string>
+    <string name="browser_debug_local_link_action">로컬 디버그 주소입니다. %1$s을 한 번 열면 기본 주소로 돌아갑니다.</string>
+    <string name="browser_open_failed">이 주소를 열 수 있는 브라우저 앱이 없습니다.</string>
     <string name="browser_pairing_code_title">8자리 브라우저 등록 코드</string>
     <string name="browser_pairing_code_hint">이 일회용 코드는 10분 후 만료되며, 사용된 코드는 다시 게시되지 않습니다.</string>
     <string name="browser_pairing_preparing_title">페어링 준비 중</string>
@@ -112,8 +116,8 @@
     <string name="first_run_hotspot_warning">NavOnWeb 영상은 휴대전화와 화면을 볼 장치 사이의 로컬 연결로 직접 전송되므로 영상 전송 자체는 휴대전화의 모바일 데이터를 사용하지 않습니다. 다만 navonweb.com 접속과 연결 설정에는 소량의 인터넷 데이터가 필요할 수 있고, 화면을 볼 장치의 진단·서비스 통신, 지도·소프트웨어 업데이트, 음악·동영상 스트리밍은 모바일 데이터를 사용할 수 있습니다. 먼저 데이터 잔여량과 자동 업데이트·스트리밍 설정을 확인하세요.</string>
     <string name="first_run_service_title">3. NavOnWeb 서비스 시작하기</string>
     <string name="first_run_service_body">NavOnWeb으로 돌아와 서비스 시작을 누릅니다. 알림 또는 대략적 위치 권한 요청을 확인하고 Android Auto · 연결됨과 브라우저 주소가 나타날 때까지 기다립니다.</string>
-    <string name="first_run_browser_title">4. Tesla 브라우저 페어링하기</string>
-    <string name="first_run_browser_body">Tesla 브라우저에서 https://navonweb.com을 엽니다. NavOnWeb에 표시된 8자리 등록 코드를 입력합니다. 승인된 브라우저는 다음 연결을 위해 기억됩니다.</string>
+    <string name="first_run_browser_title">4. 웹 브라우저 페어링하기</string>
+    <string name="first_run_browser_body">화면을 볼 장치의 웹 브라우저에서 https://navonweb.com을 엽니다. NavOnWeb에 표시된 8자리 등록 코드를 입력합니다. 승인된 브라우저는 다음 연결을 위해 기억됩니다.</string>
     <string name="first_run_browser_warning">연결할 수 없는 상태가 10초 넘게 이어지면 브라우저의 페어링 코드 다시 받기를 누르고, 휴대전화 앱에서 새 코드를 발급해 다시 입력하세요.</string>
     <string name="first_run_settings_title">첫 사용 안내</string>
     <string name="first_run_settings_description">Android Auto 서버, 핫스팟, 서비스 시작과 브라우저 페어링 순서를 짧게 다시 봅니다.</string>

@@ -103,7 +103,7 @@ enum class ProjectionVideoProfile(
      * Converts the profile-local saved DPI into the value advertised for an encoded viewport.
      *
      * The Basic profile stores its value against the nominal 800x480 frame, but Android Auto's
-     * audited portrait enum is 720x1280. Scaling that one orientation from the 140-DPI baseline
+     * supported portrait enum is 720x1280. Scaling that one orientation from the 140-DPI baseline
      * to the 220-DPI 720p baseline keeps the apparent UI size stable without coupling Basic to a
      * Premium preference. Other profiles use the same resolution class in both orientations.
      */
@@ -251,7 +251,8 @@ internal fun requestProjectionProfileWithCurrentEntitlement(
 /**
  * Trusted native entitlement boundary. A browser request is never passed into this provider and
  * therefore cannot supply a tier, receipt, token or grant ID. Concrete grants retain provenance:
- * server verification and the local Play ownership query are distinct types.
+ * server verification, the local Play ownership query, and process-only promotional access are
+ * distinct types.
  */
 internal fun interface ServerProjectionEntitlementProvider {
     fun currentGrant(): ServerProjectionEntitlementGrant
@@ -287,6 +288,11 @@ internal sealed interface ServerProjectionEntitlementGrant {
             }
         }
 
+        override val tier: ProjectionAccessTier = ProjectionAccessTier.PREMIUM
+    }
+
+    /** Process-only promotional access; never persisted as ownership. */
+    data object ReviewPromo : ServerProjectionEntitlementGrant {
         override val tier: ProjectionAccessTier = ProjectionAccessTier.PREMIUM
     }
 

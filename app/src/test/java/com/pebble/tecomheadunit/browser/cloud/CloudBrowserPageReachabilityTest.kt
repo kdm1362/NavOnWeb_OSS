@@ -8,37 +8,31 @@ import org.junit.Test
 
 class CloudBrowserPageReachabilityTest {
     @Test
-    fun `unknown and reachable public page prefer cloud address`() {
+    fun `unknown displays local until one successful public probe`() {
         assertEquals(
-            CLOUD_URL,
+            LOCAL_URL,
             BrowserAddressPolicy.select(
                 cloudUrl = CLOUD_URL,
                 localUrl = LOCAL_URL,
                 cloudAvailability = CloudBrowserPageAvailability.UNKNOWN,
             ),
         )
+        val tracker = CloudBrowserPageAvailabilityTracker()
         assertEquals(
-            CLOUD_URL,
-            BrowserAddressPolicy.select(
-                cloudUrl = CLOUD_URL,
-                localUrl = LOCAL_URL,
-                cloudAvailability = CloudBrowserPageAvailability.REACHABLE,
-            ),
-        )
-    }
-
-    @Test
-    fun `local address is used only after public page is confirmed unreachable`() {
-        val tracker = CloudBrowserPageAvailabilityTracker(failuresBeforeFallback = 2)
-
-        assertEquals(
-            CloudBrowserPageAvailability.UNKNOWN,
-            tracker.record(reachable = false),
+            CloudBrowserPageAvailability.REACHABLE,
+            tracker.record(reachable = true),
         )
         assertEquals(
             CLOUD_URL,
             BrowserAddressPolicy.select(CLOUD_URL, LOCAL_URL, tracker.availability),
         )
+    }
+
+    @Test
+    fun `first failed probe after reachable switches to local immediately`() {
+        val tracker = CloudBrowserPageAvailabilityTracker()
+        tracker.record(reachable = true)
+
         assertEquals(
             CloudBrowserPageAvailability.UNREACHABLE,
             tracker.record(reachable = false),
@@ -50,15 +44,11 @@ class CloudBrowserPageReachabilityTest {
     }
 
     @Test
-    fun `one successful public page probe restores cloud address immediately`() {
-        val tracker = CloudBrowserPageAvailabilityTracker(failuresBeforeFallback = 2)
-        tracker.record(reachable = false)
+    fun `one successful probe restores cloud immediately after failure`() {
+        val tracker = CloudBrowserPageAvailabilityTracker()
         tracker.record(reachable = false)
 
-        assertEquals(
-            CloudBrowserPageAvailability.REACHABLE,
-            tracker.record(reachable = true),
-        )
+        assertEquals(CloudBrowserPageAvailability.REACHABLE, tracker.record(reachable = true))
         assertEquals(
             CLOUD_URL,
             BrowserAddressPolicy.select(CLOUD_URL, LOCAL_URL, tracker.availability),
@@ -79,6 +69,6 @@ class CloudBrowserPageReachabilityTest {
 
     private companion object {
         const val CLOUD_URL = "https://navonweb.com"
-        const val LOCAL_URL = "http://192.168.31.231:8080"
+        const val LOCAL_URL = "http://192.168.50.10:8080"
     }
 }

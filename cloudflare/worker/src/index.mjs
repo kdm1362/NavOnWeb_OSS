@@ -13,6 +13,7 @@ import {
   isAllowedBrowserOrigin,
   isValidBootstrapSecret,
   isValidPairingCode,
+  isValidRequestId,
   isValidRouteNonce,
   isValidRoomId,
   normalizeClientNetwork,
@@ -27,19 +28,32 @@ const ROLE_HEADER = "X-NavOnWeb-Role";
 const ROOM_HEADER = "X-NavOnWeb-Room";
 const ORIGIN_HEADER = "X-NavOnWeb-Browser-Origin";
 const ROUTE_NONCE_HEADER = "X-NavOnWeb-Route-Nonce";
+const ROUTE_ISSUED_AT_HEADER = "X-NavOnWeb-Route-Issued-At";
 const PAIRING_EPOCH_HEADER = "X-NavOnWeb-Pairing-Epoch";
 const PAIRING_TTL_HEADER = "X-NavOnWeb-Pairing-Ttl-Millis";
 const PAIRING_EXPIRES_AT_HEADER = "X-NavOnWeb-Pairing-Expires-At";
 const RATE_IDEMPOTENCY_HEADER = "X-NavOnWeb-Rate-Idempotency";
 const LEGACY_BROWSER_ROUTE_HEADER = "X-NavOnWeb-Legacy-Browser-Route";
-const PREPARE_BROWSER_ROUTE_PATH = "/internal/prepare-browser-route";
-const ACTIVATE_PAIRING_GENERATION_PATH = "/internal/activate-pairing-generation";
-const CHECK_BROWSER_ROUTE_PATH = "/internal/check-browser-route";
 const OPEN = 1;
 const CLOSED = 3;
 const BROWSER_RPC_RATE_PER_SECOND = 64;
 const BROWSER_RPC_BURST = 96;
+// Aggregate ingress is sized for three fully active browser sessions while preventing 32
+// signaling transports from multiplying the phone-facing request rate.
+const DEVICE_RPC_RATE_PER_SECOND = BROWSER_RPC_RATE_PER_SECOND * 3;
+const DEVICE_RPC_BURST = BROWSER_RPC_BURST * 3;
 const MAX_IN_FLIGHT_REQUESTS = 16;
+// This is an ephemeral transport ceiling, not a paired-device or session registry. The phone is
+// authoritative for its free/premium media-session capacity and stored browser credentials.
+const MAX_LIVE_BROWSER_SOCKETS = 32;
+const MAX_CONNECTION_ADMISSION_KEYS = 128;
+const STALE_ROUTE_QUARANTINE_MILLIS = 30_000;
+const MAX_ROUTE_QUARANTINES = MAX_LIVE_BROWSER_SOCKETS;
+// Hibernatable WebSocket attachments are capped at 16 KiB. Keep the exact orphan set small even
+// though signaling admits 32 transports; overflow switches to the time-bounded grace mode below.
+const MAX_ORPHANED_REQUEST_IDS = 48;
+const ORPHANED_REQUEST_TTL_MILLIS = 60_000;
+const BROWSER_SOCKET_LIMIT_REACHED = Symbol("browser-socket-limit-reached");
 // Low primary limits follow a browser installation or device credential. The
 // secondary network ceilings are intentionally much higher: they bound a
 // rotating-identity cost attack without treating a carrier CGNAT address as a
@@ -96,12 +110,13 @@ export default {
 
     const role = cookieRoutedBrowser ? "browser" : match[1];
     if (role === "browser" && !cookieRoutedBrowser && env.ALLOW_LEGACY_BROWSER_ROOM_ROUTE !== "true") {
-      // Production uses the signed, cookie-routed endpoint. Keeping the legacy
+      // The signed, cookie-routed endpoint is the preferred browser route. Keeping the legacy
       // room-id URL opt-in prevents public OSS clients from bypassing pairing.
       return jsonResponse({ error: "Not found" }, 404);
     }
     let roomId = cookieRoutedBrowser ? null : match[2];
     let browserRouteNonce = null;
+    let browserRouteIssuedAtSeconds = null;
     if (cookieRoutedBrowser) {
       if (!isValidBootstrapSecret(env.BOOTSTRAP_HMAC_KEY)) {
         return jsonResponse({ error: "Pairing bootstrap is unavailable" }, 503);
@@ -117,6 +132,7 @@ export default {
       }
       roomId = route.roomId;
       browserRouteNonce = route.routeNonce;
+      browserRouteIssuedAtSeconds = route.issuedAtSeconds;
     }
     if (!isValidRoomId(roomId)) {
       return jsonResponse({ error: "Invalid room id" }, 400);
@@ -149,6 +165,7 @@ export default {
     const headers = new Headers(request.headers);
     headers.delete("Authorization");
     headers.delete(ROUTE_NONCE_HEADER);
+    headers.delete(ROUTE_ISSUED_AT_HEADER);
     headers.delete(LEGACY_BROWSER_ROUTE_HEADER);
     headers.set(ROLE_HEADER, role);
     headers.set(ROOM_HEADER, roomId);
@@ -160,6 +177,9 @@ export default {
     if (role === "browser") {
       if (cookieRoutedBrowser) {
         headers.set(ROUTE_NONCE_HEADER, browserRouteNonce);
+        if (Number.isSafeInteger(browserRouteIssuedAtSeconds)) {
+          headers.set(ROUTE_ISSUED_AT_HEADER, String(browserRouteIssuedAtSeconds));
+        }
       } else {
         headers.set(LEGACY_BROWSER_ROUTE_HEADER, "1");
       }
@@ -184,31 +204,15 @@ async function checkBrowserRoute(request, env) {
   if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
     return emptyResponse(403, responseHeaders);
   }
-  if (!isValidBootstrapSecret(env.BOOTSTRAP_HMAC_KEY) || !env.SIGNAL_ROOMS) {
+  if (!isValidBootstrapSecret(env.BOOTSTRAP_HMAC_KEY)) {
     return emptyResponse(503, responseHeaders);
   }
   const routeValue = readCookie(request.headers.get("Cookie"), ROUTE_COOKIE_NAME);
   const route = await verifyRouteCookieValue(env.BOOTSTRAP_HMAC_KEY, routeValue);
   if (!route) return emptyResponse(401, responseHeaders);
-
-  try {
-    const room = env.SIGNAL_ROOMS.get(env.SIGNAL_ROOMS.idFromName(route.roomId));
-    const routeResponse = await room.fetch(new Request(
-      `https://signal.internal${CHECK_BROWSER_ROUTE_PATH}`,
-      {
-        method: "GET",
-        headers: {
-          [ROOM_HEADER]: route.roomId,
-          [ROUTE_NONCE_HEADER]: route.routeNonce,
-        },
-      },
-    ));
-    if (routeResponse.status === 204) return emptyResponse(204, responseHeaders);
-    if (routeResponse.status === 401) return emptyResponse(401, responseHeaders);
-    return emptyResponse(503, responseHeaders);
-  } catch {
-    return emptyResponse(503, responseHeaders);
-  }
+  // The signed, expiring cookie is the complete Worker-side route proof. The phone's credential
+  // store remains authoritative for browser authorization on relayed RPCs.
+  return emptyResponse(204, responseHeaders);
 }
 
 function stripSameOriginRoutePrefix(pathname) {
@@ -362,7 +366,7 @@ async function registerDevicePairingCode(request, env) {
     roomId,
     pairingEpoch,
     pairingGeneration,
-    // This duration comes from the phone's fixed monotonic Gate deadline.
+    // This duration comes from the phone's fixed monotonic expiry deadline.
     // Wall-clock skew is irrelevant and delayed first registration receives
     // only the remaining lifetime, never a fresh ten-minute window.
     expiresAt: Date.now() + pairingTtlMillis,
@@ -391,30 +395,8 @@ async function registerDevicePairingCode(request, env) {
     expiresAt: pairingExpiresAt,
   };
 
-  const roomObjectId = env.SIGNAL_ROOMS.idFromName(roomId);
-  const room = env.SIGNAL_ROOMS.get(roomObjectId);
-  const activationResponse = await room.fetch(new Request(
-    `https://signal.internal${ACTIVATE_PAIRING_GENERATION_PATH}`,
-    {
-      method: "POST",
-      headers: {
-        [ROOM_HEADER]: roomId,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        pairingEpoch,
-        pairingGeneration,
-        pairingExpiresAt,
-      }),
-    },
-  )).catch(() => null);
-  if (activationResponse?.status === 409) {
-    return jsonResponse({ error: "Pairing registration unavailable" }, 409);
-  }
-  if (!activationResponse || activationResponse.status !== 204) {
-    return jsonResponse({ error: "Pairing bootstrap is unavailable" }, 503);
-  }
-
+  // Pairing publication lives only in this isolated, expiring one-time slot. SignalRoom stores
+  // neither the publication generation nor any paired-browser/session registry.
   const commitResponse = await slot.fetch(new Request("https://bootstrap.internal/commit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -512,52 +494,18 @@ async function exchangeBrowserPairingCode(request, env) {
     );
   }
 
-  const roomObjectId = env.SIGNAL_ROOMS.idFromName(slotBody.roomId);
-  const room = env.SIGNAL_ROOMS.get(roomObjectId);
-  const prepareResponse = await room.fetch(new Request(
-    `https://signal.internal${PREPARE_BROWSER_ROUTE_PATH}`,
-    {
-      method: "POST",
-      headers: {
-        [ROOM_HEADER]: slotBody.roomId,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        pairingEpoch: slotBody.pairingEpoch,
-        pairingGeneration: slotBody.pairingGeneration,
-        pairingExpiresAt: slotBody.expiresAt,
-      }),
-    },
-  )).catch(() => null);
-  if (prepareResponse?.status === 409) {
-    return jsonResponse({ error: "Pairing unavailable" }, 404, responseHeaders());
-  }
-  if (!prepareResponse || prepareResponse.status !== 200) {
-    return jsonResponse(
-      { error: "Pairing bootstrap is unavailable" },
-      503,
-      responseHeaders(),
-    );
-  }
-  const prepareBody = await prepareResponse.json().catch(() => null);
-  if (!isValidRouteNonce(prepareBody?.routeNonce)) {
-    return jsonResponse(
-      { error: "Pairing bootstrap is unavailable" },
-      503,
-      responseHeaders(),
-    );
-  }
+  // A consumed one-time slot authorizes a self-contained signed route ticket. There is no
+  // pending/current/remembered route state in SignalRoom, so pairing another browser cannot
+  // invalidate or supersede this route.
+  const routeNonce = randomRouteNonce();
   let routeValue;
   try {
     routeValue = await createRouteCookieValue(
       env.BOOTSTRAP_HMAC_KEY,
       slotBody.roomId,
-      prepareBody.routeNonce,
+      routeNonce,
     );
   } catch {
-    // The slot is already consumed, but the pending route is not promoted until
-    // its WebSocket arrives. A response/cookie failure therefore preserves the
-    // current browser session; a fresh code can replace the pending route.
     return jsonResponse(
       { error: "Pairing bootstrap is unavailable" },
       503,
@@ -790,19 +738,11 @@ export class SignalRoom {
     this.ctx = ctx;
     this.env = env;
     this.connectionWindows = new Map();
+    this.routeQuarantineFallbackUntil = new Map();
+    this.orphanFallbackGraceUntil = new WeakMap();
   }
 
   async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname === PREPARE_BROWSER_ROUTE_PATH) {
-      return this.prepareBrowserRoute(request);
-    }
-    if (url.pathname === ACTIVATE_PAIRING_GENERATION_PATH) {
-      return this.activatePairingGeneration(request);
-    }
-    if (url.pathname === CHECK_BROWSER_ROUTE_PATH) {
-      return this.checkBrowserRoute(request);
-    }
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return jsonResponse({ error: "WebSocket upgrade required" }, 426);
     }
@@ -813,12 +753,15 @@ export class SignalRoom {
       return jsonResponse({ error: "Invalid internal signaling request" }, 400);
     }
 
+    const routeNonce = role === "browser" ? request.headers.get(ROUTE_NONCE_HEADER) : null;
+    const routeIssuedAtSeconds = role === "browser"
+      ? parseRouteIssuedAtHeader(request.headers.get(ROUTE_ISSUED_AT_HEADER))
+      : null;
     let browserRouteStatus = role === "browser" ? "legacy" : null;
     if (role === "browser" && request.headers.get(LEGACY_BROWSER_ROUTE_HEADER) !== "1") {
-      const routeNonce = request.headers.get(ROUTE_NONCE_HEADER);
-      browserRouteStatus = isValidRouteNonce(routeNonce)
-        ? await this.classifyBrowserRoute(routeNonce)
-        : null;
+      // The outer Worker verified the HMAC route cookie before forwarding this opaque nonce.
+      // SignalRoom deliberately has no persistent route/session registry to consult.
+      browserRouteStatus = isValidRouteNonce(routeNonce) ? "signed" : null;
       if (!browserRouteStatus) {
         return jsonResponse(
           { error: "Browser pairing is required" },
@@ -828,10 +771,21 @@ export class SignalRoom {
       }
     }
 
-    // A pending route is backed by a freshly consumed one-time code. Exempt it
-    // from the old route's reconnect bucket so an old browser cannot block the
-    // handoff by intentionally exhausting that bucket.
-    if (browserRouteStatus !== "pending" && !this.consumeConnectionAdmission(role)) {
+    if (role === "browser" && !this.hasOpenPeer("device")) {
+      return jsonResponse({ error: "The device is not connected" }, 409);
+    }
+    const quarantineRemaining = role === "browser"
+      ? this.routeQuarantineRemainingMillis(routeNonce)
+      : 0;
+    if (quarantineRemaining > 0) {
+      return jsonResponse(
+        { error: "Browser authorization retry is temporarily paused" },
+        429,
+        { "Retry-After": String(Math.max(1, Math.ceil(quarantineRemaining / 1000))) },
+      );
+    }
+
+    if (!this.consumeConnectionAdmission(role, routeNonce)) {
       return jsonResponse(
         { error: "Signaling temporarily unavailable" },
         429,
@@ -839,38 +793,38 @@ export class SignalRoom {
       );
     }
 
-    if (role === "browser" && !this.hasOpenPeer("device")) {
-      return jsonResponse({ error: "The device is not connected" }, 409);
-    }
-    const reconnectSockets = browserRouteStatus === "pending"
-      ? []
-      : this.reconnectSockets(role, request.headers.get(ROUTE_NONCE_HEADER));
+    const reconnectSockets = this.reconnectSockets(role, routeNonce);
     if (reconnectSockets === null) {
       return jsonResponse({ error: `A ${role} is already connected` }, 409);
     }
+    if (reconnectSockets === BROWSER_SOCKET_LIMIT_REACHED) {
+      return jsonResponse({ error: "Browser signaling transport limit reached" }, 409);
+    }
 
+    const now = Date.now();
+    const inheritedRouteQuarantines = role === "device"
+      ? this.collectRouteQuarantines(reconnectSockets, now)
+      : undefined;
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    if (browserRouteStatus === "pending") {
-      const routeNonce = request.headers.get(ROUTE_NONCE_HEADER);
-      if (!(await this.promoteBrowserRoute(routeNonce))) {
-        return jsonResponse(
-          { error: "Browser pairing is required" },
-          401,
-          { "WWW-Authenticate": 'NavOnWeb-Pairing realm="browser"' },
-        );
-      }
-    }
     this.ctx.acceptWebSocket(server, [role]);
+    // Hibernation attachments exist only for this live signaling transport. They contain bounded
+    // relay/rate/in-flight bookkeeping, never paired-device membership or media-session capacity.
     server.serializeAttachment({
       role,
       roomId,
-      routeNonce: role === "browser" ? request.headers.get(ROUTE_NONCE_HEADER) : undefined,
-      connectedAt: Date.now(),
+      routeNonce: role === "browser" ? routeNonce : undefined,
+      routeIssuedAtSeconds: role === "browser" ? routeIssuedAtSeconds : undefined,
+      connectedAt: now,
       leftNotified: false,
       rpcRateTokens: role === "browser" ? BROWSER_RPC_BURST : undefined,
-      rpcRateUpdatedAt: role === "browser" ? Date.now() : undefined,
+      rpcRateUpdatedAt: role === "browser" ? now : undefined,
       inFlightRequestIds: role === "browser" ? [] : undefined,
+      aggregateRpcRateTokens: role === "device" ? DEVICE_RPC_BURST : undefined,
+      aggregateRpcRateUpdatedAt: role === "device" ? now : undefined,
+      orphanedRequestIds: role === "device" ? [] : undefined,
+      orphanResponseGraceUntil: role === "device" ? null : undefined,
+      routeQuarantines: role === "device" ? inheritedRouteQuarantines : undefined,
     });
     this.supersedeReconnectSockets(role, reconnectSockets);
 
@@ -899,139 +853,33 @@ export class SignalRoom {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async checkBrowserRoute(request) {
-    if (request.method !== "GET") return emptyResponse(405, { Allow: "GET" });
-    const roomId = request.headers.get(ROOM_HEADER);
-    const routeNonce = request.headers.get(ROUTE_NONCE_HEADER);
-    if (!isValidRoomId(roomId) || !isValidRouteNonce(routeNonce)) {
-      return emptyResponse(401);
-    }
-    return await this.classifyBrowserRoute(routeNonce)
-      ? emptyResponse(204)
-      : emptyResponse(401);
-  }
-
-  async prepareBrowserRoute(request) {
-    if (request.method !== "POST") return emptyResponse(405, { Allow: "POST" });
-    const roomId = request.headers.get(ROOM_HEADER);
-    if (!isValidRoomId(roomId)) return emptyResponse(400);
-    const body = await request.json().catch(() => null);
-    if (!isValidPairingEpoch(body?.pairingEpoch) ||
-        !isValidPairingGeneration(body?.pairingGeneration) ||
-        !Number.isSafeInteger(body?.pairingExpiresAt)) return emptyResponse(400);
-
-    const routeNonce = randomRouteNonce();
-    const now = Date.now();
-    if (body.pairingExpiresAt <= now) return emptyResponse(409);
-    if (body.pairingExpiresAt > now + PAIRING_CODE_TTL_MILLIS) return emptyResponse(400);
-    const accepted = await this.ctx.storage.transaction(async (storage) => {
-      const current = normalizeBrowserRouteState(await storage.get("browserRoute"));
-      if (current.activePairingEpoch !== body.pairingEpoch ||
-          current.activePairingGeneration !== body.pairingGeneration ||
-          current.activePairingExpiresAt !== body.pairingExpiresAt) return false;
-      await storage.put("browserRoute", {
-        activePairingEpoch: current.activePairingEpoch,
-        activePairingGeneration: current.activePairingGeneration,
-        activePairingExpiresAt: current.activePairingExpiresAt,
-        currentRouteNonce: current.currentRouteNonce,
-        currentSince: current.currentSince,
-        pendingRouteNonce: routeNonce,
-        // A pending cookie can never outlive the one-time code that authorized
-        // it. Once promoted, the current browser session remains independent.
-        pendingExpiresAt: body.pairingExpiresAt,
-      });
-      return true;
-    });
-    return accepted ? jsonResponse({ routeNonce }) : emptyResponse(409);
-  }
-
-  async activatePairingGeneration(request) {
-    if (request.method !== "POST") return emptyResponse(405, { Allow: "POST" });
-    const roomId = request.headers.get(ROOM_HEADER);
-    if (!isValidRoomId(roomId)) return emptyResponse(400);
-    const body = await request.json().catch(() => null);
-    if (!isValidPairingEpoch(body?.pairingEpoch) ||
-        !isValidPairingGeneration(body?.pairingGeneration) ||
-        !Number.isSafeInteger(body?.pairingExpiresAt)) return emptyResponse(400);
-    const now = Date.now();
-    if (body.pairingExpiresAt <= now) return emptyResponse(409);
-    if (body.pairingExpiresAt > now + PAIRING_CODE_TTL_MILLIS) return emptyResponse(400);
-
-    const accepted = await this.ctx.storage.transaction(async (storage) => {
-      const current = normalizeBrowserRouteState(await storage.get("browserRoute"));
-      if (current.activePairingEpoch !== null) {
-        if (body.pairingEpoch < current.activePairingEpoch) return false;
-        if (body.pairingEpoch === current.activePairingEpoch) {
-          // Exact publication retries are idempotent and retain any pending
-          // browser handoff. Reusing an epoch for different content fails closed.
-          return current.activePairingGeneration === body.pairingGeneration &&
-            current.activePairingExpiresAt === body.pairingExpiresAt;
-        }
+  consumeConnectionAdmission(role, routeNonce = null, now = Date.now()) {
+    for (const [key, window] of this.connectionWindows) {
+      if (!Number.isSafeInteger(window?.windowStartedAt) ||
+          now - window.windowStartedAt >= BOOTSTRAP_ATTEMPT_WINDOW_MILLIS) {
+        this.connectionWindows.delete(key);
       }
-      await storage.put("browserRoute", {
-        activePairingEpoch: body.pairingEpoch,
-        activePairingGeneration: body.pairingGeneration,
-        activePairingExpiresAt: body.pairingExpiresAt,
-        currentRouteNonce: current.currentRouteNonce,
-        currentSince: current.currentSince,
-        pendingRouteNonce: null,
-        pendingExpiresAt: null,
-      });
-      return true;
-    });
-    return emptyResponse(accepted ? 204 : 409);
-  }
-
-  async classifyBrowserRoute(routeNonce, now = Date.now()) {
-    if (!isValidRouteNonce(routeNonce)) return null;
-    const current = normalizeBrowserRouteState(await this.ctx.storage.get("browserRoute"));
-    if (current.currentRouteNonce === routeNonce) return "current";
-    if (current.pendingRouteNonce === routeNonce && current.pendingExpiresAt > now) {
-      return "pending";
     }
-    return null;
-  }
-
-  async promoteBrowserRoute(routeNonce, now = Date.now()) {
-    if (!isValidRouteNonce(routeNonce)) return false;
-    const promoted = await this.ctx.storage.transaction(async (storage) => {
-      const current = normalizeBrowserRouteState(await storage.get("browserRoute"));
-      if (current.pendingRouteNonce === routeNonce && current.pendingExpiresAt > now) {
-        await storage.put("browserRoute", {
-          activePairingEpoch: current.activePairingEpoch,
-          activePairingGeneration: current.activePairingGeneration,
-          activePairingExpiresAt: current.activePairingExpiresAt,
-          currentRouteNonce: routeNonce,
-          currentSince: now,
-          pendingRouteNonce: null,
-          pendingExpiresAt: null,
-        });
-        return true;
-      }
-      return false;
-    });
-    if (promoted) this.revokeBrowserSockets();
-    return promoted;
-  }
-
-  revokeBrowserSockets() {
-    // Promotion is already durable before sockets are revoked. Marking their
-    // attachments first blocks messages racing the close handshake.
-    for (const socket of this.ctx.getWebSockets("browser")) {
-      const attachment = socket.deserializeAttachment();
-      if (attachment) socket.serializeAttachment({ ...attachment, revoked: true });
-      this.notifyPeerLeft(socket, 4001, "Browser pairing replaced", true);
-      this.closeSocket(socket, 4001, "Browser pairing replaced");
-    }
-  }
-
-  consumeConnectionAdmission(role, now = Date.now()) {
-    const current = this.connectionWindows.get(role);
+    const key = role === "browser"
+      ? `browser:${isValidRouteNonce(routeNonce) ? routeNonce : "legacy"}`
+      : "device";
+    const current = this.connectionWindows.get(key);
     const withinWindow = current &&
       now - current.windowStartedAt < BOOTSTRAP_ATTEMPT_WINDOW_MILLIS;
     const count = withinWindow ? current.count : 0;
     if (count >= SIGNAL_CREDENTIAL_CONNECTION_LIMIT) return false;
-    this.connectionWindows.set(role, {
+    if (!current && this.connectionWindows.size >= MAX_CONNECTION_ADMISSION_KEYS) {
+      let oldestKey = null;
+      let oldestStartedAt = Number.POSITIVE_INFINITY;
+      for (const [candidateKey, window] of this.connectionWindows) {
+        if (window.windowStartedAt < oldestStartedAt) {
+          oldestKey = candidateKey;
+          oldestStartedAt = window.windowStartedAt;
+        }
+      }
+      if (oldestKey !== null) this.connectionWindows.delete(oldestKey);
+    }
+    this.connectionWindows.set(key, {
       windowStartedAt: withinWindow ? current.windowStartedAt : now,
       count: count + 1,
     });
@@ -1055,105 +903,125 @@ export class SignalRoom {
       return;
     }
 
-    const peerRole = oppositeRole(attachment.role);
-    const peers = this.openSockets(peerRole, socket);
-    if (peers.length !== 1) {
-      this.closeSocket(socket, 1008, "Peer is not connected");
+    const requestId = validation.envelope.requestId;
+    if (attachment.role === "browser") {
+      if (validation.envelope.type === "rpc_request" &&
+          isPairingRelayRequest(validation.envelope) &&
+          !isFreshPairingRoute(attachment.routeIssuedAtSeconds)) {
+        this.sendRpcError(
+          socket,
+          requestId,
+          428,
+          "cloud_relay_fresh_pairing_route_required",
+        );
+        return;
+      }
+      const devices = this.openSockets("device", socket);
+      if (devices.length !== 1) {
+        this.closeSocket(socket, 1008, "Peer is not connected");
+        return;
+      }
+      const device = devices[0];
+      if (validation.envelope.type === "rpc_request") {
+        const reservation = this.reserveBrowserRequest(socket, attachment, requestId);
+        if (!reservation.ok) {
+          if (reservation.retryable) {
+            this.sendRpcError(socket, requestId, 429, reservation.error);
+          } else {
+            this.closeSocket(socket, 1008, reservation.reason);
+          }
+          return;
+        }
+        if (!this.reserveDeviceRpc(device)) {
+          this.removeBrowserRequest(socket, requestId);
+          this.sendRpcError(socket, requestId, 429, "cloud_relay_device_rate_limited");
+          return;
+        }
+      }
+      try {
+        // Relay the original JSON text. The Worker validates the envelope but never
+        // reads, rewrites, decodes, or logs the application-defined payload.
+        device.send(message);
+      } catch {
+        if (validation.envelope.type === "rpc_request") {
+          this.removeBrowserRequest(socket, requestId);
+        }
+        this.closeSocket(socket, 1011, "Peer relay failed");
+        return;
+      }
+      if (validation.envelope.type === "bye") {
+        this.closeSocket(socket, 1000, "Bye");
+      }
       return;
     }
 
-    const requestId = validation.envelope.requestId;
-    if (attachment.role === "browser" && validation.envelope.type === "rpc_request") {
-      const reservation = this.reserveBrowserRequest(socket, attachment, requestId);
-      if (!reservation.ok) {
-        if (reservation.retryable) {
-          this.sendRpcError(socket, requestId, 429, reservation.error);
-        } else {
-          this.closeSocket(socket, 1008, reservation.reason);
+    if (validation.envelope.type === "rpc_response") {
+      // Include a just-closed browser whose close callback has not run yet. Durable Object events
+      // are serialized, but readyState may already be CLOSED when the device response is dequeued.
+      const targets = this.browserSocketsForRequestId(requestId, true);
+      if (targets.length === 0) {
+        const orphan = this.consumeOrphanedRequest(socket, requestId);
+        if (orphan.consumed) {
+          if (validation.envelope.status === 401 && isValidRouteNonce(orphan.routeNonce)) {
+            this.quarantineBrowserRoute(socket, orphan.routeNonce);
+            this.closeAuthorizationRejectedRoute(orphan.routeNonce);
+          }
+          return;
         }
-        return;
-      }
-    } else if (attachment.role === "device" && validation.envelope.type === "rpc_response") {
-      if (!this.completeBrowserRequest(peers[0], requestId)) {
         this.closeSocket(socket, 1008, "Unknown rpc_response requestId");
         return;
       }
-    }
-
-    try {
-      // Relay the original JSON text. The Worker validates the envelope but never
-      // reads, rewrites, or logs the application-defined payload.
-      peers[0].send(message);
-    } catch {
-      if (attachment.role === "browser" && validation.envelope.type === "rpc_request") {
-        this.removeBrowserRequest(socket, requestId);
+      if (targets.length !== 1 || !this.completeBrowserRequest(targets[0], requestId)) {
+        this.closeSocket(socket, 1008, "Ambiguous rpc_response requestId");
+        return;
       }
-      this.closeSocket(socket, 1011, "Peer relay failed");
+      const target = targets[0];
+      const targetAttachment = target.deserializeAttachment();
+      const authorizationRejected = validation.envelope.status === 401 &&
+        isValidRouteNonce(targetAttachment?.routeNonce);
+      if (authorizationRejected) {
+        this.quarantineBrowserRoute(socket, targetAttachment.routeNonce);
+      }
+      if (target.readyState !== OPEN || targetAttachment?.revoked) {
+        // The exact owner disappeared before its close event recorded an orphan. Consume this
+        // response locally; never expose it to another browser and never tear down the device.
+        return;
+      }
+      try {
+        target.send(message);
+      } catch {
+        // The response was bound to this browser and must never be retried to another one.
+        this.closeSocket(target, 1011, "Peer relay failed");
+      }
+      if (authorizationRejected) {
+        // Deliver the phone's exact 401 to its owner, then stop only that stale route. Other
+        // browsers and the shared device transport remain live, and reconnects observe backoff.
+        this.closeAuthorizationRejectedBrowser(target);
+      }
       return;
     }
 
+    const browsers = this.openSockets("browser", socket);
+    if (browsers.length === 0) {
+      this.closeSocket(socket, 1008, "Peer is not connected");
+      return;
+    }
+    for (const browser of browsers) {
+      try {
+        browser.send(message);
+      } catch {
+        this.closeSocket(browser, 1011, "Peer relay failed");
+      }
+    }
     if (validation.envelope.type === "bye") {
       this.closeSocket(socket, 1000, "Bye");
     }
   }
 
-  webSocketClose(socket, code, reason, wasClean) {
-    this.notifyPeerLeft(socket, code, reason, wasClean);
-  }
-
-  webSocketError(socket) {
-    this.notifyPeerLeft(socket, 1011, "WebSocket error", false);
-    this.closeSocket(socket, 1011, "WebSocket error");
-  }
-
-  reconnectSockets(role, routeNonce) {
-    const occupied = this.openSockets(role);
-    if (occupied.length === 0) return [];
-
-    // A device request reaches this Durable Object only after the outer Worker has verified that
-    // its bearer secret derives this exact room. A current browser reconnect must additionally
-    // prove the same signed route nonce; legacy or different-route sockets remain exclusive.
-    if (role === "device") return occupied;
-    if (!isValidRouteNonce(routeNonce)) return null;
-    return occupied.every((socket) =>
-      socket.deserializeAttachment()?.routeNonce === routeNonce
-    ) ? occupied : null;
-  }
-
-  supersedeReconnectSockets(role, sockets) {
-    for (const socket of sockets) {
-      const attachment = socket.deserializeAttachment();
-      if (!attachment || attachment.role !== role) continue;
-      // Suppress peer_left: the authenticated replacement is already accepted, so established
-      // WebRTC media and the opposite signaling socket must remain undisturbed.
-      socket.serializeAttachment({
-        ...attachment,
-        revoked: true,
-        leftNotified: true,
-        inFlightRequestIds: role === "browser" ? [] : attachment.inFlightRequestIds,
-      });
-      this.closeSocket(socket, 4002, "Connection replaced");
-    }
-    if (role === "device" && sockets.length > 0) {
-      for (const browser of this.openSockets("browser")) {
-        this.clearBrowserRequests(browser);
-      }
-    }
-  }
-
-  hasOpenPeer(role, excludedSocket = null) {
-    return this.openSockets(role, excludedSocket).length > 0;
-  }
-
-  openSockets(role, excludedSocket = null) {
-    return this.ctx.getWebSockets(role).filter(
-      (socket) => {
-        const attachment = socket.deserializeAttachment();
-        return socket !== excludedSocket && socket.readyState === OPEN && !attachment?.revoked;
-      },
-    );
-  }
-
+  /*
+   * A browser request always targets the one authenticated device socket. The reservation below
+   * additionally binds its response to this exact browser socket.
+   */
   reserveBrowserRequest(socket, attachment, requestId) {
     const now = Date.now();
     const bucket = consumeTokenBucket(
@@ -1177,15 +1045,25 @@ export class SignalRoom {
     }
 
     const inFlight = normalizeInFlightIds(attachment.inFlightRequestIds);
-    if (inFlight.includes(requestId)) {
-      return { ok: false, reason: "Duplicate in-flight requestId" };
+    const existingOwners = this.browserSocketsForRequestId(requestId, true);
+    if (inFlight.includes(requestId) ||
+        existingOwners.some((owner) => owner.readyState === OPEN)) {
+      return { ok: false, reason: "Duplicate cross-browser in-flight requestId" };
     }
-    if (inFlight.length >= MAX_IN_FLIGHT_REQUESTS) {
+    if (existingOwners.length > 0 || this.hasUnresolvedOrphanRequestId(requestId, now)) {
+      return {
+        ok: false,
+        retryable: true,
+        error: "cloud_relay_request_id_pending",
+        reason: "A disconnected browser request is still pending",
+      };
+    }
+    if (this.aggregateInFlightRequestCount(now) >= MAX_IN_FLIGHT_REQUESTS) {
       return {
         ok: false,
         retryable: true,
         error: "cloud_relay_busy",
-        reason: "Too many in-flight RPC requests",
+        reason: "Too many room-wide in-flight RPC requests",
       };
     }
 
@@ -1196,6 +1074,347 @@ export class SignalRoom {
       inFlightRequestIds: [...inFlight, requestId],
     });
     return { ok: true };
+  }
+
+  reserveDeviceRpc(deviceSocket, now = Date.now()) {
+    const attachment = deviceSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "device") return false;
+    const bucket = consumeTokenBucket(
+      {
+        tokens: attachment.aggregateRpcRateTokens,
+        updatedAt: attachment.aggregateRpcRateUpdatedAt,
+      },
+      now,
+      DEVICE_RPC_RATE_PER_SECOND,
+      DEVICE_RPC_BURST,
+    );
+    if (!bucket.allowed) return false;
+    try {
+      deviceSocket.serializeAttachment({
+        ...attachment,
+        aggregateRpcRateTokens: bucket.tokens,
+        aggregateRpcRateUpdatedAt: bucket.updatedAt,
+      });
+      return true;
+    } catch {
+      // Fail only this RPC with a retryable 429; the shared device transport stays connected.
+      return false;
+    }
+  }
+
+  browserSocketsForRequestId(requestId, includeUnavailable = false) {
+    const browsers = includeUnavailable
+      ? this.ctx.getWebSockets("browser").filter(
+        (browser) => !browser.deserializeAttachment()?.revoked,
+      )
+      : this.openSockets("browser");
+    return browsers.filter((browser) => {
+      const browserAttachment = browser.deserializeAttachment();
+      return normalizeInFlightIds(browserAttachment?.inFlightRequestIds).includes(requestId);
+    });
+  }
+
+  aggregateInFlightRequestCount(now = Date.now()) {
+    const requestIds = new Set();
+    for (const browser of this.ctx.getWebSockets("browser")) {
+      const attachment = browser.deserializeAttachment();
+      if (attachment?.revoked) continue;
+      for (const requestId of normalizeInFlightIds(attachment?.inFlightRequestIds)) {
+        requestIds.add(requestId);
+      }
+    }
+    for (const device of this.openSockets("device")) {
+      const attachment = device.deserializeAttachment();
+      for (const entry of normalizeOrphanedRequestIds(attachment?.orphanedRequestIds, now)) {
+        requestIds.add(entry.requestId);
+      }
+      if (normalizeOrphanGraceUntil(attachment?.orphanResponseGraceUntil, now) !== null ||
+          this.orphanFallbackGrace(device, now) !== null) {
+        return Math.max(MAX_IN_FLIGHT_REQUESTS, requestIds.size);
+      }
+    }
+    return requestIds.size;
+  }
+
+  rememberBrowserRequestsAsOrphans(browserSocket, now = Date.now()) {
+    const attachment = browserSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "browser") return;
+    const requestIds = normalizeInFlightIds(attachment.inFlightRequestIds);
+    if (requestIds.length === 0) return;
+    for (const device of this.openSockets("device")) {
+      this.addOrphanedRequestIds(device, requestIds, now, attachment.routeNonce);
+    }
+    this.clearBrowserRequests(browserSocket);
+  }
+
+  addOrphanedRequestIds(deviceSocket, requestIds, now = Date.now(), routeNonce = null) {
+    const attachment = deviceSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "device") return;
+    const expiresAt = now + ORPHANED_REQUEST_TTL_MILLIS;
+    const current = normalizeOrphanedRequestIds(attachment.orphanedRequestIds, now);
+    const known = new Set(current.map((entry) => entry.requestId));
+    let overflow = false;
+    for (const requestId of requestIds) {
+      if (known.has(requestId)) continue;
+      if (current.length >= MAX_ORPHANED_REQUEST_IDS) {
+        overflow = true;
+        continue;
+      }
+      current.push({
+        requestId,
+        expiresAt,
+        ...(isValidRouteNonce(routeNonce) ? { routeNonce } : {}),
+      });
+      known.add(requestId);
+    }
+    const graceUntil = overflow
+      ? Math.max(attachment.orphanResponseGraceUntil ?? 0, expiresAt)
+      : normalizeOrphanGraceUntil(attachment.orphanResponseGraceUntil, now);
+    try {
+      deviceSocket.serializeAttachment({
+        ...attachment,
+        orphanedRequestIds: current,
+        orphanResponseGraceUntil: graceUntil,
+      });
+    } catch {
+      // A hibernatable attachment write must never let a late response tear down the shared
+      // device transport. Fall back to a compact grace marker and finally to instance memory.
+      this.rememberOrphanFallbackGrace(deviceSocket, expiresAt);
+      try {
+        deviceSocket.serializeAttachment({
+          ...attachment,
+          orphanedRequestIds: [],
+          orphanResponseGraceUntil: expiresAt,
+        });
+      } catch {
+        // The in-memory marker remains bounded by the live WebSocket objects (WeakMap).
+      }
+    }
+  }
+
+  hasUnresolvedOrphanRequestId(requestId, now = Date.now()) {
+    return this.openSockets("device").some((device) => {
+      const attachment = device.deserializeAttachment();
+      const orphans = normalizeOrphanedRequestIds(attachment?.orphanedRequestIds, now);
+      return orphans.some((entry) => entry.requestId === requestId) ||
+        normalizeOrphanGraceUntil(attachment?.orphanResponseGraceUntil, now) !== null ||
+        this.orphanFallbackGrace(device, now) !== null;
+    });
+  }
+
+  consumeOrphanedRequest(deviceSocket, requestId, now = Date.now()) {
+    const attachment = deviceSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "device") {
+      return { consumed: false, routeNonce: null };
+    }
+    const current = normalizeOrphanedRequestIds(attachment.orphanedRequestIds, now);
+    const index = current.findIndex((entry) => entry.requestId === requestId);
+    const graceUntil = normalizeOrphanGraceUntil(attachment.orphanResponseGraceUntil, now);
+    const fallbackGraceUntil = this.orphanFallbackGrace(deviceSocket, now);
+    if (index < 0 && graceUntil === null && fallbackGraceUntil === null) {
+      return { consumed: false, routeNonce: null };
+    }
+    const routeNonce = index >= 0 && isValidRouteNonce(current[index].routeNonce)
+      ? current[index].routeNonce
+      : null;
+    if (index >= 0) current.splice(index, 1);
+    try {
+      deviceSocket.serializeAttachment({
+        ...attachment,
+        orphanedRequestIds: current,
+        orphanResponseGraceUntil: graceUntil,
+      });
+    } catch {
+      this.rememberOrphanFallbackGrace(
+        deviceSocket,
+        Math.max(graceUntil ?? 0, fallbackGraceUntil ?? 0, now + ORPHANED_REQUEST_TTL_MILLIS),
+      );
+    }
+    return { consumed: true, routeNonce };
+  }
+
+  consumeOrphanedRequestId(deviceSocket, requestId, now = Date.now()) {
+    return this.consumeOrphanedRequest(deviceSocket, requestId, now).consumed;
+  }
+
+  rememberOrphanFallbackGrace(deviceSocket, expiresAt) {
+    const current = this.orphanFallbackGraceUntil.get(deviceSocket) ?? 0;
+    this.orphanFallbackGraceUntil.set(deviceSocket, Math.max(current, expiresAt));
+  }
+
+  orphanFallbackGrace(deviceSocket, now = Date.now()) {
+    const expiresAt = this.orphanFallbackGraceUntil.get(deviceSocket);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) {
+      this.orphanFallbackGraceUntil.delete(deviceSocket);
+      return null;
+    }
+    return expiresAt;
+  }
+
+  collectRouteQuarantines(deviceSockets, now = Date.now()) {
+    const byRoute = new Map();
+    for (const socket of deviceSockets) {
+      const attachment = socket.deserializeAttachment();
+      for (const entry of normalizeRouteQuarantines(attachment?.routeQuarantines, now)) {
+        byRoute.set(entry.routeNonce, Math.max(byRoute.get(entry.routeNonce) ?? 0, entry.expiresAt));
+      }
+    }
+    for (const [routeNonce, expiresAt] of this.routeQuarantineFallbackUntil) {
+      if (!isValidRouteNonce(routeNonce) || !Number.isSafeInteger(expiresAt) || expiresAt <= now) {
+        this.routeQuarantineFallbackUntil.delete(routeNonce);
+        continue;
+      }
+      byRoute.set(routeNonce, Math.max(byRoute.get(routeNonce) ?? 0, expiresAt));
+    }
+    return [...byRoute.entries()]
+      .map(([routeNonce, expiresAt]) => ({ routeNonce, expiresAt }))
+      .sort((left, right) => right.expiresAt - left.expiresAt)
+      .slice(0, MAX_ROUTE_QUARANTINES);
+  }
+
+  routeQuarantineRemainingMillis(routeNonce, now = Date.now()) {
+    if (!isValidRouteNonce(routeNonce)) return 0;
+    let expiresAt = this.routeQuarantineFallbackUntil.get(routeNonce) ?? 0;
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) {
+      this.routeQuarantineFallbackUntil.delete(routeNonce);
+      expiresAt = 0;
+    }
+    for (const device of this.openSockets("device")) {
+      for (const entry of normalizeRouteQuarantines(
+        device.deserializeAttachment()?.routeQuarantines,
+        now,
+      )) {
+        if (entry.routeNonce === routeNonce) expiresAt = Math.max(expiresAt, entry.expiresAt);
+      }
+    }
+    return Math.max(0, expiresAt - now);
+  }
+
+  quarantineBrowserRoute(deviceSocket, routeNonce, now = Date.now()) {
+    if (!isValidRouteNonce(routeNonce)) return;
+    const expiresAt = now + STALE_ROUTE_QUARANTINE_MILLIS;
+    this.routeQuarantineFallbackUntil.set(routeNonce, expiresAt);
+    while (this.routeQuarantineFallbackUntil.size > MAX_ROUTE_QUARANTINES) {
+      let oldestRoute = null;
+      let oldestExpiresAt = Number.POSITIVE_INFINITY;
+      for (const [candidateRoute, candidateExpiresAt] of this.routeQuarantineFallbackUntil) {
+        if (candidateExpiresAt < oldestExpiresAt) {
+          oldestRoute = candidateRoute;
+          oldestExpiresAt = candidateExpiresAt;
+        }
+      }
+      if (oldestRoute === null) break;
+      this.routeQuarantineFallbackUntil.delete(oldestRoute);
+    }
+
+    const attachment = deviceSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "device") return;
+    const current = normalizeRouteQuarantines(attachment.routeQuarantines, now)
+      .filter((entry) => entry.routeNonce !== routeNonce);
+    try {
+      deviceSocket.serializeAttachment({
+        ...attachment,
+        routeQuarantines: [...current, { routeNonce, expiresAt }]
+          .sort((left, right) => right.expiresAt - left.expiresAt)
+          .slice(0, MAX_ROUTE_QUARANTINES),
+      });
+    } catch {
+      // The bounded instance map still protects the live room if attachment serialization fails.
+    }
+  }
+
+  closeAuthorizationRejectedBrowser(browserSocket) {
+    let attachment = browserSocket.deserializeAttachment();
+    if (!attachment || attachment.role !== "browser") return;
+    this.rememberBrowserRequestsAsOrphans(browserSocket);
+    attachment = browserSocket.deserializeAttachment() ?? attachment;
+    try {
+      browserSocket.serializeAttachment({
+        ...attachment,
+        revoked: true,
+        leftNotified: true,
+        inFlightRequestIds: [],
+      });
+    } catch {
+      // Closing still prevents this stale socket from spending more shared device budget.
+    }
+    this.closeSocket(browserSocket, 4003, "Browser authorization rejected");
+  }
+
+  closeAuthorizationRejectedRoute(routeNonce) {
+    if (!isValidRouteNonce(routeNonce)) return;
+    for (const browser of this.openSockets("browser")) {
+      if (browser.deserializeAttachment()?.routeNonce === routeNonce) {
+        this.closeAuthorizationRejectedBrowser(browser);
+      }
+    }
+  }
+
+  webSocketClose(socket, code, reason, wasClean) {
+    this.notifyPeerLeft(socket, code, reason, wasClean);
+  }
+
+  webSocketError(socket) {
+    this.notifyPeerLeft(socket, 1011, "WebSocket error", false);
+    this.closeSocket(socket, 1011, "WebSocket error");
+  }
+
+  reconnectSockets(role, routeNonce) {
+    const occupied = this.openSockets(role);
+    if (occupied.length === 0) return [];
+
+    // A device request reaches this Durable Object only after the outer Worker has verified that
+    // its bearer secret derives this exact room. A current browser reconnect must additionally
+    // prove the same signed route nonce; legacy or different-route sockets remain exclusive.
+    if (role === "device") return occupied;
+    const sameRoute = occupied.filter((socket) => {
+      const existingNonce = socket.deserializeAttachment()?.routeNonce;
+      return isValidRouteNonce(routeNonce)
+        ? existingNonce === routeNonce
+        : !isValidRouteNonce(existingNonce);
+    });
+    if (sameRoute.length > 0) return sameRoute;
+    return occupied.length >= MAX_LIVE_BROWSER_SOCKETS
+      ? BROWSER_SOCKET_LIMIT_REACHED
+      : [];
+  }
+
+  supersedeReconnectSockets(role, sockets) {
+    for (const socket of sockets) {
+      const attachment = socket.deserializeAttachment();
+      if (!attachment || attachment.role !== role) continue;
+      if (role === "browser") {
+        this.rememberBrowserRequestsAsOrphans(socket);
+      }
+      // Suppress peer_left: the authenticated replacement is already accepted, so established
+      // WebRTC media and the opposite signaling socket must remain undisturbed.
+      const currentAttachment = socket.deserializeAttachment() ?? attachment;
+      socket.serializeAttachment({
+        ...currentAttachment,
+        revoked: true,
+        leftNotified: true,
+        inFlightRequestIds: role === "browser" ? [] : currentAttachment.inFlightRequestIds,
+      });
+      this.closeSocket(socket, 4002, "Connection replaced");
+    }
+    if (role === "device" && sockets.length > 0) {
+      for (const browser of this.openSockets("browser")) {
+        this.clearBrowserRequests(browser);
+      }
+    }
+  }
+
+  hasOpenPeer(role, excludedSocket = null) {
+    return this.openSockets(role, excludedSocket).length > 0;
+  }
+
+  openSockets(role, excludedSocket = null) {
+    return this.ctx.getWebSockets(role).filter(
+      (socket) => {
+        const attachment = socket.deserializeAttachment();
+        return socket !== excludedSocket && socket.readyState === OPEN && !attachment?.revoked;
+      },
+    );
   }
 
   completeBrowserRequest(browserSocket, requestId) {
@@ -1235,11 +1454,15 @@ export class SignalRoom {
   }
 
   notifyPeerLeft(socket, code, reason, wasClean) {
-    const attachment = socket.deserializeAttachment();
+    let attachment = socket.deserializeAttachment();
     if (!attachment || attachment.leftNotified) {
       return;
     }
 
+    if (attachment.role === "browser") {
+      this.rememberBrowserRequestsAsOrphans(socket);
+      attachment = socket.deserializeAttachment() ?? attachment;
+    }
     socket.serializeAttachment({ ...attachment, leftNotified: true });
     for (const peer of this.openSockets(oppositeRole(attachment.role), socket)) {
       if (attachment.role === "device") {
@@ -1302,7 +1525,49 @@ function normalizeInFlightIds(value) {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter((entry) => typeof entry === "string").slice(0, MAX_IN_FLIGHT_REQUESTS);
+  return value.filter((entry) => isValidRequestId(entry)).slice(0, MAX_IN_FLIGHT_REQUESTS);
+}
+
+function normalizeOrphanedRequestIds(value, now = Date.now()) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry) ||
+        !isValidRequestId(entry.requestId) ||
+        !Number.isSafeInteger(entry.expiresAt) ||
+        entry.expiresAt <= now ||
+        seen.has(entry.requestId)) continue;
+    seen.add(entry.requestId);
+    normalized.push({
+      requestId: entry.requestId,
+      expiresAt: entry.expiresAt,
+      ...(isValidRouteNonce(entry.routeNonce) ? { routeNonce: entry.routeNonce } : {}),
+    });
+    if (normalized.length >= MAX_ORPHANED_REQUEST_IDS) break;
+  }
+  return normalized;
+}
+
+function normalizeOrphanGraceUntil(value, now = Date.now()) {
+  return Number.isSafeInteger(value) && value > now ? value : null;
+}
+
+function normalizeRouteQuarantines(value, now = Date.now()) {
+  if (!Array.isArray(value)) return [];
+  const byRoute = new Map();
+  for (const entry of value) {
+    if (!isPlainRecord(entry) ||
+        !isValidRouteNonce(entry.routeNonce) ||
+        !Number.isSafeInteger(entry.expiresAt) ||
+        entry.expiresAt <= now ||
+        entry.expiresAt > now + STALE_ROUTE_QUARANTINE_MILLIS) continue;
+    byRoute.set(entry.routeNonce, Math.max(byRoute.get(entry.routeNonce) ?? 0, entry.expiresAt));
+  }
+  return [...byRoute.entries()]
+    .map(([routeNonce, expiresAt]) => ({ routeNonce, expiresAt }))
+    .sort((left, right) => right.expiresAt - left.expiresAt)
+    .slice(0, MAX_ROUTE_QUARANTINES);
 }
 
 function sanitizeCloseReason(reason) {
@@ -1327,6 +1592,30 @@ function isValidPairingEpoch(value) {
   return Number.isSafeInteger(value) && value > 0;
 }
 
+function parseRouteIssuedAtHeader(value) {
+  if (typeof value !== "string" || !/^\d{10}$/u.test(value)) return null;
+  const issuedAtSeconds = Number.parseInt(value, 10);
+  return Number.isSafeInteger(issuedAtSeconds) ? issuedAtSeconds : null;
+}
+
+function isPairingRelayRequest(envelope) {
+  if (typeof envelope?.method !== "string" ||
+      envelope.method.toUpperCase() !== "POST" ||
+      typeof envelope?.target !== "string") return false;
+  try {
+    const target = new URL(envelope.target, "https://navonweb.invalid");
+    return target.origin === "https://navonweb.invalid" && target.pathname === "/api/pair";
+  } catch {
+    return false;
+  }
+}
+
+function isFreshPairingRoute(issuedAtSeconds, now = Date.now()) {
+  if (!Number.isSafeInteger(issuedAtSeconds)) return false;
+  const ageMillis = now - issuedAtSeconds * 1000;
+  return ageMillis >= 0 && ageMillis <= PAIRING_CODE_TTL_MILLIS;
+}
+
 function parsePairingEpochHeader(value) {
   if (typeof value !== "string" || !/^[1-9][0-9]{0,15}$/u.test(value)) return null;
   const epoch = Number(value);
@@ -1345,33 +1634,6 @@ function parsePairingExpiresAtHeader(value) {
   if (typeof value !== "string" || !/^[1-9][0-9]{0,15}$/u.test(value)) return null;
   const expiresAt = Number(value);
   return Number.isSafeInteger(expiresAt) ? expiresAt : null;
-}
-
-function normalizeBrowserRouteState(value) {
-  const legacyCurrent = isValidRouteNonce(value?.routeNonce) ? value.routeNonce : null;
-  return {
-    activePairingEpoch: isValidPairingEpoch(value?.activePairingEpoch)
-      ? value.activePairingEpoch
-      : null,
-    activePairingGeneration: isValidPairingGeneration(value?.activePairingGeneration)
-      ? value.activePairingGeneration
-      : null,
-    activePairingExpiresAt: Number.isSafeInteger(value?.activePairingExpiresAt)
-      ? value.activePairingExpiresAt
-      : null,
-    currentRouteNonce: isValidRouteNonce(value?.currentRouteNonce)
-      ? value.currentRouteNonce
-      : legacyCurrent,
-    currentSince: Number.isSafeInteger(value?.currentSince)
-      ? value.currentSince
-      : null,
-    pendingRouteNonce: isValidRouteNonce(value?.pendingRouteNonce)
-      ? value.pendingRouteNonce
-      : null,
-    pendingExpiresAt: Number.isSafeInteger(value?.pendingExpiresAt)
-      ? value.pendingExpiresAt
-      : null,
-  };
 }
 
 export async function readBoundedPairingCode(request) {
