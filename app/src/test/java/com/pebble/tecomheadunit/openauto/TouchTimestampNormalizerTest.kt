@@ -8,10 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
-class TouchTimestampNormalizerTest {
+class InputTimestampNormalizerTest {
     @Test
     fun `nanoseconds remain strictly increasing nanoseconds`() {
-        val timestamps = TouchTimestampNormalizer()
+        val timestamps = InputTimestampNormalizer()
 
         assertEquals(2_000_999L, timestamps.normalize(2_000_999L))
         assertEquals(2_001_000L, timestamps.normalize(2_000_999L))
@@ -21,7 +21,7 @@ class TouchTimestampNormalizerTest {
 
     @Test
     fun `negative event timestamp is rejected`() {
-        val timestamps = TouchTimestampNormalizer()
+        val timestamps = InputTimestampNormalizer()
 
         assertThrows(AasdkProtocolException::class.java) {
             timestamps.normalize(-1L)

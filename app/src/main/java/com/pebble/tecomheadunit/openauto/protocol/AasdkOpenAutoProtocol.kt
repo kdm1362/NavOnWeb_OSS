@@ -6,6 +6,9 @@ package com.pebble.tecomheadunit.openauto.protocol
 import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import com.pebble.tecomheadunit.core.TouchPhase
 import com.pebble.tecomheadunit.openauto.OpenAutoConfig
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyAction
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyCode
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyEvent
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 
 internal enum class AasdkVoiceSessionStatus {
@@ -125,11 +128,9 @@ internal object AasdkOpenAutoProtocol {
         return AasdkAvMediaAck(session = session.toInt(), value = value)
     }
 
-    /** Full seven-channel OpenAuto default response, including the message id. */
-    fun serviceDiscoveryResponse(): ByteArray = envelope(
-        SERVICE_DISCOVERY_RESPONSE,
-        OPENAUTO_DEFAULT_SERVICE_DISCOVERY_PROTOBUF,
-    )
+    /** Full seven-channel response, including the explicit input-key allowlist. */
+    fun serviceDiscoveryResponse(): ByteArray =
+        serviceDiscoveryResponse(ProjectionVideoProfile.FREE_800X480.toOpenAutoConfig())
 
     /**
      * Advertises exactly one of the supported landscape or portrait OpenAuto encoded profiles.
@@ -184,27 +185,28 @@ internal object AasdkOpenAutoProtocol {
                 encodeLengthDelimitedField(fieldNumber = 3, value = avChannel),
             ).joinByteArrays(),
         )
-        val protobuf = OPENAUTO_DEFAULT_SERVICE_DISCOVERY_PROTOBUF.replaceUnique(
+        var protobuf = OPENAUTO_DEFAULT_SERVICE_DISCOVERY_PROTOBUF.replaceUnique(
             marker = VIDEO_CHANNEL_DESCRIPTOR_MARKER,
             replacement = videoDescriptor,
         )
 
-        // The input channel's TouchConfig must describe the same viewport used by the video
-        // channel and local TouchMapper. All supported profiles encode each dimension in two
-        // varint bytes, preserving the pinned outer protobuf lengths.
-        val width = encodeVarint(config.viewport.width.toLong())
-        val height = encodeVarint(config.viewport.height.toLong())
-        if (width.size != TOUCH_DIMENSION_VARINT_BYTES || height.size != TOUCH_DIMENSION_VARINT_BYTES) {
-            throw AasdkProtocolException("unsupported touch viewport encoding")
-        }
-        val touchMarkerOffset = protobuf.indexOfUnique(TOUCH_CONFIG_MARKER)
-        width.copyInto(
-            destination = protobuf,
-            destinationOffset = touchMarkerOffset + TOUCH_WIDTH_OFFSET_IN_MARKER,
+        // Keycodes are packed uint32 field 1. Rebuild each enclosing input length rather than
+        // mutating the old touch-only fixture in place.
+        val packedKeycodes = OpenAutoKeyCode.SUPPORTED.sorted()
+            .map { encodeVarint(it.toLong()) }
+            .joinByteArrays()
+        val touchConfig = encodeVarintField(1, config.viewport.width.toLong()) +
+            encodeVarintField(2, config.viewport.height.toLong())
+        val inputChannel = encodeLengthDelimitedField(1, packedKeycodes) +
+            encodeLengthDelimitedField(2, touchConfig)
+        val inputDescriptor = encodeLengthDelimitedField(
+            fieldNumber = 1,
+            value = encodeVarintField(1, CHANNEL_INPUT.toLong()) +
+                encodeLengthDelimitedField(4, inputChannel),
         )
-        height.copyInto(
-            destination = protobuf,
-            destinationOffset = touchMarkerOffset + TOUCH_HEIGHT_OFFSET_IN_MARKER,
+        protobuf = protobuf.replaceUnique(
+            marker = INPUT_CHANNEL_DESCRIPTOR_MARKER,
+            replacement = inputDescriptor,
         )
         return envelope(SERVICE_DISCOVERY_RESPONSE, protobuf)
     }
@@ -273,6 +275,143 @@ internal object AasdkOpenAutoProtocol {
 
         return envelope(INPUT_EVENT_INDICATION, indication)
     }
+
+    /** Encodes one half of an atomic allowlisted button click. */
+    fun buttonInputEventIndication(
+        event: OpenAutoKeyEvent,
+        isPressed: Boolean,
+        timestampNanos: Long,
+    ): ByteArray {
+        if (timestampNanos < 0L) throw AasdkProtocolException("invalid key timestamp")
+        if (event.action != OpenAutoKeyAction.CLICK || !OpenAutoKeyCode.supports(event)) {
+            throw AasdkProtocolException("unsupported key event")
+        }
+
+        val button = encodeVarintField(1, event.scanCode.toLong()) +
+            encodeVarintField(fieldNumber = 2, value = if (isPressed) 1L else 0L) +
+            // Explicit defaults remain compatible with the pinned proto3 schema and
+            // satisfy Android Auto versions whose internal reader treats them as required.
+            encodeVarintField(3, 0L) +
+            encodeVarintField(4, 0L)
+        return envelope(
+            INPUT_EVENT_INDICATION,
+            encodeVarintField(1, timestampNanos) +
+                encodeLengthDelimitedField(
+                    fieldNumber = 4,
+                    value = encodeLengthDelimitedField(1, button),
+                ),
+        )
+    }
+
+    /** Encodes one allowlisted relative SCROLL_WHEEL event. */
+    fun relativeInputEventIndication(
+        event: OpenAutoKeyEvent,
+        timestampNanos: Long,
+    ): ByteArray {
+        if (timestampNanos < 0L) throw AasdkProtocolException("invalid key timestamp")
+        if (!OpenAutoKeyCode.supports(event) || event.action == OpenAutoKeyAction.CLICK) {
+            throw AasdkProtocolException("unsupported key event")
+        }
+
+        val relative = encodeVarintField(1, event.scanCode.toLong()) +
+            encodeInt32Field(
+                fieldNumber = 2,
+                value = if (event.action == OpenAutoKeyAction.SCROLL_LEFT) -1 else 1,
+            )
+        return envelope(
+            INPUT_EVENT_INDICATION,
+            encodeVarintField(1, timestampNanos) +
+                encodeLengthDelimitedField(
+                    fieldNumber = 6,
+                    value = encodeLengthDelimitedField(1, relative),
+                ),
+        )
+    }
+
+    /**
+     * Expands one accepted queue item into the complete ordered wire sequence.
+     * A button click always occupies one queue slot yet emits PRESS then RELEASE
+     * before the sender dequeues any following touch or key item.
+     */
+    fun keyInputEventIndications(
+        event: OpenAutoKeyEvent,
+        firstTimestampNanos: Long,
+        secondTimestampNanos: Long? = null,
+    ): List<ByteArray> = when (event.action) {
+        OpenAutoKeyAction.CLICK -> {
+            val releaseTimestamp = secondTimestampNanos
+                ?: throw AasdkProtocolException("button click has no release timestamp")
+            if (releaseTimestamp <= firstTimestampNanos) {
+                throw AasdkProtocolException("button click timestamps are not increasing")
+            }
+            listOf(
+                buttonInputEventIndication(event, isPressed = true, firstTimestampNanos),
+                buttonInputEventIndication(event, isPressed = false, releaseTimestamp),
+            )
+        }
+
+        OpenAutoKeyAction.SCROLL_LEFT,
+        OpenAutoKeyAction.SCROLL_RIGHT,
+        -> {
+            if (secondTimestampNanos != null) {
+                throw AasdkProtocolException("scroll event has an unexpected second timestamp")
+            }
+            listOf(relativeInputEventIndication(event, firstTimestampNanos))
+        }
+    }
+
+    /** Parses proto3 packed or legacy unpacked BindingRequest.scan_codes. */
+    fun parseBindingRequestScanCodes(applicationPayload: ByteArray): List<Int> {
+        val body = requireApplicationMessage(
+            applicationPayload,
+            BINDING_REQUEST,
+            "input binding",
+        )
+        val output = ArrayList<Int>()
+        var offset = 0
+        while (offset < body.size) {
+            val key = readVarint(body, offset)
+            offset = key.nextOffset
+            val number = (key.value ushr 3).toInt()
+            val wireType = (key.value and 0x07).toInt()
+            if (number <= 0) throw AasdkProtocolException("invalid protobuf key")
+            if (number != 1) {
+                offset = skipField(body, offset, wireType)
+                continue
+            }
+            when (wireType) {
+                WIRE_VARINT -> {
+                    val value = readVarint(body, offset)
+                    offset = value.nextOffset
+                    output.addBindingScanCode(value.value)
+                }
+
+                WIRE_LENGTH_DELIMITED -> {
+                    val length = readVarint(body, offset)
+                    if (length.value > Int.MAX_VALUE) {
+                        throw AasdkProtocolException("binding scan-code field exceeds limit")
+                    }
+                    offset = length.nextOffset
+                    val end = checkedAdvance(offset, length.value.toInt(), body.size)
+                    while (offset < end) {
+                        val value = readVarint(body, offset)
+                        if (value.nextOffset > end) {
+                            throw AasdkProtocolException("truncated packed scan code")
+                        }
+                        offset = value.nextOffset
+                        output.addBindingScanCode(value.value)
+                    }
+                }
+
+                else -> throw AasdkProtocolException("invalid binding scan-code wire type")
+            }
+        }
+        return output
+    }
+
+    /** Unknown or malformed codes never make the input channel ready. */
+    fun bindingRequestSupported(applicationPayload: ByteArray): Boolean =
+        parseBindingRequestScanCodes(applicationPayload).all(OpenAutoKeyCode.SUPPORTED::contains)
 
     fun avChannelSetupSuccess(): ByteArray = envelope(
         AV_CHANNEL_SETUP_RESPONSE,
@@ -470,6 +609,25 @@ internal object AasdkOpenAutoProtocol {
             value
     }
 
+    private fun encodeInt32Field(fieldNumber: Int, value: Int): ByteArray {
+        if (fieldNumber <= 0) throw AasdkProtocolException("invalid protobuf field number")
+        return encodeVarint((fieldNumber.toLong() shl 3) or WIRE_VARINT.toLong()) +
+            encodeSignedInt32(value)
+    }
+
+    /** protobuf int32 uses a ten-byte sign-extended varint for negative values. */
+    private fun encodeSignedInt32(input: Int): ByteArray {
+        val output = ArrayList<Byte>(MAX_VARINT_BYTES)
+        var remaining = input.toLong()
+        do {
+            var byte = (remaining and 0x7F).toInt()
+            remaining = remaining ushr 7
+            if (remaining != 0L) byte = byte or 0x80
+            output += byte.toByte()
+        } while (remaining != 0L)
+        return output.toByteArray()
+    }
+
     private fun encodeVarint(input: Long): ByteArray {
         if (input < 0L) throw AasdkProtocolException("invalid protobuf varint")
         val output = ArrayList<Byte>(MAX_VARINT_BYTES)
@@ -514,6 +672,30 @@ internal object AasdkOpenAutoProtocol {
         return offset + count
     }
 
+    private fun skipField(data: ByteArray, valueOffset: Int, wireType: Int): Int = when (wireType) {
+        WIRE_VARINT -> readVarint(data, valueOffset).nextOffset
+        WIRE_FIXED_64 -> checkedAdvance(valueOffset, 8, data.size)
+        WIRE_LENGTH_DELIMITED -> {
+            val length = readVarint(data, valueOffset)
+            if (length.value > Int.MAX_VALUE) {
+                throw AasdkProtocolException("protobuf field length exceeds limit")
+            }
+            checkedAdvance(length.nextOffset, length.value.toInt(), data.size)
+        }
+        WIRE_FIXED_32 -> checkedAdvance(valueOffset, 4, data.size)
+        else -> throw AasdkProtocolException("unsupported protobuf wire type")
+    }
+
+    private fun MutableList<Int>.addBindingScanCode(value: Long) {
+        if (size >= MAX_BINDING_SCAN_CODES) {
+            throw AasdkProtocolException("too many binding scan codes")
+        }
+        if (value !in 0L..Int.MAX_VALUE.toLong()) {
+            throw AasdkProtocolException("invalid binding scan code")
+        }
+        add(value.toInt())
+    }
+
     private data class Varint(val value: Long, val nextOffset: Int)
 
     private fun List<ByteArray>.joinByteArrays(): ByteArray {
@@ -535,6 +717,7 @@ internal object AasdkOpenAutoProtocol {
     private const val MICROPHONE_BYTES_PER_SAMPLE = 2
     private const val MAX_VARINT_BYTES = 10
     private const val MAX_UINT32 = 0xFFFF_FFFFL
+    private const val MAX_BINDING_SCAN_CODES = 64
     private const val WIRE_VARINT = 0
     private const val WIRE_FIXED_64 = 1
     private const val WIRE_LENGTH_DELIMITED = 2
@@ -551,9 +734,6 @@ internal object AasdkOpenAutoProtocol {
     private const val VIDEO_RESOLUTION_1080X1920 = 7
     private const val VIDEO_STREAM_TYPE = 3L
     private const val VIDEO_FPS_60_ENUM = 2L
-    private const val TOUCH_WIDTH_OFFSET_IN_MARKER = 3
-    private const val TOUCH_HEIGHT_OFFSET_IN_MARKER = 6
-    private const val TOUCH_DIMENSION_VARINT_BYTES = 2
 
     private val VIDEO_CHANNEL_DESCRIPTOR_MARKER = byteArrayOf(
         0x0A,
@@ -577,7 +757,13 @@ internal object AasdkOpenAutoProtocol {
         0x01,
     )
 
-    private val TOUCH_CONFIG_MARKER = byteArrayOf(
+    private val INPUT_CHANNEL_DESCRIPTOR_MARKER = byteArrayOf(
+        0x0A,
+        0x0C,
+        0x08,
+        CHANNEL_INPUT.toByte(),
+        0x22,
+        0x08,
         0x12,
         0x06,
         0x08,

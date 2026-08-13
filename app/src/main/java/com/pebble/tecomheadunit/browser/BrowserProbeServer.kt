@@ -23,6 +23,7 @@ import com.pebble.tecomheadunit.openauto.ProjectionProfileSnapshot
 import com.pebble.tecomheadunit.openauto.ProjectionViewportControl
 import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
 import com.pebble.tecomheadunit.openauto.ProjectionViewportSnapshot
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyEvent
 import com.pebble.tecomheadunit.session.BrowserTrustStore
 import com.pebble.tecomheadunit.session.AuthenticatedBrowserDevice
 import com.pebble.tecomheadunit.session.BrowserCredentialIssueResult
@@ -82,6 +83,8 @@ class BrowserProbeServer(
     private val androidAutoConnection: () -> AndroidAutoConnectionStatus,
     private val touchInputReady: () -> Boolean = { false },
     private val onTouch: (NormalizedTouch) -> Boolean,
+    private val keyInputReady: () -> Boolean = touchInputReady,
+    private val onKey: (OpenAutoKeyEvent) -> Boolean = { false },
     private val webRtcSignaling: BrowserWebRtcSignaling = BrowserWebRtcSignaling.Unavailable,
     /** Added only to capabilities served through [dispatchRelay], never the local HTTP API. */
     private val cloudLanStunIceServer: () -> BrowserWebRtcIceServer? = { null },
@@ -354,6 +357,8 @@ class BrowserProbeServer(
                 serveProjectionViewportRequest(parsed, output)
             parsed.method == "POST" && parsed.path == "/api/touch" ->
                 serveTouch(parsed, output)
+            parsed.method == "POST" && parsed.path == "/api/key" ->
+                serveKey(parsed, output)
             else -> writeResponse(output, 404, "text/plain; charset=utf-8", "Not found".toByteArray())
         }
         return decodeRelayResponse(output)
@@ -1450,6 +1455,88 @@ class BrowserProbeServer(
         writeResponse(output, status, "application/json", body.toByteArray())
     }
 
+    /** WebRTC-only Android Auto key input. The local HTTP router intentionally has no route. */
+    private fun serveKey(
+        request: HttpRequest,
+        output: OutputStream,
+    ): Unit = synchronized(pairingCodeOperationLock) {
+        val device = authenticatedDevice(request) ?: run {
+            writeResponse(output, 401, JSON_CONTENT_TYPE, ERROR_INVALID_BROWSER_CREDENTIAL)
+            return
+        }
+        if (device.device.permission == BrowserDevicePermission.READ_ONLY) {
+            writeResponse(
+                output,
+                403,
+                JSON_CONTENT_TYPE,
+                "{\"accepted\":false,\"reason\":\"read_only_session\"}".toByteArray(),
+            )
+            return
+        }
+        val connection = androidAutoConnection()
+        val inputReady = keyInputReady()
+        if (!isKeyInputAllowed(connection, inputReady)) {
+            val reason = if (connection.state == AndroidAutoConnectionState.CONNECTED) {
+                "input_not_ready"
+            } else {
+                "android_auto_not_connected"
+            }
+            writeResponse(
+                output,
+                409,
+                JSON_CONTENT_TYPE,
+                "{\"accepted\":false,\"reason\":\"$reason\"}".toByteArray(),
+            )
+            return
+        }
+
+        val event = when (
+            val decoded = decodeBrowserKeyInput(
+                contentType = request.headers["content-type"],
+                hasQueryParameters = request.hasQuery,
+                body = request.body,
+            )
+        ) {
+            is BrowserKeyInputDecodeResult.Accepted -> decoded.event
+            BrowserKeyInputDecodeResult.PayloadTooLarge -> {
+                writeResponse(
+                    output,
+                    413,
+                    JSON_CONTENT_TYPE,
+                    "{\"error\":\"key_payload_too_large\"}".toByteArray(),
+                )
+                return
+            }
+            BrowserKeyInputDecodeResult.UnsupportedMediaType -> {
+                writeResponse(
+                    output,
+                    415,
+                    JSON_CONTENT_TYPE,
+                    "{\"error\":\"unsupported_key_content_type\"}".toByteArray(),
+                )
+                return
+            }
+            BrowserKeyInputDecodeResult.Invalid -> {
+                writeResponse(
+                    output,
+                    422,
+                    JSON_CONTENT_TYPE,
+                    "{\"error\":\"invalid_key_input\"}".toByteArray(),
+                )
+                return
+            }
+        }
+
+        val accepted = runCatching { onKey(event) }.getOrDefault(false)
+        val status = if (accepted) 202 else 409
+        val body = if (accepted) {
+            "{\"accepted\":true}"
+        } else {
+            "{\"accepted\":false,\"reason\":\"queue_rejected\"}"
+        }
+        writeResponse(output, status, JSON_CONTENT_TYPE, body.toByteArray())
+    }
+
     private fun authenticatedDevice(request: HttpRequest): AuthenticatedBrowserDevice? =
         browserTrustStore.authenticate(request.headers["x-browser-credential"])
 
@@ -1636,6 +1723,7 @@ class BrowserProbeServer(
     private data class HttpRequest(
         val method: String,
         val path: String,
+        val hasQuery: Boolean,
         val query: Map<String, String>,
         val headers: Map<String, String>,
         val body: ByteArray,
@@ -1652,6 +1740,7 @@ class BrowserProbeServer(
                 return HttpRequest(
                     method = request.method,
                     path = uri.path ?: "/",
+                    hasQuery = uri.rawQuery != null,
                     query = parseQuery(uri.rawQuery),
                     headers = request.headers,
                     body = request.body,
@@ -1692,6 +1781,7 @@ class BrowserProbeServer(
                 return HttpRequest(
                     method = parts[0].uppercase(),
                     path = uri.path ?: "/",
+                    hasQuery = uri.rawQuery != null,
                     query = parseQuery(uri.rawQuery),
                     headers = headers,
                     body = String(bodyChars).toByteArray(StandardCharsets.UTF_8),
@@ -1841,6 +1931,12 @@ class BrowserProbeServer(
             touchInputReady: Boolean = false,
         ): Boolean =
             connection.state == AndroidAutoConnectionState.CONNECTED && touchInputReady
+
+        internal fun isKeyInputAllowed(
+            connection: AndroidAutoConnectionStatus,
+            keyInputReady: Boolean = false,
+        ): Boolean =
+            connection.state == AndroidAutoConnectionState.CONNECTED && keyInputReady
 
         internal fun shouldServeFrameImmediately(
             currentVersion: Long?,

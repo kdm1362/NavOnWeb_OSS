@@ -309,8 +309,8 @@ android {
         applicationId = "com.eigenkodex.navonweb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.1.13-p0"
+        versionCode = 24
+        versionName = "0.1.14-p0"
 
         buildConfigField(
             "String",
@@ -516,7 +516,7 @@ val verifyReleaseSourceCodeUrl by tasks.registering {
     doLast {
         require(immutablePublicSourceUrl.matches(sourceCodeUrl)) {
             "Release builds require -PsourceCodeUrl=" +
-                "$publicSourceRepositoryUrl/tree/v0.1.13-p0-source " +
+                "$publicSourceRepositoryUrl/tree/v0.1.14-p0-source " +
                 "(or the full 40-character source commit)."
         }
     }

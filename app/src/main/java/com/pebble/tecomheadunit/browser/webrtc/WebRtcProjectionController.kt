@@ -1582,6 +1582,7 @@ class WebRtcProjectionController(
         val CONTROL_POST_TARGETS = setOf(
             "/api/projection/viewport",
             "/api/touch",
+            "/api/key",
         )
 
         val ACTIVE_SESSION_STATES = setOf(

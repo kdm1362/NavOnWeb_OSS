@@ -71,6 +71,7 @@ import com.pebble.tecomheadunit.openauto.AndroidProjectionProfilePreferenceStore
 import com.pebble.tecomheadunit.openauto.AndroidProjectionDpiPreferenceStore
 import com.pebble.tecomheadunit.openauto.OpenAutoConfig
 import com.pebble.tecomheadunit.openauto.OpenAutoInputSink
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyEvent
 import com.pebble.tecomheadunit.openauto.OpenAutoPreflight
 import com.pebble.tecomheadunit.openauto.ProjectionEntitlementProviderFactory
 import com.pebble.tecomheadunit.openauto.ProjectionEndpointMode
@@ -637,6 +638,9 @@ class ProjectionService : Service() {
         val runtimeInput = object : OpenAutoInputSink {
             override fun sendTouch(event: OpenAutoTouchEvent): Boolean =
                 projectionRuntime?.sendTouch(event) == true
+
+            override fun sendKey(event: OpenAutoKeyEvent): Boolean =
+                projectionRuntime?.sendKey(event) == true
         }
         val newCoordinator = OpenAutoCoordinator(
             engine = engine,
@@ -705,12 +709,14 @@ class ProjectionService : Service() {
             snapshot = { coordinator?.snapshot() ?: newCoordinator.snapshot() },
             androidAutoConnection = { SessionController.state.value.androidAutoConnection },
             touchInputReady = { projectionRuntime?.isTouchInputReady() == true },
+            keyInputReady = { projectionRuntime?.isKeyInputReady() == true },
             onTouch = { touch ->
                 coordinator?.submitTouch(touch)?.onSuccess {
                     SessionController.touch(it)
                     touchEventsSinceDiagnostic.incrementAndGet()
                 }?.isSuccess == true
             },
+            onKey = runtimeInput::sendKey,
             webRtcSignaling = newWebRtcSignaling,
             cloudLanStunIceServer = {
                 newLanStunServer?.let { stun ->
@@ -1240,6 +1246,9 @@ class ProjectionService : Service() {
             inputSink = object : OpenAutoInputSink {
                 override fun sendTouch(event: OpenAutoTouchEvent): Boolean =
                     projectionRuntime?.sendTouch(event) == true
+
+                override fun sendKey(event: OpenAutoKeyEvent): Boolean =
+                    projectionRuntime?.sendKey(event) == true
             },
         )
         if (replacementCoordinator.start(VehicleState.BENCH_STATIONARY).isFailure) {
@@ -1531,6 +1540,9 @@ class ProjectionService : Service() {
             inputSink = object : OpenAutoInputSink {
                 override fun sendTouch(event: OpenAutoTouchEvent): Boolean =
                     projectionRuntime?.sendTouch(event) == true
+
+                override fun sendKey(event: OpenAutoKeyEvent): Boolean =
+                    projectionRuntime?.sendKey(event) == true
             },
         )
         if (replacementCoordinator.start(VehicleState.BENCH_STATIONARY).isFailure) {

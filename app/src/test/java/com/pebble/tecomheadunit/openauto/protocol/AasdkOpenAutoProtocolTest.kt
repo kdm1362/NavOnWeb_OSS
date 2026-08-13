@@ -7,9 +7,11 @@ import com.pebble.tecomheadunit.core.OpenAutoTouchEvent
 import com.pebble.tecomheadunit.core.TouchPhase
 import com.pebble.tecomheadunit.core.VideoViewport
 import com.pebble.tecomheadunit.openauto.OpenAutoConfig
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyAction
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyCode
+import com.pebble.tecomheadunit.openauto.OpenAutoKeyEvent
 import com.pebble.tecomheadunit.openauto.ProjectionVideoProfile
 import com.pebble.tecomheadunit.openauto.ProjectionViewportResolver
-import java.security.MessageDigest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -31,15 +33,17 @@ class AasdkOpenAutoProtocolTest {
     }
 
     @Test
-    fun `service discovery response is exact pinned OpenAuto default`() {
+    fun `service discovery advertises the exact key allowlist`() {
         val message = AasdkOpenAutoProtocol.serviceDiscoveryResponse()
 
-        assertEquals(200, message.size)
         assertEquals(AasdkOpenAutoProtocol.SERVICE_DISCOVERY_RESPONSE, AasdkOpenAutoProtocol.messageId(message))
-        assertEquals(
-            "2F7CFD557870847A6E9AC6A0C9386A4E7DAB41C7ED264C4DF7E934DCB1F360FE",
-            sha256(AasdkOpenAutoProtocol.protobuf(message)),
-        )
+        val descriptors = lengthDelimitedFields(AasdkOpenAutoProtocol.protobuf(message), 1)
+        val inputDescriptor = descriptors.single {
+            AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
+        }
+        val inputChannel = lengthDelimitedFields(inputDescriptor, 4).single()
+        val packedKeycodes = lengthDelimitedFields(inputChannel, 1).single()
+        assertEquals(OpenAutoKeyCode.SUPPORTED.sorted(), packedVarints(packedKeycodes).map(Long::toInt))
     }
 
     @Test
@@ -543,6 +547,131 @@ class AasdkOpenAutoProtocolTest {
     }
 
     @Test
+    fun `one queued button click expands to adjacent pressed and released wire events`() {
+        val click = OpenAutoKeyEvent(OpenAutoKeyCode.BACK, OpenAutoKeyAction.CLICK)
+        val sequence = AasdkOpenAutoProtocol.keyInputEventIndications(
+            event = click,
+            firstTimestampNanos = 1L,
+            secondTimestampNanos = 2L,
+        )
+        assertEquals(2, sequence.size)
+        assertArrayEquals(
+            bytes(
+                0x80, 0x01, 0x08, 0x01,
+                0x22, 0x0A, 0x0A, 0x08,
+                0x08, 0x04, 0x10, 0x01, 0x18, 0x00, 0x20, 0x00,
+            ),
+            sequence[0],
+        )
+        assertArrayEquals(
+            bytes(
+                0x80, 0x01, 0x08, 0x02,
+                0x22, 0x0A, 0x0A, 0x08,
+                0x08, 0x04, 0x10, 0x00, 0x18, 0x00, 0x20, 0x00,
+            ),
+            sequence[1],
+        )
+        assertThrows(AasdkProtocolException::class.java) {
+            AasdkOpenAutoProtocol.keyInputEventIndications(click, 2L, 2L)
+        }
+    }
+
+    @Test
+    fun `scroll wheel encodes signed relative delta`() {
+        assertArrayEquals(
+            bytes(
+                0x80, 0x01, 0x08, 0x01,
+                0x32, 0x11, 0x0A, 0x0F,
+                0x08, 0x80, 0x80, 0x04,
+                0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF, 0xFF, 0xFF, 0x01,
+            ),
+            AasdkOpenAutoProtocol.relativeInputEventIndication(
+                OpenAutoKeyEvent(OpenAutoKeyCode.SCROLL_WHEEL, OpenAutoKeyAction.SCROLL_LEFT),
+                timestampNanos = 1L,
+            ),
+        )
+        assertArrayEquals(
+            bytes(
+                0x80, 0x01, 0x08, 0x01,
+                0x32, 0x08, 0x0A, 0x06,
+                0x08, 0x80, 0x80, 0x04, 0x10, 0x01,
+            ),
+            AasdkOpenAutoProtocol.relativeInputEventIndication(
+                OpenAutoKeyEvent(OpenAutoKeyCode.SCROLL_WHEEL, OpenAutoKeyAction.SCROLL_RIGHT),
+                timestampNanos = 1L,
+            ),
+        )
+    }
+
+    @Test
+    fun `key encoder rejects unsupported codes actions and timestamp`() {
+        listOf(
+            OpenAutoKeyEvent(0, OpenAutoKeyAction.CLICK),
+            OpenAutoKeyEvent(OpenAutoKeyCode.SCROLL_WHEEL, OpenAutoKeyAction.CLICK),
+            OpenAutoKeyEvent(OpenAutoKeyCode.BACK, OpenAutoKeyAction.SCROLL_LEFT),
+        ).forEach { event ->
+            assertThrows(AasdkProtocolException::class.java) {
+                if (event.action == OpenAutoKeyAction.CLICK) {
+                    AasdkOpenAutoProtocol.buttonInputEventIndication(
+                        event = event,
+                        isPressed = true,
+                        timestampNanos = 1L,
+                    )
+                } else {
+                    AasdkOpenAutoProtocol.relativeInputEventIndication(event, timestampNanos = 1L)
+                }
+            }
+        }
+        assertThrows(AasdkProtocolException::class.java) {
+            AasdkOpenAutoProtocol.buttonInputEventIndication(
+                event = OpenAutoKeyEvent(OpenAutoKeyCode.BACK, OpenAutoKeyAction.CLICK),
+                isPressed = true,
+                timestampNanos = -1L,
+            )
+        }
+    }
+
+    @Test
+    fun `binding request accepts packed and unpacked allowlisted scan codes`() {
+        val packed = bytes(0x80, 0x02, 0x0A, 0x05, 0x04, 0x17, 0x80, 0x80, 0x04)
+        val unpacked = bytes(0x80, 0x02, 0x08, 0x04, 0x08, 0x17)
+
+        assertEquals(
+            listOf(OpenAutoKeyCode.BACK, OpenAutoKeyCode.ENTER, OpenAutoKeyCode.SCROLL_WHEEL),
+            AasdkOpenAutoProtocol.parseBindingRequestScanCodes(packed),
+        )
+        assertEquals(
+            listOf(OpenAutoKeyCode.BACK, OpenAutoKeyCode.ENTER),
+            AasdkOpenAutoProtocol.parseBindingRequestScanCodes(unpacked),
+        )
+        assertEquals(true, AasdkOpenAutoProtocol.bindingRequestSupported(packed))
+        assertEquals(true, AasdkOpenAutoProtocol.bindingRequestSupported(bytes(0x80, 0x02)))
+    }
+
+    @Test
+    fun `binding request fails closed for unknown negative and malformed codes`() {
+        assertEquals(
+            false,
+            AasdkOpenAutoProtocol.bindingRequestSupported(bytes(0x80, 0x02, 0x08, 0x00)),
+        )
+        assertThrows(AasdkProtocolException::class.java) {
+            AasdkOpenAutoProtocol.parseBindingRequestScanCodes(
+                bytes(
+                    0x80, 0x02, 0x08,
+                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF, 0xFF, 0x01,
+                ),
+            )
+        }
+        assertThrows(AasdkProtocolException::class.java) {
+            AasdkOpenAutoProtocol.parseBindingRequestScanCodes(
+                bytes(0x80, 0x02, 0x0A, 0x02, 0x80),
+            )
+        }
+    }
+
+    @Test
     fun `ping includes the timestamp required by modern Android Auto`() {
         assertArrayEquals(
             bytes(0x00, 0x0B, 0x08, 0xAC, 0x02),
@@ -565,10 +694,6 @@ class AasdkOpenAutoProtocolTest {
             AasdkOpenAutoProtocol.readFirstVarintField(bytes(0x12, 0x04, 0x01), 1)
         }
     }
-
-    private fun sha256(value: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(value)
-        .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xFF) }
 
     private fun touch(
         phase: TouchPhase,
@@ -620,5 +745,16 @@ class AasdkOpenAutoProtocolTest {
             shift += 7
         }
         error("invalid test fixture varint")
+    }
+
+    private fun packedVarints(data: ByteArray): List<Long> {
+        val output = mutableListOf<Long>()
+        var offset = 0
+        while (offset < data.size) {
+            val value = readVarint(data, offset)
+            output += value.first
+            offset = value.second
+        }
+        return output
     }
 }

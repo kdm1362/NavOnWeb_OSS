@@ -59,6 +59,14 @@ internal const val AASDK_MAX_PENDING_PINGS = 7
 internal const val AASDK_MIN_PING_TOLERANCE_MILLIS =
     AASDK_PING_INTERVAL_MILLIS * AASDK_MAX_PENDING_PINGS
 
+private sealed class QueuedAasdkInput {
+    data class Touch(val event: OpenAutoTouchEvent) : QueuedAasdkInput()
+    data class Key(
+        val event: OpenAutoKeyEvent,
+        val acceptedAtNanos: Long,
+    ) : QueuedAasdkInput()
+}
+
 /**
  * Long-lived, parked-bench AASDK dispatcher.
  *
@@ -79,7 +87,7 @@ internal class AasdkProjectionRuntime(
     private val activeProjectionConfig = AtomicReference<OpenAutoConfig?>(null)
     private val inputChannelOpen = AtomicBoolean(false)
     private val inputReady = AtomicBoolean(false)
-    private val activeTouchQueue = AtomicReference<Channel<OpenAutoTouchEvent>?>(null)
+    private val activeInputQueue = AtomicReference<Channel<QueuedAasdkInput>?>(null)
     private val activeNightModeQueue = AtomicReference<Channel<Boolean>?>(null)
     private val nightModeSensorStarted = AtomicBoolean(false)
     private val latestNightModeDecision = AtomicReference<NightModeDecision?>(null)
@@ -107,6 +115,7 @@ internal class AasdkProjectionRuntime(
      * phone rendered or acted on the event.
      */
     fun sendTouch(event: OpenAutoTouchEvent): Boolean {
+        val queue = activeInputQueue.get() ?: return false
         if (closeRequested.get() || !inputChannelOpen.get() || !inputReady.get()) return false
         if (activeSession.get()?.isOpen != true) return false
         val projectionConfig = activeProjectionConfig.get() ?: return false
@@ -115,17 +124,35 @@ internal class AasdkProjectionRuntime(
         ) {
             return false
         }
-        val queue = activeTouchQueue.get() ?: return false
-        return queue.trySend(event).isSuccess
+        if (activeInputQueue.get() !== queue) return false
+        return queue.trySend(QueuedAasdkInput.Touch(event)).isSuccess
+    }
+
+    /** Accepts one validated key event into the same ordered queue used by touch. */
+    fun sendKey(event: OpenAutoKeyEvent): Boolean {
+        val queue = activeInputQueue.get() ?: return false
+        if (!OpenAutoKeyCode.supports(event) || !isInputReady()) return false
+        if (activeInputQueue.get() !== queue) return false
+        return queue.trySend(
+            QueuedAasdkInput.Key(
+                event = event,
+                acceptedAtNanos = System.nanoTime(),
+            ),
+        ).isSuccess
     }
 
     /** True only after the phone has opened and successfully bound the AA input channel. */
-    fun isTouchInputReady(): Boolean =
+    private fun isInputReady(): Boolean =
         !closeRequested.get() &&
             inputChannelOpen.get() &&
             inputReady.get() &&
             activeSession.get()?.isOpen == true &&
-            activeTouchQueue.get() != null
+            activeInputQueue.get() != null
+
+    fun isTouchInputReady(): Boolean = isInputReady()
+
+    /** Key and touch share the same AA channel binding and bounded ordered queue. */
+    fun isKeyInputReady(): Boolean = isInputReady()
 
     /**
      * Keeps the projection available across recoverable transport loss.
@@ -239,11 +266,11 @@ internal class AasdkProjectionRuntime(
                 onStatus = onStatus,
             )
         } finally {
+            activeInputQueue.getAndSet(null)?.close()
             inputReady.set(false)
             inputChannelOpen.set(false)
             nightModeSensorStarted.set(false)
             activeNightModeQueue.getAndSet(null)?.close()
-            activeTouchQueue.getAndSet(null)?.close()
             activeSession.compareAndSet(ownedSession, null)
             activeProjectionConfig.compareAndSet(config.projectionConfig, null)
             pendingTransport.getAndSet(null)?.let { runCatching { it.close() } }
@@ -253,11 +280,11 @@ internal class AasdkProjectionRuntime(
 
     override fun close() {
         if (!closeRequested.compareAndSet(false, true)) return
+        activeInputQueue.getAndSet(null)?.close()
         inputReady.set(false)
         inputChannelOpen.set(false)
         nightModeSensorStarted.set(false)
         activeNightModeQueue.getAndSet(null)?.close()
-        activeTouchQueue.getAndSet(null)?.close()
         // Close the socket before cancelling the coroutine so a blocking read
         // is interrupted immediately rather than waiting for SO_TIMEOUT.
         pendingTransport.getAndSet(null)?.let { runCatching { it.close() } }
@@ -280,41 +307,100 @@ internal class AasdkProjectionRuntime(
         val videoTimestamps = VideoTimestampNormalizer(
             fallbackFrameDurationUs = MICROS_PER_SECOND / projectionConfig.fps,
         )
-        val touchQueue = Channel<OpenAutoTouchEvent>(capacity = TOUCH_QUEUE_CAPACITY)
+        val inputQueue = Channel<QueuedAasdkInput>(capacity = INPUT_QUEUE_CAPACITY)
         val nightModeQueue = Channel<Boolean>(capacity = Channel.CONFLATED)
-        if (!activeTouchQueue.compareAndSet(null, touchQueue)) {
-            touchQueue.close()
-            throw IllegalStateException("AASDK runtime already owns a touch queue")
+        if (!activeInputQueue.compareAndSet(null, inputQueue)) {
+            inputQueue.close()
+            throw IllegalStateException("AASDK runtime already owns an input queue")
         }
 
-        val touchSender = launch {
-            val timestamps = TouchTimestampNormalizer()
-            for (event in touchQueue) {
+        val inputSender = launch {
+            val timestamps = InputTimestampNormalizer()
+            for (queued in inputQueue) {
+                if (activeInputQueue.get() !== inputQueue) break
                 if (!inputChannelOpen.get() || !inputReady.get()) {
-                    if (closeRequested.get() || !session.isOpen) break
-                    throw AasdkProtocolException("touch dequeued before input binding")
+                    if (
+                        activeInputQueue.get() !== inputQueue ||
+                        closeRequested.get() ||
+                        !session.isOpen
+                    ) {
+                        break
+                    }
+                    throw AasdkProtocolException("input dequeued before input binding")
                 }
-                val timestampNanos = timestamps.normalize(event.timestampNanos)
-                session.sendMessage(
-                    channelId = AasdkOpenAutoProtocol.CHANNEL_INPUT,
-                    controlMessage = false,
-                    payload = AasdkOpenAutoProtocol.inputEventIndication(
-                        event = event,
-                        timestampNanos = timestampNanos,
-                    ),
-                )
-                if (event.phase == TouchPhase.MOVE) {
-                    Log.d(
-                        LOG_TAG,
-                        "TOUCH_SENT phase=${event.phase} x=${event.x} y=${event.y} " +
-                            "pointer=${event.pointerId} timestampNs=$timestampNanos",
-                    )
-                } else {
-                    Log.i(
-                        LOG_TAG,
-                        "TOUCH_SENT phase=${event.phase} x=${event.x} y=${event.y} " +
-                            "pointer=${event.pointerId} timestampNs=$timestampNanos",
-                    )
+                when (queued) {
+                    is QueuedAasdkInput.Touch -> {
+                        val event = queued.event
+                        val timestampNanos = timestamps.normalize(event.timestampNanos)
+                        session.sendMessage(
+                            channelId = AasdkOpenAutoProtocol.CHANNEL_INPUT,
+                            controlMessage = false,
+                            payload = AasdkOpenAutoProtocol.inputEventIndication(
+                                event = event,
+                                timestampNanos = timestampNanos,
+                            ),
+                        )
+                        if (event.phase == TouchPhase.MOVE) {
+                            Log.d(
+                                LOG_TAG,
+                                "TOUCH_SENT phase=${event.phase} x=${event.x} y=${event.y} " +
+                                    "pointer=${event.pointerId} timestampNs=$timestampNanos",
+                            )
+                        } else {
+                            Log.i(
+                                LOG_TAG,
+                                "TOUCH_SENT phase=${event.phase} x=${event.x} y=${event.y} " +
+                                    "pointer=${event.pointerId} timestampNs=$timestampNanos",
+                            )
+                        }
+                    }
+
+                    is QueuedAasdkInput.Key -> {
+                        when (queued.event.action) {
+                            OpenAutoKeyAction.CLICK -> {
+                                val pressTimestampNanos = timestamps.normalize(queued.acceptedAtNanos)
+                                val releaseTimestampNanos = timestamps.normalize(queued.acceptedAtNanos)
+                                AasdkOpenAutoProtocol.keyInputEventIndications(
+                                    event = queued.event,
+                                    firstTimestampNanos = pressTimestampNanos,
+                                    secondTimestampNanos = releaseTimestampNanos,
+                                ).forEach { payload ->
+                                    session.sendMessage(
+                                        channelId = AasdkOpenAutoProtocol.CHANNEL_INPUT,
+                                        controlMessage = false,
+                                        payload = payload,
+                                    )
+                                }
+                                Log.i(
+                                    LOG_TAG,
+                                    "KEY_CLICK_SENT code=${queued.event.scanCode} " +
+                                        "pressTimestampNs=$pressTimestampNanos " +
+                                        "releaseTimestampNs=$releaseTimestampNanos",
+                                )
+                            }
+
+                            OpenAutoKeyAction.SCROLL_LEFT,
+                            OpenAutoKeyAction.SCROLL_RIGHT,
+                            -> {
+                                val timestampNanos = timestamps.normalize(queued.acceptedAtNanos)
+                                AasdkOpenAutoProtocol.keyInputEventIndications(
+                                    event = queued.event,
+                                    firstTimestampNanos = timestampNanos,
+                                ).forEach { payload ->
+                                    session.sendMessage(
+                                        channelId = AasdkOpenAutoProtocol.CHANNEL_INPUT,
+                                        controlMessage = false,
+                                        payload = payload,
+                                    )
+                                }
+                                Log.i(
+                                    LOG_TAG,
+                                    "KEY_SCROLL_SENT code=${queued.event.scanCode} " +
+                                        "action=${queued.event.action} timestampNs=$timestampNanos",
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -424,14 +510,14 @@ internal class AasdkProjectionRuntime(
                 )
             }
         } finally {
+            activeInputQueue.compareAndSet(inputQueue, null)
             inputReady.set(false)
             inputChannelOpen.set(false)
-            activeTouchQueue.compareAndSet(touchQueue, null)
-            touchQueue.close()
+            inputQueue.close()
             nightModeSensorStarted.set(false)
             activeNightModeQueue.compareAndSet(nightModeQueue, null)
             nightModeQueue.close()
-            touchSender.cancelAndJoin()
+            inputSender.cancelAndJoin()
             nightModeSender.cancelAndJoin()
             nightModeEvaluator.cancelAndJoin()
             pinger.cancelAndJoin()
@@ -588,16 +674,15 @@ internal class AasdkProjectionRuntime(
                     if (inputReady.get()) {
                         throw AasdkProtocolException("duplicate input binding request")
                     }
-                    val body = AasdkOpenAutoProtocol.protobuf(message.payload)
-                    val accepted = body.isEmpty()
+                    val requestedScanCodes =
+                        AasdkOpenAutoProtocol.parseBindingRequestScanCodes(message.payload)
+                    val accepted = requestedScanCodes.all(OpenAutoKeyCode.SUPPORTED::contains)
                     session.sendMessage(
                         message.channelId,
                         false,
                         if (accepted) {
                             AasdkOpenAutoProtocol.bindingSuccess()
                         } else {
-                            // The pinned profile advertises touchscreen only and
-                            // no hardware scan codes.
                             AasdkOpenAutoProtocol.bindingFailure()
                         },
                     )
@@ -605,7 +690,13 @@ internal class AasdkProjectionRuntime(
                     // reached the transport, so browser input cannot overtake
                     // the successful binding response on the wire.
                     inputReady.set(accepted)
-                    onStatus(if (accepted) "INPUT_BINDING_READY" else "INPUT_BINDING_REJECTED")
+                    onStatus(
+                        if (accepted) {
+                            "INPUT_BINDING_READY keys=${requestedScanCodes.size}"
+                        } else {
+                            "INPUT_BINDING_REJECTED keys=${requestedScanCodes.size}"
+                        },
+                    )
                 }
 
                 else -> throw AasdkProtocolException("unsupported input message")
@@ -925,7 +1016,7 @@ internal class AasdkProjectionRuntime(
         const val MICROPHONE_POLL_MILLIS = 100L
         const val MICROPHONE_EMPTY_POLL_BACKOFF_MILLIS = 5L
         const val MICROPHONE_STATUS_INTERVAL = 100L
-        const val TOUCH_QUEUE_CAPACITY = 64
+        const val INPUT_QUEUE_CAPACITY = 64
         const val NANOS_PER_MICROSECOND = 1_000L
         const val MICROS_PER_SECOND = 1_000_000L
         const val LOG_TAG = "TecomAasdk"
@@ -996,8 +1087,8 @@ internal class AasdkPendingPings(
     }
 }
 
-/** Preserves browser event time as strictly increasing AASDK nanoseconds. */
-internal class TouchTimestampNormalizer {
+/** Preserves touch and key event time as strictly increasing AASDK nanoseconds. */
+internal class InputTimestampNormalizer {
     private var previousNanos = -1L
 
     fun normalize(timestampNanos: Long): Long {
