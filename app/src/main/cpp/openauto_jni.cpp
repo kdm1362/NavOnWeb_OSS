@@ -14,7 +14,7 @@ constexpr bool runtime_linked = OPENAUTO_RUNTIME_LINKED != 0;
 }  // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_pebble_tecomheadunit_openauto_NativeOpenAutoBridge_nativePortStatus(
+Java_com_eigenkodex_navonweb_openauto_NativeOpenAutoBridge_nativePortStatus(
     JNIEnv* environment,
     jobject /* receiver */) {
     const std::string status = runtime_linked

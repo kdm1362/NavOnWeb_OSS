@@ -30,9 +30,9 @@ Touch coordinates are mapped only inside the active content rectangle. Starting 
 
 ## Codec selection
 
-The browser video choices are `AUTO`, H.264, VP8, VP9, and AV1. `AUTO` selects a compatible encoder using the phone's hardware capabilities and the browser's advertised decoders. Explicit VP9 and AV1 choices may use software encoders.
+The phone app's video codec choices are `AUTO`, H.264, VP8, VP9, and AV1; the browser page exposes no profile or codec controls. `AUTO` prefers a hardware H.264 encoder within the intersection of the phone's encoders and the browser's advertised decoders. Explicit VP9 and AV1 choices may use software encoders.
 
-If WebRTC is unavailable, NavOnWeb can show the authenticated JPEG fallback. The fallback is intended for compatibility and has a lower frame rate than WebRTC.
+If WebRTC is unavailable, NavOnWeb can show the authenticated JPEG fallback at a much lower frame rate (roughly 3-5 fps depending on the profile); full-rate delivery is provided only by the WebRTC path.
 
 ## Density
 

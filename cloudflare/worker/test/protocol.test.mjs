@@ -293,14 +293,14 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   const bootstrapBinding = new InMemoryBootstrapBinding();
   const signalRooms = new CapturingSignalBinding();
   const env = {
-    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
+    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: bootstrapBinding,
     SIGNAL_ROOMS: signalRooms,
   };
   const networkHeaders = { "CF-Connecting-IP": "2001:db8:abcd:12::9" };
 
-  const registration = await worker.fetch(new Request("https://signal.example/bootstrap/device", {
+  const registration = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
     method: "POST",
     headers: {
       ...networkHeaders,
@@ -313,7 +313,7 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   }), env);
   assert.equal(registration.status, 204);
 
-  const collision = await worker.fetch(new Request("https://signal.example/bootstrap/device", {
+  const collision = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
     method: "POST",
     headers: {
       ...networkHeaders,
@@ -326,17 +326,17 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   }), env);
   assert.equal(collision.status, 409);
 
-  const exchange = await worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
+  const exchange = await worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
     method: "POST",
     headers: {
       ...networkHeaders,
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       "Content-Type": "text/plain; charset=utf-8",
     },
     body: "12345678",
   }), env);
   assert.equal(exchange.status, 204);
-  assert.equal(exchange.headers.get("access-control-allow-origin"), "https://viewer.example");
+  assert.equal(exchange.headers.get("access-control-allow-origin"), "https://navonweb.com");
   assert.equal(exchange.headers.get("access-control-allow-credentials"), "true");
   const setCookies = exchange.headers.getSetCookie();
   const clientCookie = setCookies.find((value) => value.startsWith("__Host-navonweb_client="));
@@ -344,11 +344,11 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   assert.match(clientCookie, /; HttpOnly; Secure; SameSite=Strict$/u);
   assert.match(routeCookie, /; HttpOnly; Secure; SameSite=Strict$/u);
 
-  const consumedAgain = await worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
+  const consumedAgain = await worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
     method: "POST",
     headers: {
       ...networkHeaders,
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       "Content-Type": "text/plain; charset=utf-8",
     },
     body: "12345678",
@@ -366,11 +366,11 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
   )).status, 409);
 
   const cookie = routeCookie.split(";", 1)[0];
-  const routed = await worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
+  const routed = await worker.fetch(new Request("https://navonweb.com/_nw/ws/browser", {
     headers: {
       ...networkHeaders,
       Cookie: cookie,
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       Upgrade: "websocket",
     },
   }), env);
@@ -384,12 +384,12 @@ test("bare-url bootstrap registers and consumes a network-bound code once", asyn
 
 test("bootstrap lookup is unavailable from a different egress network", async () => {
   const env = {
-    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
+    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: new InMemoryBootstrapBinding(),
     SIGNAL_ROOMS: new CapturingSignalBinding(),
   };
-  await worker.fetch(new Request("https://signal.example/bootstrap/device", {
+  await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": "192.0.2.10",
@@ -400,11 +400,11 @@ test("bootstrap lookup is unavailable from a different egress network", async ()
     },
     body: "65432109",
   }), env);
-  const response = await worker.fetch(new Request("https://signal.example/bootstrap/pair", {
+  const response = await worker.fetch(new Request("https://signal.navonweb.com/bootstrap/pair", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": "192.0.2.11",
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       "Content-Type": "text/plain",
     },
     body: "65432109",
@@ -424,7 +424,7 @@ test("device pairing publication epoch must be a positive safe integer", async (
     };
     if (epoch !== undefined) headers["X-NavOnWeb-Pairing-Epoch"] = epoch;
     const response = await worker.fetch(new Request(
-      "https://signal.example/bootstrap/device",
+      "https://signal.navonweb.com/bootstrap/device",
       { method: "POST", headers, body: "65432109" },
     ), env);
     assert.equal(response.status, 400);
@@ -443,7 +443,7 @@ test("pairing protocol v2 requires a strictly bounded remaining TTL", async () =
     };
     if (ttl !== undefined) headers["X-NavOnWeb-Pairing-Ttl-Millis"] = ttl;
     const response = await worker.fetch(new Request(
-      "https://signal.example/bootstrap/device",
+      "https://signal.navonweb.com/bootstrap/device",
       { method: "POST", headers, body: "65432109" },
     ), env);
     assert.equal(response.status, 400);
@@ -764,10 +764,10 @@ test("legacy v2 route remains valid while outer routing strips forged internal h
   );
   const cookie = `${ROUTE_COOKIE_NAME}=${legacyValue}`;
   assert.equal((await browserRouteStatus(env, cookie)).status, 204);
-  const routed = await worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
+  const routed = await worker.fetch(new Request("https://navonweb.com/_nw/ws/browser", {
     headers: {
       Cookie: cookie,
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       Upgrade: "websocket",
       "X-NavOnWeb-Route-Issued-At": String(Math.floor(Date.now() / 1000)),
       "X-NavOnWeb-Route-Nonce": ROUTE_NONCE_B,
@@ -813,7 +813,7 @@ test("new pairings preserve every signed cookie and route status is independent 
 
 test("route status is read-only and rejects unsupported methods", async () => {
   const response = await worker.fetch(new Request(
-    "https://viewer.example/_nw/bootstrap/route",
+    "https://navonweb.com/_nw/bootstrap/route",
     { method: "POST" },
   ), bootstrapEnvironment());
   assert.equal(response.status, 405);
@@ -822,11 +822,11 @@ test("route status is read-only and rejects unsupported methods", async () => {
 
 test("device WebSocket authentication failures expose one uniform response", async () => {
   const missing = await worker.fetch(new Request(
-    `https://signal.example/ws/device/${ZERO_SECRET_ROOM}`,
+    `https://signal.navonweb.com/ws/device/${ZERO_SECRET_ROOM}`,
     { headers: { Upgrade: "websocket" } },
   ), bootstrapEnvironment());
   const mismatched = await worker.fetch(new Request(
-    `https://signal.example/ws/device/${ZERO_SECRET_ROOM}`,
+    `https://signal.navonweb.com/ws/device/${ZERO_SECRET_ROOM}`,
     {
       headers: {
         Authorization: `Bearer ${OTHER_SECRET}`,
@@ -842,10 +842,10 @@ test("device WebSocket authentication failures expose one uniform response", asy
 
 test("legacy browser room-id sockets are opt-in while cookie routing stays production default", async () => {
   const response = await worker.fetch(new Request(
-    `https://viewer.example/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
+    `https://navonweb.com/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
     {
       headers: {
-        Origin: "https://viewer.example",
+        Origin: "https://navonweb.com",
         Upgrade: "websocket",
       },
     },
@@ -879,11 +879,11 @@ test("legacy browser room route can be enabled explicitly for local migration", 
     ALLOW_LEGACY_BROWSER_ROOM_ROUTE: "true",
   };
   const response = await worker.fetch(new Request(
-    `https://viewer.example/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
+    `https://navonweb.com/_nw/ws/browser/${ZERO_SECRET_ROOM}`,
     {
       headers: {
         "CF-Connecting-IP": "192.0.2.88",
-        Origin: "https://viewer.example",
+        Origin: "https://navonweb.com",
         Upgrade: "websocket",
       },
     },
@@ -1528,7 +1528,7 @@ test("bootstrap alarm deletes expired one-time slots and attempt counters", asyn
 
 function bootstrapEnvironment() {
   return {
-    ALLOWED_BROWSER_ORIGINS: "https://viewer.example",
+    ALLOWED_BROWSER_ORIGINS: "https://navonweb.com",
     BOOTSTRAP_HMAC_KEY: "test-bootstrap-secret-32-bytes-minimum",
     PAIRING_BOOTSTRAP: new InMemoryBootstrapBinding(),
     SIGNAL_ROOMS: new CapturingSignalBinding(),
@@ -1538,11 +1538,11 @@ function bootstrapEnvironment() {
 function browserPairAttempt(env, network, code, cookie = undefined) {
   const headers = {
     "CF-Connecting-IP": network,
-    Origin: "https://viewer.example",
+    Origin: "https://navonweb.com",
     "Content-Type": "text/plain; charset=utf-8",
   };
   if (cookie) headers.Cookie = cookie;
-  return worker.fetch(new Request("https://viewer.example/_nw/bootstrap/pair", {
+  return worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/pair", {
     method: "POST",
     headers,
     body: code,
@@ -1557,7 +1557,7 @@ function deviceRegistration(
   pairingEpoch = PAIRING_EPOCH_A,
   pairingTtlMillis = 600_000,
 ) {
-  return worker.fetch(new Request("https://signal.example/bootstrap/device", {
+  return worker.fetch(new Request("https://signal.navonweb.com/bootstrap/device", {
     method: "POST",
     headers: {
       "CF-Connecting-IP": network,
@@ -1584,10 +1584,10 @@ async function signedRouteFromCookie(env, cookie) {
 }
 
 function browserSocket(env, routeCookie) {
-  return worker.fetch(new Request("https://viewer.example/_nw/ws/browser", {
+  return worker.fetch(new Request("https://navonweb.com/_nw/ws/browser", {
     headers: {
       Cookie: routeCookie,
-      Origin: "https://viewer.example",
+      Origin: "https://navonweb.com",
       Upgrade: "websocket",
     },
   }), env);
@@ -1596,7 +1596,7 @@ function browserSocket(env, routeCookie) {
 function browserRouteStatus(env, routeCookie = undefined, fetchSite = "same-origin") {
   const headers = { "Sec-Fetch-Site": fetchSite };
   if (routeCookie) headers.Cookie = routeCookie;
-  return worker.fetch(new Request("https://viewer.example/_nw/bootstrap/route", {
+  return worker.fetch(new Request("https://navonweb.com/_nw/bootstrap/route", {
     headers,
   }), env);
 }

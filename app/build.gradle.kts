@@ -18,6 +18,18 @@ val enableNativeOpenAuto = providers.gradleProperty("enableNativeOpenAuto")
 val enablePremiumProjectionBench = providers.gradleProperty("enablePremiumProjectionBench")
     .orNull
     .equals("true", ignoreCase = true)
+val playInternalTestBuild = providers.gradleProperty("playInternalTestBuild")
+    .orNull
+    .equals("true", ignoreCase = true)
+val playReleaseCandidateBuild = providers.gradleProperty("playReleaseCandidateBuild")
+    .orNull
+    .equals("true", ignoreCase = true)
+val playOssSyncPendingWarning = providers.gradleProperty("playOssSyncPendingWarning")
+    .orNull
+    .equals("true", ignoreCase = true)
+require(!(playInternalTestBuild && playReleaseCandidateBuild)) {
+    "playInternalTestBuild and playReleaseCandidateBuild are mutually exclusive"
+}
 val publicSourceRepositoryUrl = "https://github.com/kdm1362/NavOnWeb_OSS"
 val sourceCodeUrl = providers.gradleProperty("sourceCodeUrl")
     .orNull
@@ -28,8 +40,8 @@ require(sourceCodeUrl.isEmpty() || sourceCodeUrl.matches(Regex("https://[^\\s]{1
     "sourceCodeUrl must be an HTTPS URL"
 }
 val immutablePublicSourceUrl = Regex(
-    "^https://github\\.com/kdm1362/NavOnWeb_OSS/tree/(?:" +
-        "v[0-9][A-Za-z0-9._-]{0,119}-source|[0-9a-fA-F]{40})$",
+    "^https://github\\.com/kdm1362/NavOnWeb_OSS/(?:" +
+        "tree/v[0-9][A-Za-z0-9._-]{0,119}-source|commit/[0-9a-fA-F]{40})$",
 )
 
 val localProperties = Properties().apply {
@@ -41,6 +53,21 @@ fun projectSetting(name: String): String =
 
 val supabaseUrl = projectSetting("supabaseUrl").removeSuffix("/")
 val supabasePublishableKey = projectSetting("supabasePublishableKey")
+val onPremTestMode = projectSetting("onPremTestMode").equals("true", ignoreCase = true)
+val onPremTestOrigin = projectSetting("onPremTestOrigin").removeSuffix("/")
+fun validOnPremTestOrigin(value: String): Boolean = runCatching {
+    val uri = URI(value)
+    uri.scheme.equals("https", ignoreCase = true) &&
+        !uri.host.isNullOrBlank() &&
+        uri.port == 8443 &&
+        uri.rawUserInfo == null &&
+        uri.rawQuery == null &&
+        uri.rawFragment == null &&
+        (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")
+}.getOrDefault(false)
+require(!onPremTestMode || validOnPremTestOrigin(onPremTestOrigin)) {
+    "onPremTestOrigin must be an HTTPS origin on port 8443"
+}
 val premiumProductId = projectSetting("premiumProductId")
     .ifBlank { "navonweb_premium" }
 require(premiumProductId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
@@ -51,14 +78,18 @@ val premiumPurchaseOptionId = projectSetting("premiumPurchaseOptionId")
 require(premiumPurchaseOptionId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
     "premiumPurchaseOptionId must be a valid Google Play one-time purchase option ID"
 }
-require(supabaseUrl.isEmpty() || supabaseUrl.matches(Regex("https://[a-z0-9-]{1,80}\\.supabase\\.co"))) {
+require(
+    supabaseUrl.isEmpty() ||
+        supabaseUrl.matches(Regex("https://[a-z0-9-]{1,80}\\.supabase\\.co")) ||
+        (onPremTestMode && supabaseUrl == onPremTestOrigin),
+) {
     "supabaseUrl must be an HTTPS Supabase project URL"
 }
 require(
     supabasePublishableKey.isEmpty() ||
         supabasePublishableKey.matches(Regex("sb_publishable_[A-Za-z0-9_-]{20,200}")),
 ) {
-    "supabasePublishableKey must be a Supabase publishable key; secret and service-role keys are forbidden"
+    "supabasePublishableKey must be a client-safe publishable key"
 }
 
 val cloudBrowserPageUrl = projectSetting("cloudBrowserPageUrl").removeSuffix("/")
@@ -100,6 +131,25 @@ fun validReviewPromoApiUrl(value: String): Boolean = runCatching {
 require(reviewPromoApiUrl.isEmpty() || validReviewPromoApiUrl(reviewPromoApiUrl)) {
     "reviewPromoApiUrl must be an HTTPS endpoint without credentials, query, or fragment"
 }
+if (onPremTestMode) {
+    val expectedWssOrigin = onPremTestOrigin.replaceFirst("https://", "wss://")
+    require(cloudBrowserPageUrl == onPremTestOrigin) {
+        "on-prem browser origin must match onPremTestOrigin"
+    }
+    require(cloudSignalingWebSocketUrl == expectedWssOrigin) {
+        "on-prem signaling origin must match onPremTestOrigin"
+    }
+    require(reviewPromoApiUrl == "$onPremTestOrigin/api/review-promo/verify") {
+        "on-prem review promo endpoint must use the fixed test origin"
+    }
+}
+gradle.taskGraph.whenReady {
+    if (onPremTestMode) {
+        require(allTasks.none { task -> task.name.contains("release", ignoreCase = true) }) {
+            "onPremTestMode is restricted to the isolated QA/debug build"
+        }
+    }
+}
 require(
     reviewPromoEs256KeyId.isEmpty() ||
         reviewPromoEs256KeyId.matches(Regex("[A-Za-z0-9._-]{1,64}")),
@@ -127,9 +177,9 @@ require(
     "Review promotion verification must configure API URL and ES256 key ID/public key together"
 }
 
-// AASDK identity PEM files are optional external release-build inputs. Their contents are never
-// stored in this repository. When supplied, Gradle embeds them into the generated release
-// BuildConfig, so generated sources and build outputs must remain untracked.
+// Original Android Auto PEM files remain external build inputs and are not copied into staged
+// source. Release BuildConfig generation intentionally writes the exportable pair into generated
+// source and DEX; exact staging cleanup is mandatory, and credential bytes must never be logged.
 val bundledAasdkCertificatePemPath = providers
     .gradleProperty("bundledAasdkCertificatePemPath")
     .orNull
@@ -212,15 +262,38 @@ fun pemDerSha256(pem: String, beginMarker: String, endMarker: String): String {
     }
 }
 
+val PUBLIC_DEVELOPMENT_AASDK_CERTIFICATE_DER_SHA256 =
+    "1C0E0EF9E672DD1A63AB4D61AFAA8996A57CA7AA966D1922B97D8F9385EA3C35"
+val PUBLIC_DEVELOPMENT_AASDK_PRIVATE_KEY_PKCS8_DER_SHA256 =
+    "08E86E4DE51208BFA0E8164D99C50DAF7F5BFCFA3FE2067DC912CF83F2E99A25"
+
+if (bundledAasdkCredentialConfigured && playInternalTestBuild) {
+    require(
+        pemDerSha256(
+            bundledAasdkCertificatePem,
+            "-----BEGIN CERTIFICATE-----",
+            "-----END CERTIFICATE-----",
+        ) == PUBLIC_DEVELOPMENT_AASDK_CERTIFICATE_DER_SHA256,
+    ) {
+        "Internal-test AASDK certificate does not match the pinned public development identity"
+    }
+    require(
+        pemDerSha256(
+            bundledAasdkPrivateKeyPem,
+            "-----BEGIN PRIVATE KEY-----",
+            "-----END PRIVATE KEY-----",
+        ) == PUBLIC_DEVELOPMENT_AASDK_PRIVATE_KEY_PKCS8_DER_SHA256,
+    ) {
+        "Internal-test AASDK key does not match the pinned public development identity"
+    }
+}
+
 val generatedLegalAssets = layout.buildDirectory.dir("generated/legal-assets")
 val prepareLegalAssets by tasks.registering(Copy::class) {
     from(rootProject.file("LICENSE")) {
         rename { "GPL-3.0.txt" }
     }
     from(rootProject.file("THIRD_PARTY_NOTICES.md"))
-    from(rootProject.file("third_party/licenses")) {
-        into("third_party/licenses")
-    }
     into(generatedLegalAssets)
 }
 
@@ -234,29 +307,34 @@ fun String.asBuildConfigStringLiteral(): String =
         "\""
 
 val sha256Regex = Regex("[0-9A-Fa-f]{64}")
-val aasdkIdentityLeafSha256 = projectSetting("aasdkIdentityLeafSha256")
-val aasdkIdentityAnchorSha256 = projectSetting("aasdkIdentityAnchorSha256")
-val aasdkIdentityPinsConfigured =
-    aasdkIdentityLeafSha256.isNotEmpty() || aasdkIdentityAnchorSha256.isNotEmpty()
-val aasdkIdentityPinsComplete =
-    aasdkIdentityLeafSha256.matches(sha256Regex) &&
-        aasdkIdentityAnchorSha256.matches(sha256Regex)
-require(!aasdkIdentityPinsConfigured || aasdkIdentityPinsComplete) {
-    "AASDK identity pins must provide both leaf and anchor SHA-256 hashes"
-}
-require(!bundledAasdkCredentialConfigured || aasdkIdentityPinsComplete) {
-    "Bundled AASDK PEM inputs require leaf and anchor SHA-256 properties"
-}
-if (bundledAasdkCredentialConfigured) {
-    require(
-        pemDerSha256(
-            bundledAasdkCertificatePem,
-            "-----BEGIN CERTIFICATE-----",
-            "-----END CERTIFICATE-----",
-        ).equals(aasdkIdentityLeafSha256, ignoreCase = true),
-    ) {
-        "Bundled AASDK certificate does not match aasdkIdentityLeafSha256"
-    }
+val productionCredentialManifestPath = providers
+    .gradleProperty("productionCredentialManifestPath")
+    .orNull
+    ?.trim()
+    .orEmpty()
+val productionCredentialManifestSha256 = providers
+    .gradleProperty("productionCredentialManifestSha256")
+    .orNull
+    ?.trim()
+    .orEmpty()
+val productionAasdkIdentityLeafSha256 = providers
+    .gradleProperty("productionAasdkIdentityLeafSha256")
+    .orNull
+    ?.trim()
+    .orEmpty()
+val productionAasdkIdentityAnchorSha256 = providers
+    .gradleProperty("productionAasdkIdentityAnchorSha256")
+    .orNull
+    ?.trim()
+    .orEmpty()
+val productionAasdkIdentityConfigured =
+    productionAasdkIdentityLeafSha256.isNotEmpty() ||
+        productionAasdkIdentityAnchorSha256.isNotEmpty()
+val productionAasdkIdentityFullyConfigured =
+    productionAasdkIdentityLeafSha256.matches(sha256Regex) &&
+        productionAasdkIdentityAnchorSha256.matches(sha256Regex)
+require(!productionAasdkIdentityConfigured || productionAasdkIdentityFullyConfigured) {
+    "Production AASDK identity pins must contain leaf and anchor SHA-256 hashes"
 }
 
 val playUploadKeystorePath = providers
@@ -283,6 +361,21 @@ require(
     "Play upload signing requires both NAVONWEB_PLAY_UPLOAD_KEYSTORE and " +
         "NAVONWEB_PLAY_UPLOAD_PASSWORD"
 }
+require(!playUploadSigningConfigured || reviewPromoConfigComplete) {
+    "Play-signed builds must retain remote review promotion verification configuration"
+}
+val playProductionDeploymentBuild =
+    playUploadSigningConfigured && !playInternalTestBuild && !playReleaseCandidateBuild
+require(
+    !bundledAasdkCredentialConfigured ||
+        playInternalTestBuild ||
+        playProductionDeploymentBuild,
+) {
+    "Bundled AASDK identity inputs require an internal-test or production deployment build"
+}
+require(!playOssSyncPendingWarning || playProductionDeploymentBuild) {
+    "playOssSyncPendingWarning is reserved for an explicitly verified production deployment build"
+}
 val playUploadKeystoreFile = playUploadKeystorePath
     .takeIf { it.isNotEmpty() }
     ?.let(::file)
@@ -301,16 +394,60 @@ playUploadKeystoreFile?.let { keyStore ->
     }
 }
 
+fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
+        }
+    }
+    return digest.digest().joinToString("") { byte ->
+        "%02X".format(byte.toInt() and 0xFF)
+    }
+}
+
+if (playProductionDeploymentBuild) {
+    require(productionCredentialManifestPath.isNotEmpty()) {
+        "Play-signed release builds require the verified production credential manifest snapshot"
+    }
+    require(productionCredentialManifestSha256.matches(sha256Regex)) {
+        "Play-signed release builds require the verified production credential manifest SHA-256"
+    }
+    val manifestFile = file(productionCredentialManifestPath).canonicalFile
+    require(manifestFile.isFile && manifestFile.length() in 1..65536) {
+        "The production credential manifest snapshot must be a small regular file"
+    }
+    val actualManifestSha256 = sha256Hex(manifestFile)
+    require(actualManifestSha256.equals(productionCredentialManifestSha256, ignoreCase = true)) {
+        "The production credential manifest snapshot SHA-256 does not match the verified digest"
+    }
+    require(bundledAasdkCredentialConfigured) {
+        "Production deployment builds require the verified bundled AASDK certificate and private key"
+    }
+    require(
+        pemDerSha256(
+            bundledAasdkCertificatePem,
+            "-----BEGIN CERTIFICATE-----",
+            "-----END CERTIFICATE-----",
+        ).equals(productionAasdkIdentityLeafSha256, ignoreCase = true),
+    ) {
+        "Bundled production AASDK certificate does not match the verified manifest leaf identity"
+    }
+}
+
 android {
-    namespace = "com.pebble.tecomheadunit"
+    namespace = "com.eigenkodex.navonweb"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.eigenkodex.navonweb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.1.14-p0"
+        versionCode = 30
+        versionName = "0.1.20-p0"
 
         buildConfigField(
             "String",
@@ -353,7 +490,8 @@ android {
 
     buildTypes {
         debug {
-            // Keep debug and release installations independent on the same device.
+            // Keep the locally installed QA build isolated from the Play-signed package so
+            // release-candidate device tests never require uninstalling or overwriting user data.
             applicationIdSuffix = ".qa"
             versionNameSuffix = "-qa"
             buildConfigField("boolean", "NATIVE_OPENAUTO_ENABLED", enableNativeOpenAuto.toString())
@@ -409,6 +547,36 @@ android {
                 debugSymbolLevel = "SYMBOL_TABLE"
             }
             if (playUploadSigningConfigured) {
+                if (playInternalTestBuild) {
+                    require(
+                        !productionAasdkIdentityConfigured &&
+                            productionCredentialManifestPath.isEmpty() &&
+                            productionCredentialManifestSha256.isEmpty() &&
+                            bundledAasdkCredentialConfigured,
+                    ) {
+                        "Internal Play test builds require only the pinned public-development AASDK identity"
+                    }
+                } else {
+                    if (playReleaseCandidateBuild) {
+                        require(
+                            !productionAasdkIdentityConfigured &&
+                                productionCredentialManifestPath.isEmpty() &&
+                                productionCredentialManifestSha256.isEmpty() &&
+                                !bundledAasdkCredentialConfigured,
+                        ) {
+                            "Play release-candidate builds report missing production AASDK identity " +
+                                "and must not package substitute identity material"
+                        }
+                    } else {
+                        require(
+                            productionAasdkIdentityFullyConfigured &&
+                                bundledAasdkCredentialConfigured,
+                        ) {
+                            "Play-signed release builds require the deployment credential gate and all " +
+                                "production AASDK identity inputs"
+                        }
+                    }
+                }
                 signingConfig = signingConfigs.getByName("playUpload")
             }
             buildConfigField("boolean", "NATIVE_OPENAUTO_ENABLED", "false")
@@ -416,12 +584,12 @@ android {
             buildConfigField(
                 "String",
                 "AASDK_IDENTITY_LEAF_SHA256",
-                aasdkIdentityLeafSha256.asBuildConfigStringLiteral(),
+                productionAasdkIdentityLeafSha256.asBuildConfigStringLiteral(),
             )
             buildConfigField(
                 "String",
                 "AASDK_IDENTITY_ANCHOR_SHA256",
-                aasdkIdentityAnchorSha256.asBuildConfigStringLiteral(),
+                productionAasdkIdentityAnchorSha256.asBuildConfigStringLiteral(),
             )
             buildConfigField(
                 "String",
@@ -465,8 +633,8 @@ android {
                 "REVIEW_PROMO_ES256_PUBLIC_KEY_DER_BASE64",
                 reviewPromoEs256PublicKeyDerBase64.asBuildConfigStringLiteral(),
             )
-            // Release never honors the local bench override. Premium access comes from a verified
-            // purchase or a remotely signed entitlement.
+            // Release never honors the debug bench override. Premium comes from verified Play
+            // ownership or a remote-verified, signed, process-only review promotion grant.
             buildConfigField("boolean", "ENABLE_PREMIUM_PROJECTION_BENCH", "false")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -499,6 +667,10 @@ android {
     packaging {
         jniLibs.useLegacyPackaging = false
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // Kotlin tooling metadata is only consumed by build tooling, never by the app at
+        // runtime; drop it from the APK/AAB. DebugProbesKt.bin is deliberately kept: the
+        // Android Studio coroutine debugger loads it from the debug APK's resources.
+        resources.excludes += "kotlin-tooling-metadata.json"
     }
 
     sourceSets.getByName("main").assets.srcDir(generatedLegalAssets)
@@ -510,14 +682,22 @@ android {
 
 val verifyReleaseSourceCodeUrl by tasks.registering {
     group = "verification"
-    description = "Checks that release builds reference an immutable public source revision."
+    description = "Requires release builds to link to an immutable public source tag or commit."
     inputs.property("sourceCodeUrl", sourceCodeUrl)
+    inputs.property("playInternalTestBuild", playInternalTestBuild)
+    inputs.property("playReleaseCandidateBuild", playReleaseCandidateBuild)
+    inputs.property("playOssSyncPendingWarning", playOssSyncPendingWarning)
 
     doLast {
-        require(immutablePublicSourceUrl.matches(sourceCodeUrl)) {
-            "Release builds require -PsourceCodeUrl=" +
-                "$publicSourceRepositoryUrl/tree/v0.1.14-p0-source " +
-                "(or the full 40-character source commit)."
+        if (!immutablePublicSourceUrl.matches(sourceCodeUrl)) {
+            val message =
+                "Release builds require -PsourceCodeUrl=$publicSourceRepositoryUrl/tree/<immutable-tag> " +
+                    "or $publicSourceRepositoryUrl/commit/<full-commit>."
+            if (playInternalTestBuild || playReleaseCandidateBuild || playOssSyncPendingWarning) {
+                logger.warn("$message Continuing the explicitly warning-only Play release flow.")
+            } else {
+                throw GradleException(message)
+            }
         }
     }
 }
@@ -548,6 +728,10 @@ dependencies {
     // Billing's Play Services graph still exposes Fragment 1.1.0. Activity Result APIs require
     // Fragment 1.3.0+, so pin the current stable AndroidX Fragment release explicitly.
     implementation(libs.androidx.fragment)
+    // Compiles the packaged baseline profile (src/main/baseline-prof.txt) ahead of time at
+    // install, so first-launch Compose/startup code runs AOT-compiled instead of interpreted.
+    // AndroidX libraries' AAR-shipped profiles are merged and compiled through the same path.
+    implementation(libs.androidx.profileinstaller)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

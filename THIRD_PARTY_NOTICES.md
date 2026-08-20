@@ -16,7 +16,7 @@ Retained files keep their original notices. NavOnWeb is distributed under GPL-3.
 - Project: `f1xpl/aasdk`
 - Upstream: https://github.com/f1xpl/aasdk
 - License: GNU General Public License v3.0 or later
-- Use: protocol behavior and channel handling inform the Kotlin implementation under `app/src/main/java/com/pebble/tecomheadunit/openauto/`
+- Use: protocol behavior and channel handling inform the Kotlin implementation under `app/src/main/java/com/eigenkodex/navonweb/openauto/`
 - Bundled upstream source: no
 
 ## open-headunit
@@ -93,8 +93,9 @@ The project under `cloudflare/` uses Wrangler and its transitive packages for lo
 ## Android packaging note
 
 The Android build excludes duplicate merged dependency resources named `/META-INF/AL2.0` and
-`/META-INF/LGPL2.1`. It separately packages this notice, the NavOnWeb GPL license, and the
-canonical third-party license files under `third_party/licenses/` as application assets.
+`/META-INF/LGPL2.1`. It separately packages this notice and the NavOnWeb GPL license as application assets;
+the canonical third-party license texts are provided under `third_party/licenses/` in the
+corresponding source repository.
 Distributors should still inspect resolved artifacts and preserve any additional notices required
 by an individual dependency.
 

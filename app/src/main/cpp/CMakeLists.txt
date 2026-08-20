@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(openauto_android LANGUAGES CXX)
 
-option(OPENAUTO_RUNTIME_LINKED "Link the optional AASDK/OpenAuto native runtime" OFF)
+option(OPENAUTO_RUNTIME_LINKED "AASDK/OpenAuto runtime has passed the integration gate" OFF)
 
 add_library(
     openauto_android

@@ -354,7 +354,7 @@ function deferredStatus() {
   return {promise, resolve};
 }
 
-test("status gate is ordered before startWebRtc in the recovery scheduler", () => {
+test("status gate is ordered before startWebRtc in the production recovery scheduler", () => {
   const source = extractRecoverySource();
   const startSource = appScript.match(/async function startWebRtc[\s\S]*?\n  \}/u)?.[0] ?? "";
   const admissionSource = appScript.match(

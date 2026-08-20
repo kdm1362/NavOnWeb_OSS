@@ -4,7 +4,9 @@ NavOnWeb is an Android application that receives an Android Auto projection sess
 
 The repository contains the Android application, the browser client packaged with it, the public Cloudflare Worker/Pages implementation, build files, tests, and third-party notices.
 
-Google Play: listing URL to be added after publication.
+[<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80">](https://play.google.com/store/apps/details?id=com.eigenkodex.navonweb)
+
+The published binary can lag this branch. Every released binary corresponds to an immutable `v<versionName>-source` tag rather than to `main`; see [docs/SOURCE_DISTRIBUTION.md](docs/SOURCE_DISTRIBUTION.md).
 
 ## Features
 

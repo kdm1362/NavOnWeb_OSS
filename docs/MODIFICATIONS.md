@@ -10,7 +10,7 @@ Selected OpenAuto projection interface and service files are retained under `thi
 
 ## AASDK protocol adaptation
 
-The Kotlin classes under `app/src/main/java/com/pebble/tecomheadunit/openauto/protocol/` implement the framing, bootstrap, TLS channel, service discovery, channel lifecycle, and media packet behavior used by the Android runtime.
+The Kotlin classes under `app/src/main/java/com/eigenkodex/navonweb/openauto/protocol/` implement the framing, bootstrap, TLS channel, service discovery, channel lifecycle, and media packet behavior used by the Android runtime. (Earlier revisions used the source package `com.pebble.tecomheadunit`; the application ID `com.eigenkodex.navonweb` is unchanged.)
 
 The upstream AASDK C++ library is not linked or bundled. Android Auto identity material is supplied separately from source and build metadata.
 

@@ -110,7 +110,7 @@ export default {
 
     const role = cookieRoutedBrowser ? "browser" : match[1];
     if (role === "browser" && !cookieRoutedBrowser && env.ALLOW_LEGACY_BROWSER_ROOM_ROUTE !== "true") {
-      // The signed, cookie-routed endpoint is the preferred browser route. Keeping the legacy
+      // Production uses the signed, cookie-routed endpoint. Keeping the legacy
       // room-id URL opt-in prevents public OSS clients from bypassing pairing.
       return jsonResponse({ error: "Not found" }, 404);
     }
@@ -210,8 +210,9 @@ async function checkBrowserRoute(request, env) {
   const routeValue = readCookie(request.headers.get("Cookie"), ROUTE_COOKIE_NAME);
   const route = await verifyRouteCookieValue(env.BOOTSTRAP_HMAC_KEY, routeValue);
   if (!route) return emptyResponse(401, responseHeaders);
-  // The signed, expiring cookie is the complete Worker-side route proof. The phone's credential
-  // store remains authoritative for browser authorization on relayed RPCs.
+  // The signed, expiring cookie is the complete Worker-side route proof. Whether the phone still
+  // trusts this browser is intentionally decided by the phone's credential store on the first
+  // relayed RPC; checking a Durable Object registry here caused unrelated pairings to expire.
   return emptyResponse(204, responseHeaders);
 }
 
@@ -366,7 +367,7 @@ async function registerDevicePairingCode(request, env) {
     roomId,
     pairingEpoch,
     pairingGeneration,
-    // This duration comes from the phone's fixed monotonic expiry deadline.
+    // This duration comes from the phone's fixed monotonic Gate deadline.
     // Wall-clock skew is irrelevant and delayed first registration receives
     // only the remaining lifetime, never a fresh ten-minute window.
     expiresAt: Date.now() + pairingTtlMillis,

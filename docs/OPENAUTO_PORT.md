@@ -13,7 +13,7 @@ Android Auto Developer Head Unit Server
   -> paired browser
 ```
 
-Touch input follows the reverse path from the browser through viewport mapping to the Android Auto input channel. Audio and microphone samples use bounded PCM pipelines alongside the video session.
+Touch and key input follow the reverse path from the browser: pointer events through viewport mapping, and key events through the WebRTC key input protocol, to the Android Auto input channel. Audio and microphone samples use bounded PCM pipelines alongside the video session.
 
 ## Main components
 
@@ -22,7 +22,7 @@ Touch input follows the reverse path from the browser through viewport mapping t
 | Session bootstrap | `AasdkProjectionRuntime` and classes under `openauto/protocol/` |
 | Video decode | `MediaCodecVideoSink` |
 | Browser video | `WebRtcProjectionController` and `WebRtcTextureVideoBridge` |
-| Touch input | `TouchMapper`, `OpenAutoInputSink`, and the AASDK input channel |
+| Touch and key input | `TouchMapper`, `BrowserKeyInputCodec`, `OpenAutoInputSink`, and the AASDK input channel |
 | Audio | `OpenAutoPcmSink` and the browser PCM pipeline |
 | Microphone | Browser microphone framing and the AASDK microphone channel |
 | Night mode | `NightModeResolver` and the sensor channel |

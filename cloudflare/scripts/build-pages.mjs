@@ -32,8 +32,8 @@ const titleMarker = "<title>NavOnWeb</title>";
 const htmlMarker = '<html lang="en" data-i18n-pending>';
 const viewerMarker = '  <section id="viewer"';
 const playStoreCtaMarker = "<!--NAVONWEB_PLAY_STORE_CTA-->";
-// Keep a stable Pages-only asset envelope so cache revisions remain independent
-// from the Android-packaged web application.
+// Keep a stable Pages-only asset envelope so a poisoned content-addressed upload
+// can be invalidated without changing the Android-packaged web application.
 const pagesAssetFormatMarker = "/* NavOnWeb Pages asset format v2. */";
 const siteVariants = Object.freeze([
   {
@@ -106,12 +106,12 @@ const marketingMediaFiles = [
     output: "navonweb-premium-running-en.png",
   },
   {
-    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-browser-demo-ko.png"),
-    output: "navonweb-browser-demo-ko.png",
+    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-browser-connected-ko.png"),
+    output: "navonweb-browser-connected-ko.png",
   },
   {
-    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-browser-demo-en.png"),
-    output: "navonweb-browser-demo-en.png",
+    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-browser-connected-en.png"),
+    output: "navonweb-browser-connected-en.png",
   },
 ];
 const options = parseArguments(process.argv.slice(2));

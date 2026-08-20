@@ -1,4 +1,4 @@
-# Public client configuration embedded in NavOnWeb 0.1.14-p0 (versionCode 24).
+# Public client configuration embedded in NavOnWeb 0.1.20-p0 (versionCode 30).
 # These values identify public service endpoints and verification keys. They are
 # not administrator credentials. Copy only the needed entries into an untracked
 # local.properties file or pass them as matching -P Gradle properties.

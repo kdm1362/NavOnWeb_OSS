@@ -242,7 +242,7 @@ test("credential invalidation aborts and clears every pending close", async () =
   assert.equal(runtime.calls.length, 1, "aborted predecessor prevents the queued DELETE from starting");
 });
 
-test("offer admission waits for transport-independent DELETE and stable status", () => {
+test("production offer admission waits for transport-independent DELETE and stable status", () => {
   const closeSource = extractCloseBarrierSource();
   const recoverySource = appScript.match(/function scheduleWebRtcRecovery[\s\S]*?\n  \}/u)?.[0] ?? "";
   const startSource = appScript.match(/async function startWebRtc[\s\S]*?\n  \}/u)?.[0] ?? "";

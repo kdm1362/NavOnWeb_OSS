@@ -303,7 +303,7 @@ test("disposing old channels detaches close handlers before closing them", () =>
   assert.equal(runtime.timers.count(), 0);
 });
 
-test("runtime reset and channel creation consume stale output-audio recovery", () => {
+test("production reset and channel creation consume stale output-audio recovery", () => {
   const resetSource = appScript.match(/function resetWebRtc[\s\S]*?\n  \}/u)?.[0] ?? "";
   const createSource = appScript.match(
     /function createOutputAudioWebRtcChannels[\s\S]*?\n  \}/u,

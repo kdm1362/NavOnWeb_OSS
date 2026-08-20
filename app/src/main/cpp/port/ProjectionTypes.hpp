@@ -1,7 +1,7 @@
 /*
  * Android adaptation of OpenAuto projection interfaces.
  * Copyright (C) 2018 f1x.studio (Michal Szwaj)
- * Modifications Copyright (C) 2026 Tecom Head Unit contributors
+ * Modifications Copyright (C) 2026 NavOnWeb contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #pragma once
@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace tecom::openauto_port {
+namespace navonweb::openauto_port {
 
 enum class TouchPhase : std::uint8_t {
     Down,
@@ -53,4 +53,4 @@ inline TouchEvent map_touch(const NormalizedTouch& touch, const Viewport& viewpo
     };
 }
 
-}  // namespace tecom::openauto_port
+}  // namespace navonweb::openauto_port

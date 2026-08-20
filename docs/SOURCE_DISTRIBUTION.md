@@ -9,7 +9,7 @@ This repository is the preferred form for modifying NavOnWeb. Every distributed 
 3. Run the Android and web checks in [BUILDING.md](BUILDING.md).
 4. Stage the intended source tree and regenerate `SOURCE_MANIFEST.sha256`.
 5. Commit and tag that source tree.
-6. Build the binary with `-PsourceCodeUrl` set to the immutable `/tree/v0.1.14-p0-source` (or another matching versioned `v...-source` tag) or `/tree/<40-character-commit>` URL.
+6. Build the binary with `-PsourceCodeUrl` set to the immutable `/tree/v0.1.20-p0-source` (or another matching versioned `v...-source` tag) or `/commit/<40-character-commit>` URL.
 
 To regenerate the manifest from the staged Git index on Windows:
 

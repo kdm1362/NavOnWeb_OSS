@@ -149,7 +149,7 @@ test("non-aborted request still emits exactly one envelope", async () => {
   assert.equal(transport.pending.size, 0);
 });
 
-test("cloud relay transport contains both post-connect and pre-send abort guards", () => {
+test("production transport contains both post-connect and pre-send abort guards", () => {
   const source = extractCloudRelayTransportSource();
   const request = source.slice(source.indexOf("async request"), source.indexOf("async connect"));
   const connectEnd = request.indexOf("await this.connect(signal);");

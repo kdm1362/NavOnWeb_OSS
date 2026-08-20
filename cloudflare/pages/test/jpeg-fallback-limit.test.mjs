@@ -12,7 +12,7 @@ const appScript = fs.readFileSync(
 const fallbackPolicy = fs.readFileSync(
   path.resolve(
     testRoot,
-    "../../../app/src/main/java/com/pebble/tecomheadunit/browser/BrowserJpegFallbackPolicy.kt",
+    "../../../app/src/main/java/com/eigenkodex/navonweb/browser/BrowserJpegFallbackPolicy.kt",
   ),
   "utf8",
 );

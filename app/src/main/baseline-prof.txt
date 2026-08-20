@@ -1,0 +1,12 @@
+# Baseline profile for com.eigenkodex.navonweb.
+#
+# Hand-authored and deliberately broad: every method in the app package is marked
+# hot/startup/post-startup and every app class is preloaded. AGP's profgen expands
+# these wildcards against the release DEX at build time, so unmatched rules are
+# dropped rather than shipped. AndroidX library code is covered by the AAR-shipped
+# profiles that AGP merges alongside these rules.
+#
+# Rule syntax:
+# https://developer.android.com/topic/performance/baselineprofiles/manually-create-measure
+HSPLcom/eigenkodex/navonweb/**->**(**)**
+Lcom/eigenkodex/navonweb/**;

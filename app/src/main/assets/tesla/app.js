@@ -8,16 +8,19 @@
   const CLOUD_RELAY_MODE = CLOUD_RELAY_CONFIG !== null;
   const STORAGE_KEY = CLOUD_RELAY_MODE
     ? 'navonweb.browserCredential.v2'
-    : 'tecom.browserCredential.v1';
-  const LEGACY_CLOUD_STORAGE_KEY = CLOUD_RELAY_MODE && CLOUD_RELAY_CONFIG.roomId
-    ? `tecom.browserCredential.v1.${CLOUD_RELAY_CONFIG.roomId}`
-    : '';
+    : 'navonweb.browserCredential.v1';
+  const LEGACY_STORAGE_KEY_SUFFIX = CLOUD_RELAY_MODE && CLOUD_RELAY_CONFIG.roomId
+    ? `.browserCredential.v1.${CLOUD_RELAY_CONFIG.roomId}`
+    : '.browserCredential.v1';
   const PREMIUM_PROMPT_DISMISSED_KEY = 'navonweb.premiumPromptDismissed.v1';
   const PRESENTATION_PREFERENCES_KEY = 'navonweb.presentationPreferences.v1';
   const PRESENTATION_GUIDE_DISMISSED_KEY = 'navonweb.presentationGuideDismissed.v1';
   const FRESH_CLOUD_ROUTE_REQUIRED_KEY = 'navonweb.freshCloudRouteRequired.v1';
   const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
   const FRAME_INTERVAL_MILLIS = 200;
+  // PCM16LE decode fast path. Practically every supported browser is little-endian, but the
+  // DataView fallback below keeps a big-endian host correct.
+  const PLATFORM_LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
   const MAX_FRAME_BYTES = 2 * 1024 * 1024;
   const STATUS_HEALTHY_MIN_INTERVAL_MILLIS = 1500;
   const STATUS_HEALTHY_MAX_INTERVAL_MILLIS = 2500;
@@ -238,7 +241,7 @@
       landingPlayStoreLabel: 'Google Play availability',
       landingPlayStoreComingSoon: 'Coming soon on Google Play',
       landingPlayStoreCta: 'Get NavOnWeb on Google Play',
-      landingPlayStoreHint: 'The official app link will open here after internal testing is complete.',
+      landingPlayStoreHint: 'Needs an Android Auto phone and a browser on the same local network.',
       landingPeek: 'See how NavOnWeb works',
       landingWelcomeScreenshotAlt: 'NavOnWeb first-run welcome screen',
       landingPremiumScreenshotAlt: 'NavOnWeb Premium service running screen',
@@ -246,8 +249,8 @@
       landingBrowserEyebrow: 'The connected experience',
       landingBrowserTitle: 'Your projection, ready in the browser.',
       landingBrowserLead: 'Once paired, the live Android Auto screen fills the available browser space with video, sound and touch controls.',
-      landingBrowserScreenshotAlt: 'Illustrative NavOnWeb browser screen reconstructed with AI',
-      landingBrowserCaption: 'Illustrative screen reconstructed with AI',
+      landingBrowserScreenshotAlt: 'NavOnWeb browser connected to a live projection',
+      landingBrowserCaption: 'A live local-network session shown in a desktop browser',
       landingBenefitsEyebrow: 'Designed around the screen you already have',
       landingBenefitsTitle: 'A familiar drive, without another vehicle adapter.',
       landingBenefitsLead: 'Keep the supported projection session on your phone and bring it to a compatible vehicle, tablet or desktop browser on the same network.',
@@ -361,7 +364,7 @@
       landingPlayStoreLabel: 'Google Play 출시 안내',
       landingPlayStoreComingSoon: 'Google Play 출시 준비 중',
       landingPlayStoreCta: 'Google Play에서 NavOnWeb 받기',
-      landingPlayStoreHint: '내부 테스트가 끝나면 이 버튼이 공식 앱 링크로 전환됩니다.',
+      landingPlayStoreHint: 'Android Auto 휴대전화와 같은 로컬 네트워크의 브라우저가 필요합니다.',
       landingPeek: '아래에서 NavOnWeb 이용 모습을 확인하세요',
       landingWelcomeScreenshotAlt: 'NavOnWeb 첫 사용 안내 시작 화면',
       landingPremiumScreenshotAlt: 'NavOnWeb 프리미엄 서비스 실행 화면',
@@ -369,8 +372,8 @@
       landingBrowserEyebrow: '브라우저 연결 모습',
       landingBrowserTitle: '연결되면 차량용 화면이 브라우저에 바로 표시됩니다',
       landingBrowserLead: '한 번 페어링하면 Android Auto 실시간 화면이 브라우저 공간에 맞춰 표시되고 영상·소리·터치 입력을 이용할 수 있습니다.',
-      landingBrowserScreenshotAlt: 'AI로 재구성한 NavOnWeb 브라우저 예시 화면',
-      landingBrowserCaption: 'AI로 재구성한 예시 화면',
+      landingBrowserScreenshotAlt: '실시간 프로젝션에 연결된 NavOnWeb 브라우저 화면',
+      landingBrowserCaption: '같은 로컬 네트워크의 데스크톱 브라우저에서 연결한 실제 화면',
       landingBenefitsEyebrow: '이미 가지고 있는 화면을 중심으로 설계했습니다',
       landingBenefitsTitle: '별도 차량용 어댑터 없이 익숙한 주행 화면을',
       landingBenefitsLead: '휴대전화에서 실행되는 지원 프로젝션 화면을 같은 네트워크의 호환 차량·태블릿·데스크톱 브라우저로 가져옵니다.',
@@ -786,11 +789,29 @@
     writable: false
   });
 
+  function legacyCredentialStorageKeys() {
+    const keys = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key && key !== STORAGE_KEY && key.endsWith(LEGACY_STORAGE_KEY_SUFFIX)) {
+        keys.push(key);
+      }
+    }
+    return keys;
+  }
+
   function loadRememberedCredential() {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY) ||
-        (LEGACY_CLOUD_STORAGE_KEY && window.localStorage.getItem(LEGACY_CLOUD_STORAGE_KEY)) || '';
-      return CREDENTIAL_PATTERN.test(saved) ? saved : '';
+      const saved = window.localStorage.getItem(STORAGE_KEY) || '';
+      if (CREDENTIAL_PATTERN.test(saved)) return saved;
+      for (const legacyKey of legacyCredentialStorageKeys()) {
+        const legacyCredential = window.localStorage.getItem(legacyKey) || '';
+        if (!CREDENTIAL_PATTERN.test(legacyCredential)) continue;
+        window.localStorage.setItem(STORAGE_KEY, legacyCredential);
+        window.localStorage.removeItem(legacyKey);
+        return legacyCredential;
+      }
+      return '';
     } catch (_) {
       return '';
     }
@@ -799,7 +820,9 @@
   function rememberCredential(value) {
     try {
       window.localStorage.setItem(STORAGE_KEY, value);
-      if (LEGACY_CLOUD_STORAGE_KEY) window.localStorage.removeItem(LEGACY_CLOUD_STORAGE_KEY);
+      for (const legacyKey of legacyCredentialStorageKeys()) {
+        window.localStorage.removeItem(legacyKey);
+      }
     } catch (_) {
       // 저장소가 차단된 브라우저는 현재 탭에서만 연결을 유지합니다.
     }
@@ -808,7 +831,9 @@
   function forgetCredential() {
     try {
       window.localStorage.removeItem(STORAGE_KEY);
-      if (LEGACY_CLOUD_STORAGE_KEY) window.localStorage.removeItem(LEGACY_CLOUD_STORAGE_KEY);
+      for (const legacyKey of legacyCredentialStorageKeys()) {
+        window.localStorage.removeItem(legacyKey);
+      }
     } catch (_) {
       // 저장소 접근 실패와 관계없이 현재 연결은 폐기합니다.
     }
@@ -3274,7 +3299,9 @@
       if (webRtcControlTransport === this) {
         cancelControlWebRtcOpenWatchdog(this.generation);
         webRtcControlTransport = null;
-        markLocalControlUnavailable('channel_failed', this.generation);
+        // Only cloud relay depends on this channel for API calls. On direct LAN it carries the
+        // shared pointer and nothing else, so losing it costs the pointer, not the picture.
+        if (CLOUD_RELAY_MODE) markLocalControlUnavailable('channel_failed', this.generation);
       }
       for (const pending of this.pending.values()) pending.reject(error);
     }
@@ -4083,12 +4110,29 @@
     const frameCount = Math.floor(pcmBytes.byteLength / frameBytes);
     if (!frameCount) return;
     const buffer = context.createBuffer(stream.channels, frameCount, stream.sampleRate);
-    const samples = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, frameCount * frameBytes);
-    for (let channel = 0; channel < stream.channels; channel += 1) {
+    // Bulk Int16Array views replace the previous per-sample DataView.getInt16 loop, which cost
+    // sampleRate * channels virtual calls per second of audio on the vehicle browser's CPU.
+    const sampleCount = frameCount * stream.channels;
+    let samples;
+    if (PLATFORM_LITTLE_ENDIAN && pcmBytes.byteOffset % 2 === 0) {
+      samples = new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset, sampleCount);
+    } else if (PLATFORM_LITTLE_ENDIAN) {
+      // Odd chunk offsets take one aligned byte copy before the typed-array view.
+      const aligned = new Uint8Array(sampleCount * 2);
+      aligned.set(pcmBytes.subarray(0, sampleCount * 2));
+      samples = new Int16Array(aligned.buffer);
+    } else {
+      const view = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, sampleCount * 2);
+      samples = new Int16Array(sampleCount);
+      for (let index = 0; index < sampleCount; index += 1) {
+        samples[index] = view.getInt16(index * 2, true);
+      }
+    }
+    const channelCount = stream.channels;
+    for (let channel = 0; channel < channelCount; channel += 1) {
       const output = buffer.getChannelData(channel);
       for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-        const offset = (frameIndex * stream.channels + channel) * 2;
-        output[frameIndex] = samples.getInt16(offset, true) / 32768;
+        output[frameIndex] = samples[frameIndex * channelCount + channel] / 32768;
       }
     }
 
@@ -4512,7 +4556,6 @@
   }
 
   function createControlWebRtcChannel(peer, generation) {
-    if (!CLOUD_RELAY_MODE) return null;
     let channel = null;
     try {
       channel = peer.createDataChannel(CONTROL_WEBRTC_CHANNEL_LABEL, {ordered: true});
@@ -4520,12 +4563,27 @@
       const previous = webRtcControlTransport;
       webRtcControlTransport = transport;
       if (previous) previous.close();
-      beginControlWebRtcChannelNegotiation(transport);
-      pad.dataset.navonwebControlTransport = 'negotiating';
+      if (CLOUD_RELAY_MODE) {
+        // Cloud relay carries API calls over this channel, so its absence is fatal and the
+        // bounded open watchdog applies.
+        beginControlWebRtcChannelNegotiation(transport);
+        pad.dataset.navonwebControlTransport = 'negotiating';
+      } else {
+        // Direct LAN reaches the phone over HTTP and needs nothing from this channel except the
+        // other sessions' touch_presence events, which the phone only sends to sessions that
+        // have one open. It is opened for the shared pointer alone: no watchdog, and a failure
+        // must never take the video session with it.
+        pad.dataset.navonwebControlTransport = 'presence_only';
+      }
       return transport;
     } catch (error) {
       if (channel) {
         try { channel.close(); } catch (_) { /* setup did not complete */ }
+      }
+      if (!CLOUD_RELAY_MODE) {
+        pad.dataset.navonwebControlTransport = 'presence_unavailable';
+        console.warn('Shared pointer is unavailable for this session.', error);
+        return null;
       }
       pad.dataset.navonwebControlTransport = 'local_unavailable_setup';
       console.warn('WebRTC control channel is unavailable; cloud control fallback is disabled.', error);

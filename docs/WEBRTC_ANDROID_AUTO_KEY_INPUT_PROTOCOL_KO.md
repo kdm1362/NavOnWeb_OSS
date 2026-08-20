@@ -1,9 +1,9 @@
 # WebRTC Android Auto 키 입력 프로토콜 명세
 
-- 문서 상태: 구현 계약 1.0
-- 대상 DataChannel: `navonweb-control-v1`
-- 대상 API: `POST /api/key`
-- 문서 범위: WebRTC 제어 채널에서 받은 Android Auto 키 입력을 NavOnWeb Android 앱의 AASDK Input 채널로 전달하는 경로
+문서 상태: 구현 계약 1.0
+대상 DataChannel: `navonweb-control-v1`
+대상 API: `POST /api/key`
+문서 범위: WebRTC 제어 채널에서 받은 Android Auto 키 입력을 NavOnWeb Android 앱의 AASDK Input 채널로 전달하는 경로
 
 ## 1. 목적과 범위
 
@@ -464,11 +464,11 @@ endpoint 응답 body는 별도 표기가 없는 한 UTF-8 JSON이다.
 
 이 계약을 바꾸는 구현 지점은 다음과 같다.
 
-- `app/src/main/java/com/pebble/tecomheadunit/browser/webrtc/WebRtcControlDataChannelCodec.kt`
-- `app/src/main/java/com/pebble/tecomheadunit/browser/webrtc/WebRtcProjectionController.kt`
-- `app/src/main/java/com/pebble/tecomheadunit/browser/BrowserProbeServer.kt`
-- `app/src/main/java/com/pebble/tecomheadunit/openauto/AasdkProjectionRuntime.kt`
-- `app/src/main/java/com/pebble/tecomheadunit/openauto/protocol/AasdkOpenAutoProtocol.kt`
+- `app/src/main/java/com/eigenkodex/navonweb/browser/webrtc/WebRtcControlDataChannelCodec.kt`
+- `app/src/main/java/com/eigenkodex/navonweb/browser/webrtc/WebRtcProjectionController.kt`
+- `app/src/main/java/com/eigenkodex/navonweb/browser/BrowserProbeServer.kt`
+- `app/src/main/java/com/eigenkodex/navonweb/openauto/AasdkProjectionRuntime.kt`
+- `app/src/main/java/com/eigenkodex/navonweb/openauto/protocol/AasdkOpenAutoProtocol.kt`
 - 대응 단위 테스트와 이 문서
 
 ## 16. 적용 버전

@@ -12,7 +12,7 @@ branch = development
 commit = 046b3b381595509d0939fa84b14a90978f46ff63
 license = GPL-3.0-or-later
 bundled = false
-reason = Protocol behavior is adapted in Kotlin; the upstream C++ library is not linked or bundled.
+reason = Embedded third-party certificate/private-key material requires a separate authorization review.
 
 [open_headunit]
 repository = https://github.com/andreknieriem/open-headunit.git
@@ -20,7 +20,7 @@ branch = main
 commit = 738b07ff7e765d9b570d27dee6d15901ad30b80c
 license = AGPL-3.0-or-later
 bundled = false
-reason = Architecture and interoperability reference only.
+reason = Architecture and interoperability reference only; no program source or assets are included.
 
 [openauto_reference_sha256]
 third_party/openauto-reference/CMakeLists.txt = 042b4de6bedfae7e62c86a598b9377ba31d96fbc8ee6828e61b77ef8347f6007

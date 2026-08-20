@@ -130,7 +130,7 @@ test("stale non-success response is ignored by the replacement generation", asyn
   assert.equal(runtime.cleanup.length, 0);
 });
 
-test("signaling flow binds POST and answer polling to local generation state", () => {
+test("production signaling binds POST and answer polling to local generation state", () => {
   const startSource = appScript.match(/async function startWebRtc[\s\S]*?\n  \}/u)?.[0] ?? "";
   const answerStart = appScript.indexOf("async function waitForWebRtcAnswer");
   const answerEnd = appScript.indexOf("\n  async function startWebRtc", answerStart);

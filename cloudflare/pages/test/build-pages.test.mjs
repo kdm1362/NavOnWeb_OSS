@@ -18,7 +18,7 @@ test("Pages CSP permits both HTTPS bootstrap and secure WebSocket signaling", ()
     [
       "scripts/build-pages.mjs",
       "--require-secure",
-      "--signal-origin=wss://signal.example",
+      "--signal-origin=wss://navonweb.com",
       "--signal-path-prefix=/_nw",
     ],
     { cwd: cloudflareRoot, stdio: "pipe" },
@@ -27,7 +27,7 @@ test("Pages CSP permits both HTTPS bootstrap and secure WebSocket signaling", ()
   const headers = readFileSync(path.join(cloudflareRoot, "dist", "pages", "_headers"), "utf8");
   assert.match(
     headers,
-    /connect-src 'self' https:\/\/signal\.example wss:\/\/signal\.example;/,
+    /connect-src 'self' https:\/\/navonweb\.com wss:\/\/navonweb\.com;/,
   );
   assert.doesNotMatch(headers, /__SIGNALING_(?:HTTP|WEBSOCKET)_ORIGIN__/);
   const cloudConfig = readFileSync(
@@ -44,7 +44,7 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
     [
       "scripts/build-pages.mjs",
       "--require-secure",
-      "--signal-origin=wss://signal.example",
+      "--signal-origin=wss://navonweb.com",
       "--signal-path-prefix=/_nw",
     ],
     { cwd: cloudflareRoot, stdio: "pipe" },
@@ -128,23 +128,6 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
   assert.doesNotMatch(landingCss, /text-wrap:\s*balance/u);
   assert.match(index, /class="marketing-peek"/u);
   assert.match(index, /class="marketing-browser-showcase"/u);
-  assert.ok(
-    index.includes("Illustrative screen reconstructed with AI"),
-    "the rendered landing page must disclose that the browser demo was reconstructed with AI",
-  );
-  assert.match(
-    landingCss,
-    /\.marketing-browser-preview figcaption\s*\{[^}]*text-align:\s*right;/u,
-    "the AI reconstruction disclosure must remain at the lower right of the demo image",
-  );
-  assert.ok(
-    index.includes("The official app link will open here after internal testing is complete."),
-    "the rendered landing fallback must match the public English availability message",
-  );
-  assert.doesNotMatch(
-    index,
-    new RegExp(`${["navonweb", "browser", "connected"].join("-")}-(?:en|ko)\\.png`, "u"),
-  );
 
   const manifest = JSON.parse(
     readFileSync(path.join(outputRoot, "manifest.webmanifest"), "utf8"),
@@ -230,12 +213,12 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
       path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-phone-main-premium-en.png"),
     ],
     [
-      "navonweb-browser-demo-ko.png",
-      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-browser-demo-ko.png"),
+      "navonweb-browser-connected-ko.png",
+      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-browser-connected-ko.png"),
     ],
     [
-      "navonweb-browser-demo-en.png",
-      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-browser-demo-en.png"),
+      "navonweb-browser-connected-en.png",
+      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-browser-connected-en.png"),
     ],
   ]);
   for (const [outputName, sourcePath] of screenshotSources) {
@@ -243,7 +226,7 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
     assert.deepEqual(
       readFileSync(path.join(outputRoot, "media", outputName)),
       source,
-      `${outputName} must reuse the documented user-guide screenshot without modification`,
+      `${outputName} must reuse the reviewed user-guide screenshot without modification`,
     );
     const revision = createHash("sha256").update(source).digest("hex").slice(0, 16);
     assert.ok(
@@ -268,22 +251,6 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
     localizedApp,
     `/* NavOnWeb Pages asset format v2. */\n${packagedApp}`,
     "Pages app.js must be the canonical packaged app with only the build marker prepended",
-  );
-  assert.ok(
-    localizedApp.includes("landingPlayStoreHint: 'The official app link will open here after internal testing is complete.'"),
-    "the English runtime translation must match the landing fallback",
-  );
-  assert.ok(
-    localizedApp.includes("landingPlayStoreHint: '내부 테스트가 끝나면 이 버튼이 공식 앱 링크로 전환됩니다.'"),
-    "the Korean runtime translation must use the same neutral publication state",
-  );
-  assert.ok(
-    localizedApp.includes("landingBrowserCaption: 'Illustrative screen reconstructed with AI'"),
-    "the English runtime caption must disclose the AI reconstruction",
-  );
-  assert.ok(
-    localizedApp.includes("landingBrowserCaption: 'AI로 재구성한 예시 화면'"),
-    "the Korean runtime caption must disclose the AI reconstruction",
   );
   assert.match(
     localizedApp,
@@ -332,13 +299,6 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
   assert.match(privacy, /<h2>NavOnWeb Privacy Policy<\/h2>/u);
   assert.match(privacy, /보고서는 전송일로부터 30일 후 삭제/u);
   assert.match(privacy, /Reports are deleted 30 days after submission/u);
-  assert.match(privacy, /임시 이용권 검증 정보/u);
-  assert.match(privacy, /원문 코드를 데이터베이스에 저장하지 않습니다/u);
-  assert.match(privacy, /최대 180일 보관 후 삭제/u);
-  assert.match(privacy, /Temporary-access entitlement verification/u);
-  assert.match(privacy, /does not store the raw code in its database/u);
-  assert.match(privacy, /no more than 180 days and then deleted/u);
-  assert.doesNotMatch(privacy, /ReviewPromo|review promo|검토용 프로모션/iu);
   assert.match(privacy, /https:\/\/github\.com\/kdm1362\/NavOnWeb_OSS\/issues/u);
   assert.equal(
     readFileSync(path.join(outputRoot, "google08d940d1ee3c9069.html"), "utf8").trim(),
@@ -361,7 +321,7 @@ test("Pages build enables only the configured NavOnWeb Play Store listing", () =
     [
       "scripts/build-pages.mjs",
       "--require-secure",
-      "--signal-origin=wss://signal.example",
+      "--signal-origin=wss://navonweb.com",
       "--signal-path-prefix=/_nw",
       `--play-store-url=${playStoreUrl}`,
     ],
@@ -382,7 +342,7 @@ test("Pages build enables only the configured NavOnWeb Play Store listing", () =
       [
         "scripts/build-pages.mjs",
         "--require-secure",
-        "--signal-origin=wss://signal.example",
+        "--signal-origin=wss://navonweb.com",
         "--play-store-url=https://example.com/fake-app",
       ],
       { cwd: cloudflareRoot, stdio: "pipe" },

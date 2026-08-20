@@ -4,7 +4,7 @@
 
 - JDK 17
 - Android SDK Platform 36 and Android SDK Build Tools
-- Node.js 22 or newer for the Cloudflare project
+- Node.js 20 or newer for the Cloudflare project
 
 Use `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or an untracked `local.properties` file containing `sdk.dir=<path>` to locate the Android SDK.
 
@@ -32,10 +32,10 @@ An unsigned release bundle can be compiled without signing or AASDK identity fil
 
 ```powershell
 .\gradlew.bat bundleRelease `
-  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.14-p0-source
+  -PsourceCodeUrl=https://github.com/kdm1362/NavOnWeb_OSS/tree/v0.1.20-p0-source
 ```
 
-Debug builds use the repository root by default. Release builds accept only a versioned source tag such as `v0.1.14-p0-source` or a full 40-character commit under the repository's `/tree/` path.
+Debug builds use the repository root by default. Release builds accept only a versioned source tag such as `v0.1.20-p0-source` under the repository's `/tree/` path, or a full 40-character commit under its `/commit/` path.
 
 Signing is optional for compilation. To sign a release, set `NAVONWEB_PLAY_UPLOAD_KEYSTORE`, `NAVONWEB_PLAY_UPLOAD_PASSWORD`, and optionally `NAVONWEB_PLAY_UPLOAD_KEY_ALIAS`. The keystore must remain outside the checkout.
 
@@ -48,7 +48,7 @@ The following optional Gradle properties configure external services. They can b
 - `cloudBrowserPageUrl` and `cloudSignalingWebSocketUrl`
 - `reviewPromoApiUrl`, `reviewPromoEs256KeyId`, and `reviewPromoEs256PublicKeyDerBase64`
 
-The public endpoint and verification values embedded in versionCode 24 are recorded in
+The public endpoint and verification values embedded in versionCode 30 are recorded in
 [`config/public-client.properties.example`](../config/public-client.properties.example). Copy
 those entries into an untracked `local.properties` file when reproducing the distributed client,
 or provide a different compatible public client configuration through the same property names.
@@ -61,8 +61,8 @@ To include an externally supplied AASDK identity in a release build, provide all
 
 - `bundledAasdkCertificatePemPath`
 - `bundledAasdkPrivateKeyPemPath`
-- `aasdkIdentityLeafSha256`
-- `aasdkIdentityAnchorSha256`
+- `productionAasdkIdentityLeafSha256`
+- `productionAasdkIdentityAnchorSha256`
 
 The PEM files must remain outside the checkout. Builds that omit these properties still compile, but the bundled identity provider remains unavailable at runtime.
 
