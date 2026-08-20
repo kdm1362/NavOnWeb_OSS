@@ -1,23 +1,67 @@
-# NavOnWeb
+<p align="center">
+  <img src="cloudflare/pages/icons/icon-192.png" width="96" height="96" alt="NavOnWeb icon">
+</p>
+
+<h1 align="center">NavOnWeb</h1>
+
+<p align="center">
+  <b>Android Auto, in your vehicle's browser.</b><br>
+  휴대전화의 Android Auto 화면을 같은 네트워크의 브라우저에서 — 영상, 소리, 터치까지.
+</p>
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.eigenkodex.navonweb"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="72"></a>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#requirements">Requirements</a> ·
+  <a href="#build">Build</a> ·
+  <a href="#license-and-source">License</a>
+</p>
+
+<p align="center">
+  <img src="docs/user-guide/screenshots/landing-browser-connected-en.png" width="820" alt="An Android Auto navigation session running inside a desktop browser at navonweb.com">
+</p>
 
 NavOnWeb is an Android application that receives an Android Auto projection session on a phone and makes the session available to a web browser on the same local network. A paired browser can display the projected video, send touch input, and use the browser audio and microphone paths supported by the active session.
 
 The repository contains the Android application, the browser client packaged with it, the public Cloudflare Worker/Pages implementation, build files, tests, and third-party notices.
 
-[<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80">](https://play.google.com/store/apps/details?id=com.eigenkodex.navonweb)
-
 The published binary can lag this branch. Every released binary corresponds to an immutable `v<versionName>-source` tag rather than to `main`; see [docs/SOURCE_DISTRIBUTION.md](docs/SOURCE_DISTRIBUTION.md).
+
+## How it works
+
+```
+┌──────────────────┐    Android Auto     ┌──────────────────┐    WebRTC / LAN     ┌──────────────────┐
+│  Your phone       │  ────────────────▶ │  NavOnWeb (app)  │  ────────────────▶ │  Vehicle browser │
+│  (Android Auto)   │   H.264 over TLS   │  on the phone    │   video·audio·touch │  or any browser  │
+└──────────────────┘                     └──────────────────┘                     └──────────────────┘
+```
+
+1. **Connect** — NavOnWeb pairs with Android Auto's Developer Head Unit Server on the same phone.
+2. **Pair once** — enter the one-time 8-digit code in a browser on your local network; the browser is remembered.
+3. **Drive the screen** — the browser shows the live projection with touch, key input, sound, and microphone.
+
+<p align="center">
+  <img src="docs/user-guide/screenshots/landing-phone-welcome-en.png" width="270" alt="NavOnWeb first-run welcome screen">
+  &nbsp;&nbsp;
+  <img src="docs/user-guide/screenshots/landing-phone-main-premium-en.png" width="270" alt="NavOnWeb service running screen">
+</p>
 
 ## Features
 
-- Same-phone connection to Android Auto's Developer Head Unit Server
-- Pairing-code protected browser access
-- WebRTC video with automatic codec selection and a JPEG fallback
-- Touch forwarding and fullscreen/orientation-aware viewport handling
-- Basic, 720p, and 1080p projection profiles with per-profile density settings
-- Browser audio and microphone data paths
-- Optional Bluetooth or Wi-Fi hotspot automation
-- Local-network operation with an optional configured public browser relay
+| | |
+|---|---|
+| 📱 **Same-phone mode** | One phone runs both Android Auto and NavOnWeb — no extra hardware |
+| 🔐 **Pairing-code access** | One-time 8-digit codes; paired browsers are remembered and manageable |
+| 🎥 **WebRTC video** | Automatic codec selection (H.264/VP8/VP9/AV1) with a JPEG fallback |
+| 👆 **Touch & keys** | Pointer and key input forwarded to Android Auto, viewport-aware |
+| 🖥️ **Projection profiles** | Basic, 720p, and 1080p profiles with per-profile density settings |
+| 🔊 **Sound & microphone** | Media/guidance/system audio in the browser, microphone uplink to Android Auto |
+| 🤖 **Automation** | Optional Bluetooth or Wi-Fi hotspot triggers for the projection service |
+| ☁️ **Optional relay** | Local-network first, with an optional configured public browser relay |
 
 See [same-phone mode](docs/SAME_PHONE_MODE.md), [projection architecture](docs/OPENAUTO_PORT.md), and [projection profiles](docs/PROJECTION_PROFILES.md) for current behavior and limitations.
 
