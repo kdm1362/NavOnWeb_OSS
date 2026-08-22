@@ -182,11 +182,11 @@ c29c33a63425b131564e3534de0d8315b7db5ac978976fbd521fa8f4f620584a  app/src/main/r
 0cb0faa9d47650a3a3d767f35c5e32e268e25924da89cb9525e9d83f5eb55414  app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 0cb0faa9d47650a3a3d767f35c5e32e268e25924da89cb9525e9d83f5eb55414  app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
 b54bc246c11f5e12b46926eef269f08b67cf612cc8e9a9580f86d95820b1a2b1  app/src/main/res/values/colors.xml
-89f6034858ba2faefe0deb3243396ad71927acf854ddec931cc9bc7f7427d3a0  app/src/main/res/values/strings.xml
+ac9ac1d26d2c55b8fb67543a4fdcaa31172dc97664eeec09a4cd1f9bd28b677f  app/src/main/res/values/strings.xml
 44bcb5ffc5df7df2e4f15ea267ed8d6f8119848c5100d7273833dba41d2dc70e  app/src/main/res/values/strings_runtime.xml
 84d48dec88e2a5c13f791cdd1e9f8c8e71d138764b676685deec79869acc5453  app/src/main/res/values/strings_ui.xml
 f6c89ffb1e3a31277afcf1feb07e323ed448a3cade2a633a532e1b4d8d6e8139  app/src/main/res/values/themes.xml
-fc24421228212b3a2d363d7a7befae62466e61f001f63dcdd97575dc655ea3ab  app/src/main/res/values-ko/strings.xml
+a0cb1e3a1dd99c358dff3592815d8a20b43a6fa5b3ea519e4e2f706a419f2483  app/src/main/res/values-ko/strings.xml
 37f4d9a3f798f7cceccb9a4bf6653c8666fc94088c21b53ab9f324ba9bbe4102  app/src/main/res/values-ko/strings_runtime.xml
 8adda72d3d562e5823b938b91f3e87a772aac4c1996eb1ac85d95354b7b415c8  app/src/main/res/values-ko/strings_ui.xml
 9ccf53e8c648736adbf95a27d70ace297c7e3b56d6e48e878194f98c51b36b21  app/src/main/res/xml/data_extraction_rules.xml
