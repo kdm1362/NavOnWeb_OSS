@@ -15,9 +15,6 @@ plugins {
 val enableNativeOpenAuto = providers.gradleProperty("enableNativeOpenAuto")
     .orNull
     .equals("true", ignoreCase = true)
-val enablePremiumProjectionBench = providers.gradleProperty("enablePremiumProjectionBench")
-    .orNull
-    .equals("true", ignoreCase = true)
 val playInternalTestBuild = providers.gradleProperty("playInternalTestBuild")
     .orNull
     .equals("true", ignoreCase = true)
@@ -532,11 +529,9 @@ android {
                 "REVIEW_PROMO_ES256_PUBLIC_KEY_DER_BASE64",
                 reviewPromoEs256PublicKeyDerBase64.asBuildConfigStringLiteral(),
             )
-            buildConfigField(
-                "boolean",
-                "ENABLE_PREMIUM_PROJECTION_BENCH",
-                enablePremiumProjectionBench.toString(),
-            )
+            // The public source tree never ships a way to grant premium without a verified
+            // entitlement, so this stays off in debug as well as release.
+            buildConfigField("boolean", "ENABLE_PREMIUM_PROJECTION_BENCH", "false")
         }
         release {
             // Package native symbol tables in the AAB so Google Play can symbolicate native

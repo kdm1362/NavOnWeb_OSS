@@ -66,7 +66,7 @@ MEDIA는 48 kHz stereo, GUIDANCE와 SYSTEM은 16 kHz mono PCM16LE로 받습니�
 인자로 선택하지 않으며 항상 같은 단말의 `127.0.0.1:5277`입니다.
 
 ```powershell
-.\tools\build-source.ps1 -GradleArguments '-PenablePremiumProjectionBench=true'
+.\tools\build-source.ps1
 ```
 
 AASDK 개발 자격증명은 APK에 넣지 않고 설치 뒤 앱의 `no_backup` 사설 저장소에

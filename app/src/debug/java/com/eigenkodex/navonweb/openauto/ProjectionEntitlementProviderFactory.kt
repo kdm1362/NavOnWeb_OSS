@@ -4,18 +4,9 @@
 package com.eigenkodex.navonweb.openauto
 
 import android.content.Context
-import com.eigenkodex.navonweb.BuildConfig
 
-/** Debug bench override is explicit; otherwise debug uses the release entitlement sources. */
+/** Debug resolves entitlement exactly like release: verified Play ownership or a review session. */
 internal object ProjectionEntitlementProviderFactory {
     fun create(context: Context): ServerProjectionEntitlementProvider =
-        if (BuildConfig.DEBUG && BuildConfig.ENABLE_PREMIUM_PROJECTION_BENCH) {
-            ServerProjectionEntitlementProvider {
-                ServerProjectionEntitlementGrant.serverVerifiedPremium(
-                    "debug-build-enablePremiumProjectionBench",
-                )
-            }
-        } else {
-            PlayBillingProjectionEntitlementProvider(context)
-        }
+        PlayBillingProjectionEntitlementProvider(context)
 }

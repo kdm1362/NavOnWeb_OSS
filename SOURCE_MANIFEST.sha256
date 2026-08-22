@@ -155,7 +155,7 @@ bc064c25db75ff7be71a66a1c79eca34830f135a478c52c62e56a68919f7d054  app/src/main/j
 7ea80a07692ae109d40b835c328b80c939f3fb5ce7acb83391f08c514f814092  app/src/main/java/com/eigenkodex/navonweb/session/PairingToken.kt
 66fe9d4ffadef0e055ea748d0ebfe80b6b5abb6f35bce7448c540ebaf167e811  app/src/main/java/com/eigenkodex/navonweb/session/SessionController.kt
 5b573d9db48486be7cab2606bd5c7386ad78470751783c4d4cd78921ff88e46e  app/src/main/java/com/eigenkodex/navonweb/ui/FirstRunOnboardingStore.kt
-ba75b13153ada1f428e8c033d3a4931032451145a747a993da5fd991bdeb0f34  app/src/main/java/com/eigenkodex/navonweb/ui/NavOnWebApp.kt
+bfac9a6a1d368248ce9618c37101c6cc94078dd8908d623fc422ef0388aab690  app/src/main/java/com/eigenkodex/navonweb/ui/NavOnWebApp.kt
 c779c9842823bdff1bd0edeeb258628f4d651f262e87958a6b6cfd3ddf710fd5  app/src/main/java/com/eigenkodex/navonweb/ui/PremiumPurchaseUiState.kt
 632bb292262051704bf36b8e4dcff95d9de3e6351937b751a9c01f9186af7344  app/src/main/java/com/eigenkodex/navonweb/ui/ProjectionControlUiModels.kt
 0567c1be9c9b5169958b2f7901f481f6ed9f26630b6e8998daa941f1c2d35f14  app/src/main/java/com/eigenkodex/navonweb/ui/ProjectionDpiInputPolicy.kt
@@ -182,11 +182,11 @@ c29c33a63425b131564e3534de0d8315b7db5ac978976fbd521fa8f4f620584a  app/src/main/r
 0cb0faa9d47650a3a3d767f35c5e32e268e25924da89cb9525e9d83f5eb55414  app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 0cb0faa9d47650a3a3d767f35c5e32e268e25924da89cb9525e9d83f5eb55414  app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
 b54bc246c11f5e12b46926eef269f08b67cf612cc8e9a9580f86d95820b1a2b1  app/src/main/res/values/colors.xml
-2f6e6864ac48ccebf2f8bf884c0dbde9079a9262785c85d03b4d93ae3ac8913a  app/src/main/res/values/strings.xml
+27520a4c11ed3d8b7c2f03685fa387eb88a99e97599e01ba18bdfaee6832090d  app/src/main/res/values/strings.xml
 44bcb5ffc5df7df2e4f15ea267ed8d6f8119848c5100d7273833dba41d2dc70e  app/src/main/res/values/strings_runtime.xml
 84d48dec88e2a5c13f791cdd1e9f8c8e71d138764b676685deec79869acc5453  app/src/main/res/values/strings_ui.xml
 f6c89ffb1e3a31277afcf1feb07e323ed448a3cade2a633a532e1b4d8d6e8139  app/src/main/res/values/themes.xml
-1962a5c6bb25e631f2f09347356286ee68615cea8e4a5582a54f28a1f31eb656  app/src/main/res/values-ko/strings.xml
+b7f9361a46b57c22557928827cc4da0ee474950bfe883e6e7912b31549009d01  app/src/main/res/values-ko/strings.xml
 37f4d9a3f798f7cceccb9a4bf6653c8666fc94088c21b53ab9f324ba9bbe4102  app/src/main/res/values-ko/strings_runtime.xml
 8adda72d3d562e5823b938b91f3e87a772aac4c1996eb1ac85d95354b7b415c8  app/src/main/res/values-ko/strings_ui.xml
 9ccf53e8c648736adbf95a27d70ace297c7e3b56d6e48e878194f98c51b36b21  app/src/main/res/xml/data_extraction_rules.xml
@@ -309,7 +309,7 @@ af35f2a7ddbcdd024786ba879e75d064367320d0f627ad549f823ef3392c8ee8  app/src/test/j
 5983d5090e7e12ab9fba6c403cd0ad7244e29a477864c1da37431181aeb98b5b  app/src/test/java/com/eigenkodex/navonweb/session/PairingTokenTest.kt
 d258ff89e4d122ffb54e28646b5e76e80f52717b9387d80eb159221cc5cbfb9b  app/src/test/java/com/eigenkodex/navonweb/session/SessionControllerTest.kt
 1da30bd25ce856956e306a866b2409be0f2c9716deedd56557498247e6aa2bab  app/src/test/java/com/eigenkodex/navonweb/ui/BrowserConnectionLinkPolicyTest.kt
-4d396b84c155831cc892ce4fccfd75c358cc16df8c78e4ad8b1a07327365cdfa  app/src/test/java/com/eigenkodex/navonweb/ui/FirstRunOnboardingActionTest.kt
+25df5d179ba0ae7d8a8ef929c7b6523872a6c230d6a3944dd3488b517bb67e3a  app/src/test/java/com/eigenkodex/navonweb/ui/FirstRunOnboardingActionTest.kt
 9c3e0769ef1ab220a267bfc3578dc557ecfb1dbea4209a81e226c5566c175d18  app/src/test/java/com/eigenkodex/navonweb/ui/FirstRunOnboardingStoreTest.kt
 42443cc4325d10f58f28333da0a930423379b2879609008cbdd3233339169c21  app/src/test/java/com/eigenkodex/navonweb/ui/PairedBrowserDeviceUiPolicyTest.kt
 1ab85a0dfd50f82c25530be47b8aae4e8d3fcb6f252a00c34495c962982ea949  app/src/test/java/com/eigenkodex/navonweb/ui/PairingCodeFormattingTest.kt
