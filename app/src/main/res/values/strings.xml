@@ -107,7 +107,7 @@
     <string name="first_run_welcome_body">This guide takes about two minutes. Prepare Android Auto, connect the car to this phone hotspot, start NavOnWeb, then pair the browser.</string>
     <string name="first_run_welcome_warning">Do every setup step while safely parked. Do not operate the phone or vehicle display while driving.</string>
     <string name="first_run_android_auto_title">1. Start Android Auto Head Unit Server</string>
-    <string name="first_run_android_auto_body">Search for Android Auto in phone settings. Near the bottom, tap Version and then tap Version and permission info 10 times to enable developer mode. Open the top-right overflow menu and tap Start head unit server. If Stop head unit server is shown, it is already running.</string>
+    <string name="first_run_android_auto_body">Use the button below to open Android Auto settings, then tap Start head unit server in the top-right overflow menu. If that item is missing, enable developer mode once: at the bottom of settings tap About and then Version, then tap Version and permission info 10 times.</string>
     <string name="first_run_android_auto_warning">A phone restart or Android Auto update may stop this developer server. Start it again before using NavOnWeb.</string>
     <string name="first_run_open_android_auto_settings">Open Android Auto settings</string>
     <string name="first_run_hotspot_title">2. Connect the device to this phone hotspot</string>

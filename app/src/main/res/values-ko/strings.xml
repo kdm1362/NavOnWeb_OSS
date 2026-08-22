@@ -108,7 +108,7 @@
     <string name="first_run_welcome_body">약 2분이면 준비할 수 있습니다. Android Auto 서버를 켜고, 차량을 휴대전화 핫스팟에 연결한 뒤 NavOnWeb 서비스와 브라우저를 차례로 연결합니다.</string>
     <string name="first_run_welcome_warning">모든 설정은 차량을 안전한 곳에 주차한 상태에서 하세요. 운전 중에는 휴대전화나 차량 화면을 조작하지 마세요.</string>
     <string name="first_run_android_auto_title">1. Android Auto 서버 켜기</string>
-    <string name="first_run_android_auto_body">휴대전화 설정에서 Android Auto를 검색합니다. 화면 아래 정보에서 버전을 누른 뒤 버전 및 권한 정보를 10번 눌러 개발자 모드를 켭니다. 오른쪽 위 더보기(⋮) → 헤드 유닛 서버 시작을 누릅니다. 헤드 유닛 서버 중지가 보이면 이미 실행 중입니다.</string>
+    <string name="first_run_android_auto_body">아래 버튼으로 Android Auto 설정을 열고, 오른쪽 위 더보기(⋮)에서 헤드 유닛 서버 시작을 누릅니다. 메뉴가 없다면 처음 한 번은 개발자 모드를 켜야 합니다. 설정 맨 아래 정보 → 버전을 누른 뒤, 버전 및 권한 정보를 10번 누르세요.</string>
     <string name="first_run_android_auto_warning">휴대전화 재시작이나 Android Auto 업데이트 뒤에는 서버가 꺼질 수 있으니, NavOnWeb을 쓰기 전에 다시 시작하세요.</string>
     <string name="first_run_open_android_auto_settings">Android Auto 설정 열기</string>
     <string name="first_run_hotspot_title">2. 장치를 휴대전화 핫스팟에 연결하기</string>
