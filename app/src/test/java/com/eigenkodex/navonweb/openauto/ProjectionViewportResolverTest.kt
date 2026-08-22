@@ -94,8 +94,8 @@ class ProjectionViewportResolverTest {
     fun `each resolution keeps its profile density baseline at matching aspect ratio`() {
         val expectedDensities = mapOf(
             ProjectionVideoProfile.FREE_800X480 to 140,
-            ProjectionVideoProfile.PREMIUM_720P to 220,
-            ProjectionVideoProfile.PREMIUM_1080P to 320,
+            ProjectionVideoProfile.PREMIUM_720P to 200,
+            ProjectionVideoProfile.PREMIUM_1080P to 220,
         )
 
         expectedDensities.forEach { (profile, expectedDensity) ->
@@ -113,8 +113,8 @@ class ProjectionViewportResolverTest {
     @Test
     fun `higher resolution profiles preserve their recommendation for narrow portrait content`() {
         val expectedDensities = mapOf(
-            ProjectionVideoProfile.PREMIUM_720P to 220,
-            ProjectionVideoProfile.PREMIUM_1080P to 320,
+            ProjectionVideoProfile.PREMIUM_720P to 200,
+            ProjectionVideoProfile.PREMIUM_1080P to 220,
         )
 
         expectedDensities.forEach { (profile, expectedDensity) ->

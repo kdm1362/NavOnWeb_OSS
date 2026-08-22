@@ -204,8 +204,8 @@ class ProjectionProfilesTest {
     @Test
     fun projectionProfilesRecommendComparableLogicalWorkspacesAcrossResolutions() {
         assertEquals(140, ProjectionVideoProfile.FREE_800X480.dpi)
-        assertEquals(220, ProjectionVideoProfile.PREMIUM_720P.dpi)
-        assertEquals(320, ProjectionVideoProfile.PREMIUM_1080P.dpi)
+        assertEquals(200, ProjectionVideoProfile.PREMIUM_720P.dpi)
+        assertEquals(220, ProjectionVideoProfile.PREMIUM_1080P.dpi)
 
         val logicalWidths = ProjectionVideoProfile.entries.map { profile ->
             profile.width * OpenAutoConfig.REFERENCE_DENSITY_DPI.toDouble() / profile.dpi
@@ -237,9 +237,9 @@ class ProjectionProfilesTest {
     @Test
     fun browserOrientationSelectsOnlyAuditedEncodedViewportsWithResolutionAwareDpi() {
         val expectedPortrait = mapOf(
-            ProjectionVideoProfile.FREE_800X480 to (VideoViewport(720, 1280) to 220),
-            ProjectionVideoProfile.PREMIUM_720P to (VideoViewport(720, 1280) to 220),
-            ProjectionVideoProfile.PREMIUM_1080P to (VideoViewport(1080, 1920) to 320),
+            ProjectionVideoProfile.FREE_800X480 to (VideoViewport(720, 1280) to 200),
+            ProjectionVideoProfile.PREMIUM_720P to (VideoViewport(720, 1280) to 200),
+            ProjectionVideoProfile.PREMIUM_1080P to (VideoViewport(1080, 1920) to 220),
         )
 
         expectedPortrait.forEach { (profile, expected) ->
@@ -250,7 +250,7 @@ class ProjectionProfilesTest {
             assertEquals(expectedDpi, profile.toOpenAutoConfig(portrait).dpi)
         }
         assertEquals(
-            123,
+            111,
             ProjectionVideoProfile.FREE_800X480.effectiveDensityDpi(
                 configuredDensityDpi = 78,
                 viewport = ProjectionVideoProfile.FREE_800X480.portraitViewport,

@@ -30,7 +30,7 @@ class ProjectionViewportControlTest {
         assertEquals(1280, scheduled.single().encodedViewport.height)
         assertEquals(0, scheduled.single().totalMarginWidth)
         assertEquals(64, scheduled.single().totalMarginHeight)
-        assertEquals(220, scheduled.single().densityDpi)
+        assertEquals(200, scheduled.single().densityDpi)
     }
 
     @Test
@@ -77,7 +77,7 @@ class ProjectionViewportControlTest {
         assertEquals(VideoViewport(720, 1280), scheduled.single().encodedViewport)
         assertEquals(0, scheduled.single().totalMarginWidth)
         assertEquals(64, scheduled.single().totalMarginHeight)
-        assertEquals(220, scheduled.single().densityDpi)
+        assertEquals(200, scheduled.single().densityDpi)
         assertTrue(repeatedAtAnotherDpr is ProjectionViewportRequestResult.Accepted)
         assertFalse((repeatedAtAnotherDpr as ProjectionViewportRequestResult.Accepted).changed)
     }
@@ -99,7 +99,7 @@ class ProjectionViewportControlTest {
         assertEquals(1, scheduled.size)
         assertEquals(VideoViewport(720, 1280), scheduled.single().encodedViewport)
         assertEquals(144, scheduled.single().totalMarginWidth)
-        assertEquals(220, scheduled.single().densityDpi)
+        assertEquals(200, scheduled.single().densityDpi)
         assertEquals(576, scheduled.single().contentRect.width)
         assertEquals(1280, scheduled.single().contentRect.height)
     }
@@ -125,11 +125,11 @@ class ProjectionViewportControlTest {
         assertEquals(VideoViewport(1080, 1920), scheduled.first().encodedViewport)
         assertEquals(0, scheduled.first().totalMarginWidth)
         assertEquals(192, scheduled.first().totalMarginHeight)
-        assertEquals(320, scheduled.first().densityDpi)
+        assertEquals(220, scheduled.first().densityDpi)
         assertEquals(VideoViewport(1920, 1080), scheduled.last().encodedViewport)
         assertEquals(192, scheduled.last().totalMarginWidth)
         assertEquals(0, scheduled.last().totalMarginHeight)
-        assertEquals(320, scheduled.last().densityDpi)
+        assertEquals(220, scheduled.last().densityDpi)
     }
 
     @Test
@@ -221,12 +221,13 @@ class ProjectionViewportControlTest {
 
         manager.requestViewport(576, 976)
         manager.confirmActive(scheduled.single())
-        assertEquals(220, scheduled.single().densityDpi)
+        assertEquals(200, scheduled.single().densityDpi)
 
         configuredDensityDpi = 78
         val result = manager.requestDensityDpi(snapshot.activeProfile, configuredDensityDpi)
         assertTrue(result is ProjectionViewportRequestResult.Accepted)
-        assertEquals(123, scheduled.last().densityDpi)
+        // Basic's portrait frame scales the saved value onto the 720p baseline: 78*200/140.
+        assertEquals(111, scheduled.last().densityDpi)
 
         manager.confirmActive(scheduled.last())
         manager.requestViewport(1280, 800)

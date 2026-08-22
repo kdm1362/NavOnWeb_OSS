@@ -31,7 +31,7 @@ class ProjectionViewportTransportReplacementPolicyTest {
         assertEquals(VideoViewport(720, 1280), replacement.encodedViewport)
         assertEquals(144, replacement.totalMarginWidth)
         assertEquals(0, replacement.totalMarginHeight)
-        assertEquals(220, replacement.densityDpi)
+        assertEquals(200, replacement.densityDpi)
         assertEquals(576, replacement.contentRect.width)
         assertEquals(1280, replacement.contentRect.height)
     }
@@ -86,7 +86,7 @@ class ProjectionViewportTransportReplacementPolicyTest {
 
         assertEquals(VideoViewport(1280, 720), replacement.encodedViewport)
         assertEquals(832, replacement.totalMarginWidth)
-        assertEquals(220, replacement.densityDpi)
+        assertEquals(200, replacement.densityDpi)
     }
 
     @Test

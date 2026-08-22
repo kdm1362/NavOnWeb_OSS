@@ -775,7 +775,7 @@ class ProjectionService : Service() {
 
         var newCloudRelayClient: CloudBrowserRelayClient? = null
         var newCloudBrowserPageProbe: CloudBrowserPageProbe? = null
-        var latestCloudPairingPublicationEpoch = 0L
+        val cloudPairingPublicationEpochFloor = AtomicLong(0L)
         runCatching {
             val port = newServer.start()
             val address = LocalAddressResolver.resolveOrLoopback()
@@ -806,63 +806,12 @@ class ProjectionService : Service() {
                 var pageProbe: CloudBrowserPageProbe? = null
                 runCatching {
                     pageProbe = CloudBrowserPageProbe()
-                    val identityStore = CloudRelayIdentityStore(applicationContext)
-                    val identity = identityStore.getOrCreate()
-                    lateinit var relay: CloudBrowserRelayClient
-                    relay = CloudBrowserRelayClient(
-                        config = cloudConfig,
-                        identity = identity,
-                        initialPairingCode = newServer.publishedPairingCodeLease(),
-                        nextPairingPublicationEpoch = identityStore::nextPairingPublicationEpoch,
-                        gateway = newServer,
-                        onConnectionChanged = { connected ->
-                            // Relay reconnects independently. Address fallback is based only on a
-                            // real request to the public page, not on a transient WSS reconnect.
-                            Log.i(
-                                CLOUD_RELAY_STATE_LOG_TAG,
-                                "CLOUD_RELAY_STATE connected=$connected",
-                            )
-                        },
-                        onPairingRegistrationConflictForPublication = {
-                                publicationEpoch,
-                                expectedPublication,
-                            ->
-                            serviceScope.launch {
-                                if (
-                                    epoch == sessionEpoch &&
-                                    server === newServer &&
-                                    cloudRelayClient === relay &&
-                                    relay.isCurrentPairingPublication(publicationEpoch)
-                                ) {
-                                    newServer.rotatePairingCodeAfterBootstrapConflict(
-                                        expectedPublication,
-                                    )
-                                }
-                            }
-                        },
-                        onPairingRegistrationChanged = { update ->
-                            serviceScope.launch {
-                                if (
-                                    epoch != sessionEpoch ||
-                                    server !== newServer ||
-                                    cloudRelayClient !== relay ||
-                                    !relay.isCurrentPairingPublication(update.publicationEpoch) ||
-                                    update.publicationEpoch < latestCloudPairingPublicationEpoch
-                                ) {
-                                    return@launch
-                                }
-                                latestCloudPairingPublicationEpoch = update.publicationEpoch
-                                SessionController.updateCloudPairingRegistration(update)
-                                if (update.status == CloudPairingRegistrationStatus.EXPIRED) {
-                                    // The Worker slot intentionally expires before the local gate's
-                                    // deadline. Rotate while the publication is still current so the
-                                    // phone never displays a cloud code during that safety margin.
-                                    newServer.requestNewBrowserPairing()
-                                }
-                            }
-                        },
+                    createCloudRelayClient(
+                        cloudConfig = cloudConfig,
+                        relayServer = newServer,
+                        epoch = epoch,
+                        publicationEpochFloor = cloudPairingPublicationEpochFloor,
                     )
-                    relay
                 }.onSuccess { relay ->
                     newCloudBrowserPageProbe = pageProbe
                     newCloudRelayClient = relay
@@ -930,7 +879,7 @@ class ProjectionService : Service() {
             updateNotification(getString(R.string.browser_ready_notification, initialBrowserUrl))
             if (cloudRelayConfig != null && newCloudBrowserPageProbe != null) {
                 startBrowserAddressMonitor(
-                    cloudUrl = cloudRelayConfig.browserUrl(),
+                    cloudConfig = cloudRelayConfig,
                     localPort = port,
                     probe = requireNotNull(newCloudBrowserPageProbe),
                     epoch = epoch,
@@ -994,8 +943,74 @@ class ProjectionService : Service() {
         }
     }
 
+    /** Builds one relay client for [cloudConfig]; shared by session start and leg failover. */
+    private fun createCloudRelayClient(
+        cloudConfig: CloudBrowserRelayConfig,
+        relayServer: BrowserProbeServer,
+        epoch: Long,
+        publicationEpochFloor: AtomicLong,
+    ): CloudBrowserRelayClient {
+        val identityStore = CloudRelayIdentityStore(applicationContext)
+        val identity = identityStore.getOrCreate()
+        lateinit var relay: CloudBrowserRelayClient
+        relay = CloudBrowserRelayClient(
+            config = cloudConfig,
+            identity = identity,
+            initialPairingCode = relayServer.publishedPairingCodeLease(),
+            nextPairingPublicationEpoch = identityStore::nextPairingPublicationEpoch,
+            gateway = relayServer,
+            onConnectionChanged = { connected ->
+                // Relay reconnects independently. Address fallback is based only on a
+                // real request to the public page, not on a transient WSS reconnect.
+                Log.i(
+                    CLOUD_RELAY_STATE_LOG_TAG,
+                    "CLOUD_RELAY_STATE connected=$connected",
+                )
+            },
+            onPairingRegistrationConflictForPublication = {
+                    publicationEpoch,
+                    expectedPublication,
+                ->
+                serviceScope.launch {
+                    if (
+                        epoch == sessionEpoch &&
+                        server === relayServer &&
+                        cloudRelayClient === relay &&
+                        relay.isCurrentPairingPublication(publicationEpoch)
+                    ) {
+                        relayServer.rotatePairingCodeAfterBootstrapConflict(
+                            expectedPublication,
+                        )
+                    }
+                }
+            },
+            onPairingRegistrationChanged = { update ->
+                serviceScope.launch {
+                    if (
+                        epoch != sessionEpoch ||
+                        server !== relayServer ||
+                        cloudRelayClient !== relay ||
+                        !relay.isCurrentPairingPublication(update.publicationEpoch) ||
+                        update.publicationEpoch < publicationEpochFloor.get()
+                    ) {
+                        return@launch
+                    }
+                    publicationEpochFloor.set(update.publicationEpoch)
+                    SessionController.updateCloudPairingRegistration(update)
+                    if (update.status == CloudPairingRegistrationStatus.EXPIRED) {
+                        // The Worker slot intentionally expires before the local gate's
+                        // deadline. Rotate while the publication is still current so the
+                        // phone never displays a cloud code during that safety margin.
+                        relayServer.requestNewBrowserPairing()
+                    }
+                }
+            },
+        )
+        return relay
+    }
+
     private fun startBrowserAddressMonitor(
-        cloudUrl: String,
+        cloudConfig: CloudBrowserRelayConfig,
         localPort: Int,
         probe: CloudBrowserPageProbe,
         epoch: Long,
@@ -1009,7 +1024,7 @@ class ProjectionService : Service() {
                 epoch == sessionEpoch &&
                 cloudBrowserPageProbe === probe
             ) {
-                val availability = tracker.record(probe.isReachable(cloudUrl))
+                val availability = tracker.record(probe.isReachable(cloudConfig.browserUrl()))
                 if (availability != loggedAvailability) {
                     loggedAvailability = availability
                     Log.i(
@@ -1019,7 +1034,7 @@ class ProjectionService : Service() {
                 }
                 val localUrl = "http://${LocalAddressResolver.resolveOrLoopback()}:$localPort"
                 val displayedUrl = BrowserAddressPolicy.select(
-                    cloudUrl = cloudUrl,
+                    cloudUrl = cloudConfig.browserUrl(),
                     localUrl = localUrl,
                     cloudAvailability = availability,
                 )

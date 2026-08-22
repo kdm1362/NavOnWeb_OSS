@@ -151,7 +151,7 @@ class AasdkOpenAutoProtocolTest {
         assertEquals(2L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 1))
         assertEquals(280L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 3))
         assertEquals(120L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 4))
-        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5))
+        assertEquals(200L, AasdkOpenAutoProtocol.readFirstVarintField(videoConfig, 5))
 
         val inputDescriptor = descriptors.single {
             AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
@@ -193,10 +193,10 @@ class AasdkOpenAutoProtocolTest {
         assertEquals(140, landscape.dpi)
         assertEquals(0, landscape.totalMarginWidth)
         assertEquals(32, landscape.totalMarginHeight)
-        assertEquals(220, portrait.dpi)
+        assertEquals(200, portrait.dpi)
         assertEquals(0, portrait.totalMarginWidth)
         assertEquals(64, portrait.totalMarginHeight)
-        assertEquals(220, mobilePortrait.dpi)
+        assertEquals(200, mobilePortrait.dpi)
         assertEquals(144, mobilePortrait.totalMarginWidth)
         assertEquals(0, mobilePortrait.totalMarginHeight)
 
@@ -213,7 +213,7 @@ class AasdkOpenAutoProtocolTest {
         val portraitVideoConfig = lengthDelimitedFields(portraitVideoChannel, 4).single()
         assertEquals(6L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 1))
         assertEquals(64L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 4))
-        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 5))
+        assertEquals(200L, AasdkOpenAutoProtocol.readFirstVarintField(portraitVideoConfig, 5))
 
         val portraitInputDescriptor = portraitDescriptors.single {
             AasdkOpenAutoProtocol.readFirstVarintField(it, 1) == 1L
@@ -235,7 +235,7 @@ class AasdkOpenAutoProtocolTest {
         val mobileVideoChannel = lengthDelimitedFields(mobileVideoDescriptor, 3).single()
         val mobileVideoConfig = lengthDelimitedFields(mobileVideoChannel, 4).single()
         assertEquals(144L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 3))
-        assertEquals(220L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 5))
+        assertEquals(200L, AasdkOpenAutoProtocol.readFirstVarintField(mobileVideoConfig, 5))
     }
 
     @Test

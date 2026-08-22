@@ -53,11 +53,11 @@ class ProjectionControlUiModelsTest {
 
         assertEquals(listOf(100, 180, 220), state.profileOptions.map { it.densityDpi })
         assertEquals(
-            listOf(140, 220, 320),
+            listOf(140, 200, 220),
             state.profileOptions.map { it.recommendedDensityDpi },
         )
         assertEquals(100, state.profileOptions.first().appliedLandscapeDensityDpi)
-        assertEquals(157, state.profileOptions.first().appliedPortraitDensityDpi)
+        assertEquals(143, state.profileOptions.first().appliedPortraitDensityDpi)
         assertTrue(state.profileOptions.all { it.densityControlEnabled })
         assertEquals("saved", state.dpiStatus)
     }

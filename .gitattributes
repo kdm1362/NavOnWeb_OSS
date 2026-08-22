@@ -1,24 +1,35 @@
-* text=auto eol=lf
-*.bat text eol=lf
-*.ps1 text eol=lf
+* text=auto
+
 *.kt text eol=lf
 *.kts text eol=lf
 *.java text eol=lf
 *.cpp text eol=lf
 *.hpp text eol=lf
+*.h text eol=lf
+*.c text eol=lf
 *.js text eol=lf
-*.mjs text eol=lf
-*.ts text eol=lf
-*.toml text eol=lf
-*.xml text eol=lf
-*.md text eol=lf
 *.html text eol=lf
+*.xml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
 *.properties text eol=lf
-*.pro text eol=lf
-*.lock text eol=lf
-*.gitignore text eol=lf
-*.gitattributes text eol=lf
-LICENSE text eol=lf
-*.png binary
+*.toml text eol=lf
+*.py text eol=lf
+gradlew text eol=lf
+# Files consumed by the macOS/Linux hosts must never arrive with CRLF; a shebang
+# followed by a carriage return is not executable there.
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+onprem/Caddyfile text eol=lf
+
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Preserve pinned upstream files byte-for-byte, including their original whitespace.
+third_party/openauto-reference/** -whitespace
+
 *.jar binary
-third_party/openauto-reference/** -text -whitespace
+
+# PEM trust anchors must round-trip byte-for-byte.
+*.crt -text

@@ -31,9 +31,27 @@ class CloudBrowserPageReachabilityTest {
     }
 
     @Test
-    fun `first failed probe after reachable switches to local immediately`() {
+    fun `an isolated failed probe keeps the public address`() {
         val tracker = CloudBrowserPageAvailabilityTracker()
         tracker.record(reachable = true)
+
+        // A relayed origin shares the radio with the projection stream, so one failure is not
+        // evidence the page is down and must not move the address the user is reading.
+        assertEquals(
+            CloudBrowserPageAvailability.REACHABLE,
+            tracker.record(reachable = false),
+        )
+        assertEquals(
+            CLOUD_URL,
+            BrowserAddressPolicy.select(CLOUD_URL, LOCAL_URL, tracker.availability),
+        )
+    }
+
+    @Test
+    fun `two consecutive failures switch to local`() {
+        val tracker = CloudBrowserPageAvailabilityTracker()
+        tracker.record(reachable = true)
+        tracker.record(reachable = false)
 
         assertEquals(
             CloudBrowserPageAvailability.UNREACHABLE,
@@ -42,6 +60,33 @@ class CloudBrowserPageReachabilityTest {
         assertEquals(
             LOCAL_URL,
             BrowserAddressPolicy.select(CLOUD_URL, LOCAL_URL, tracker.availability),
+        )
+    }
+
+    @Test
+    fun `a success between failures prevents the switch`() {
+        val tracker = CloudBrowserPageAvailabilityTracker()
+        tracker.record(reachable = true)
+        tracker.record(reachable = false)
+        tracker.record(reachable = true)
+
+        assertEquals(
+            CloudBrowserPageAvailability.REACHABLE,
+            tracker.record(reachable = false),
+        )
+    }
+
+    @Test
+    fun `an unknown tracker stays unknown until the failure streak completes`() {
+        val tracker = CloudBrowserPageAvailabilityTracker()
+
+        assertEquals(
+            CloudBrowserPageAvailability.UNKNOWN,
+            tracker.record(reachable = false),
+        )
+        assertEquals(
+            CloudBrowserPageAvailability.UNREACHABLE,
+            tracker.record(reachable = false),
         )
     }
 

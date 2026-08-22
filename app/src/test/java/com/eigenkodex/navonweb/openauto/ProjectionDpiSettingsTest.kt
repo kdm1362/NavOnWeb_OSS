@@ -22,7 +22,7 @@ class ProjectionDpiSettingsTest {
         assertTrue((free as ProjectionDpiSettingResult.Accepted).changed)
         assertTrue((fullHd as ProjectionDpiSettingResult.Accepted).changed)
         assertEquals(120, snapshot.densityDpi(ProjectionVideoProfile.FREE_800X480))
-        assertEquals(220, snapshot.densityDpi(ProjectionVideoProfile.PREMIUM_720P))
+        assertEquals(200, snapshot.densityDpi(ProjectionVideoProfile.PREMIUM_720P))
         assertEquals(200, snapshot.densityDpi(ProjectionVideoProfile.PREMIUM_1080P))
     }
 
@@ -71,7 +71,7 @@ class ProjectionDpiSettingsTest {
 
         assertTrue((result as ProjectionDpiSettingResult.Accepted).changed)
         assertNull(store.values["premium-720p"])
-        assertEquals(220, result.snapshot.densityDpi(ProjectionVideoProfile.PREMIUM_720P))
+        assertEquals(200, result.snapshot.densityDpi(ProjectionVideoProfile.PREMIUM_720P))
     }
 
     @Test

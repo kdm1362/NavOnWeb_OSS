@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Debug/QA only: permit a user-installed CA for the isolated Mac mini
-         test endpoint. Release builds do not package this resource override. -->
+    <!-- Debug/QA only: permit a user-installed CA so a build can be pointed at a deployment
+         served by a private authority, such as the LAN address of the on-premises stack. The
+         deployed public names carry publicly trusted certificates and need nothing here.
+         Release builds do not package this resource override. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />

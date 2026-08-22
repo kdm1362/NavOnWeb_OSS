@@ -6,8 +6,10 @@ NavOnWeb lets the user tune Android Auto UI scale independently for the Basic, 7
 video profiles. Density affects Android Auto layout only; it does not change encoded resolution,
 WebRTC bitrate, premium entitlement, or browser authorization.
 
-The recommendations are **140 DPI for Basic (800x480), 220 DPI for 720p, and 320 DPI for 1080p**.
-They keep the logical Android Auto workspace close to the same size as encoded resolution grows.
+The recommendations are **140 DPI for Basic (800x480), 200 DPI for 720p, and 220 DPI for 1080p**.
+The logical Android Auto workspace widens as encoded resolution grows: roughly 914, 1024, and
+1396 density-independent pixels. Higher profiles therefore show more content at a smaller
+apparent UI size rather than the same layout at a larger frame.
 “Use recommended” removes the stored override instead of writing another fixed value, so a later
 recommendation can take effect automatically.
 
@@ -18,10 +20,12 @@ recommendation can take effect automatically.
 2. `ProjectionDpiSettingsManager` stores one app-local override per profile. Missing, corrupt, or
    out-of-range values fail closed to that profile's recommendation.
 3. A stored value is the profile's nominal landscape reference. Basic uses a 720x1280 protocol
-   frame in portrait, so its wire DPI is `round(configured * 220 / 140)` and is clamped to the
-   same 72–320 range. The settings row shows both actual values; for example, the recommended
-   Basic setting applies as 140 DPI in landscape and 220 DPI in portrait, while 78 applies as
-   78 and 123 DPI. The other profiles use their stored value in both orientations.
+   frame in portrait. That is a 720p-class frame, so its wire DPI follows the 720p profile's
+   recommendation: `round(configured * 200 / 140)`, clamped to the same 72–320 range. The
+   baseline is read from the 720p profile rather than duplicated, so changing one recommendation
+   cannot leave the other stale. The settings row shows both actual values; for example, the
+   recommended Basic setting applies as 140 DPI in landscape and 200 DPI in portrait, while 78
+   applies as 78 and 111 DPI. The other profiles use their stored value in both orientations.
 4. The effective value is copied into `ProjectionViewportLayout` and `OpenAutoConfig` only after
    inclusive range validation succeeds at the manager, layout, and protocol boundaries.
 5. Android Auto Service Discovery advertises the effective density with the active resolution and
@@ -44,7 +48,7 @@ or focus loss. Rapid accepted changes are still coalesced by the viewport apply 
 ## Safety limits
 
 - Density: every integer from 72 through 320 DPI, inclusive.
-- Recommended values: Basic 140 DPI, 720p 220 DPI, and 1080p 320 DPI.
+- Recommended values: Basic 140 DPI, 720p 200 DPI, and 1080p 220 DPI.
 - Browser edges: 1 through 16,384 CSS pixels.
 - Browser DPR: finite and 0.5 through 8.0; it does not alter the selected DPI.
 - Remaining Android Auto content: at least 216×240 encoded pixels.

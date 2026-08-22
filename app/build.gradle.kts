@@ -48,23 +48,18 @@ fun projectSetting(name: String): String =
     providers.gradleProperty(name).orNull?.trim()
         ?: localProperties.getProperty(name)?.trim().orEmpty()
 
-val supabaseUrl = projectSetting("supabaseUrl").removeSuffix("/")
-val supabasePublishableKey = projectSetting("supabasePublishableKey")
-val onPremTestMode = projectSetting("onPremTestMode").equals("true", ignoreCase = true)
-val onPremTestOrigin = projectSetting("onPremTestOrigin").removeSuffix("/")
-fun validOnPremTestOrigin(value: String): Boolean = runCatching {
+fun validSelfHostedOrigin(value: String): Boolean = runCatching {
     val uri = URI(value)
     uri.scheme.equals("https", ignoreCase = true) &&
         !uri.host.isNullOrBlank() &&
-        uri.port == 8443 &&
         uri.rawUserInfo == null &&
         uri.rawQuery == null &&
         uri.rawFragment == null &&
         (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")
 }.getOrDefault(false)
-require(!onPremTestMode || validOnPremTestOrigin(onPremTestOrigin)) {
-    "onPremTestOrigin must be an HTTPS origin on port 8443"
-}
+
+val supabaseUrl = projectSetting("supabaseUrl").removeSuffix("/")
+val supabasePublishableKey = projectSetting("supabasePublishableKey")
 val premiumProductId = projectSetting("premiumProductId")
     .ifBlank { "navonweb_premium" }
 require(premiumProductId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
@@ -75,12 +70,8 @@ val premiumPurchaseOptionId = projectSetting("premiumPurchaseOptionId")
 require(premiumPurchaseOptionId.matches(Regex("[a-z][a-z0-9._-]{0,149}"))) {
     "premiumPurchaseOptionId must be a valid Google Play one-time purchase option ID"
 }
-require(
-    supabaseUrl.isEmpty() ||
-        supabaseUrl.matches(Regex("https://[a-z0-9-]{1,80}\\.supabase\\.co")) ||
-        (onPremTestMode && supabaseUrl == onPremTestOrigin),
-) {
-    "supabaseUrl must be an HTTPS Supabase project URL"
+require(supabaseUrl.isEmpty() || validSelfHostedOrigin(supabaseUrl)) {
+    "supabaseUrl must be an HTTPS origin without credentials, query, fragment, or path"
 }
 require(
     supabasePublishableKey.isEmpty() ||
@@ -127,25 +118,6 @@ fun validReviewPromoApiUrl(value: String): Boolean = runCatching {
 }.getOrDefault(false)
 require(reviewPromoApiUrl.isEmpty() || validReviewPromoApiUrl(reviewPromoApiUrl)) {
     "reviewPromoApiUrl must be an HTTPS endpoint without credentials, query, or fragment"
-}
-if (onPremTestMode) {
-    val expectedWssOrigin = onPremTestOrigin.replaceFirst("https://", "wss://")
-    require(cloudBrowserPageUrl == onPremTestOrigin) {
-        "on-prem browser origin must match onPremTestOrigin"
-    }
-    require(cloudSignalingWebSocketUrl == expectedWssOrigin) {
-        "on-prem signaling origin must match onPremTestOrigin"
-    }
-    require(reviewPromoApiUrl == "$onPremTestOrigin/api/review-promo/verify") {
-        "on-prem review promo endpoint must use the fixed test origin"
-    }
-}
-gradle.taskGraph.whenReady {
-    if (onPremTestMode) {
-        require(allTasks.none { task -> task.name.contains("release", ignoreCase = true) }) {
-            "onPremTestMode is restricted to the isolated QA/debug build"
-        }
-    }
 }
 require(
     reviewPromoEs256KeyId.isEmpty() ||
@@ -443,8 +415,8 @@ android {
         applicationId = "com.eigenkodex.navonweb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.1.20-p0"
+        versionCode = 31
+        versionName = "0.1.21-p0"
 
         buildConfigField(
             "String",

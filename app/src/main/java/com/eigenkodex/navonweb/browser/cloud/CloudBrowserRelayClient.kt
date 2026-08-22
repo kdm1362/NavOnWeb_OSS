@@ -654,8 +654,7 @@ class CloudBrowserRelayClient(
         }
         activeSocket?.close(CLOSE_NORMAL, "service_stopped")
         scope.cancel()
-        httpClient.dispatcher.executorService.shutdown()
-        httpClient.connectionPool.evictAll()
+        httpClient.releaseSocketsOffCallerThread(cancelInFlightCalls = false)
         onConnectionChanged(false)
     }
 

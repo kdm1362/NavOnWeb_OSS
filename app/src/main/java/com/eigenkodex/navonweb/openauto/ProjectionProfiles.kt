@@ -47,7 +47,7 @@ enum class ProjectionVideoProfile(
         height = 720,
         androidAutoFramesPerSecond = 60,
         webRtcFramesPerSecond = 30,
-        dpi = 220,
+        dpi = 200,
         webRtcMinBitrateBps = 1_000_000,
         webRtcStartBitrateBps = 4_000_000,
         webRtcMaxBitrateBps = 8_000_000,
@@ -59,7 +59,7 @@ enum class ProjectionVideoProfile(
         height = 1080,
         androidAutoFramesPerSecond = 60,
         webRtcFramesPerSecond = 30,
-        dpi = 320,
+        dpi = 220,
         webRtcMinBitrateBps = 2_000_000,
         webRtcStartBitrateBps = 8_000_000,
         webRtcMaxBitrateBps = 14_000_000,
@@ -103,9 +103,11 @@ enum class ProjectionVideoProfile(
      * Converts the profile-local saved DPI into the value advertised for an encoded viewport.
      *
      * The Basic profile stores its value against the nominal 800x480 frame, but Android Auto's
-     * audited portrait enum is 720x1280. Scaling that one orientation from the 140-DPI baseline
-     * to the 220-DPI 720p baseline keeps the apparent UI size stable without coupling Basic to a
-     * Premium preference. Other profiles use the same resolution class in both orientations.
+     * audited portrait enum is 720x1280. That is a 720p-class frame, so scaling this one
+     * orientation onto the 720p profile's density keeps the apparent UI size stable without
+     * coupling Basic to a Premium preference. The baseline is read from that profile rather than
+     * duplicated, so the two cannot drift apart when either default changes. Other profiles use
+     * the same resolution class in both orientations.
      */
     fun effectiveDensityDpi(
         configuredDensityDpi: Int,
@@ -120,7 +122,7 @@ enum class ProjectionVideoProfile(
         val viewportBaselineDpi = if (
             this == FREE_800X480 && viewport == portraitViewport
         ) {
-            BASIC_PORTRAIT_BASELINE_DPI
+            PREMIUM_720P.dpi
         } else {
             dpi
         }
@@ -160,7 +162,6 @@ enum class ProjectionVideoProfile(
 
         const val MIN_DENSITY_DPI = 72
         const val MAX_DENSITY_DPI = 320
-        private const val BASIC_PORTRAIT_BASELINE_DPI = 220
 
         fun isSupportedDensityDpi(densityDpi: Int): Boolean =
             densityDpi in MIN_DENSITY_DPI..MAX_DENSITY_DPI
