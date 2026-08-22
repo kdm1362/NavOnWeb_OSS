@@ -19,8 +19,20 @@ class FirstRunOnboardingActionTest {
     }
 
     @Test
-    fun `other onboarding pages do not show the settings action`() {
-        listOf(0, 2, 3, 4).forEach { pageIndex ->
+    fun `service page offers starting the service and browser page shows the pairing code`() {
+        assertEquals(
+            FirstRunOnboardingAction.START_SERVICE,
+            firstRunOnboardingAction(pageIndex = 3),
+        )
+        assertEquals(
+            FirstRunOnboardingAction.SHOW_PAIRING_CODE,
+            firstRunOnboardingAction(pageIndex = 4),
+        )
+    }
+
+    @Test
+    fun `pages without an inline action expose none`() {
+        listOf(0, 2).forEach { pageIndex ->
             assertNull(firstRunOnboardingAction(pageIndex))
         }
     }

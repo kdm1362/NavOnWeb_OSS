@@ -119,6 +119,7 @@ import com.eigenkodex.navonweb.diagnostics.upload.DiagnosticUploadTerminalOutcom
 import com.eigenkodex.navonweb.diagnostics.upload.WorkerFailure
 import com.eigenkodex.navonweb.session.SessionController
 import com.eigenkodex.navonweb.session.SessionPhase
+import com.eigenkodex.navonweb.session.SessionUiState
 import com.eigenkodex.navonweb.session.AndroidAutoConnectionState
 import com.eigenkodex.navonweb.session.AndroidAutoConnectionStatus
 import com.eigenkodex.navonweb.session.BrowserDevicePermission
@@ -436,6 +437,9 @@ internal fun NavOnWebApp(
 
         if (showFirstRunOnboarding) {
             FirstRunOnboardingDialog(
+                session = session,
+                onStartService = onStart,
+                onRequestNewBrowserPairing = onRequestNewBrowserPairing,
                 onOpenAndroidAutoSettings = onOpenAndroidAutoSettings,
                 onFinished = {
                     showFirstRunOnboarding = false
@@ -1646,6 +1650,9 @@ private fun GettingStartedCard(onOpen: () -> Unit) {
 private fun FirstRunOnboardingDialog(
     onOpenAndroidAutoSettings: () -> Unit,
     onFinished: () -> Unit,
+    session: SessionUiState,
+    onStartService: () -> Unit,
+    onRequestNewBrowserPairing: () -> Unit,
 ) {
     val steps = listOf(
         FirstRunOnboardingStep(
@@ -1764,16 +1771,25 @@ private fun FirstRunOnboardingDialog(
                                 lineBreak = LineBreak.Paragraph,
                             ),
                         )
-                        if (
-                            firstRunOnboardingAction(safePage) ==
-                            FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
-                        ) {
-                            Button(
+                        when (firstRunOnboardingAction(safePage)) {
+                            FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS -> Button(
                                 onClick = onOpenAndroidAutoSettings,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(stringResource(R.string.first_run_open_android_auto_settings))
                             }
+
+                            FirstRunOnboardingAction.START_SERVICE -> FirstRunServiceAction(
+                                phase = session.phase,
+                                onStartService = onStartService,
+                            )
+
+                            FirstRunOnboardingAction.SHOW_PAIRING_CODE -> FirstRunPairingCode(
+                                session = session,
+                                onRequestNewBrowserPairing = onRequestNewBrowserPairing,
+                            )
+
+                            null -> Unit
                         }
                     }
                     step.warning?.let { warning ->
@@ -1827,15 +1843,159 @@ private fun FirstRunOnboardingDialog(
                     ) {
                         Text(
                             stringResource(
-                                if (safePage == steps.lastIndex) {
-                                    R.string.first_run_finish
-                                } else {
-                                    R.string.first_run_next
+                                when {
+                                    safePage == steps.lastIndex -> R.string.first_run_finish
+                                    // The service step offers its own start button, so the
+                                    // forward button says "Later" until the service is running:
+                                    // moving on without starting is a deliberate choice, not the
+                                    // default next step.
+                                    firstRunOnboardingAction(safePage) ==
+                                        FirstRunOnboardingAction.START_SERVICE &&
+                                        session.phase != SessionPhase.READY ->
+                                        R.string.first_run_start_service_later
+
+                                    else -> R.string.first_run_next
                                 },
                             ),
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Lets the reader start projection without leaving the guide. "Later" simply advances, because the
+ * home screen keeps the same action; the guide must never be a required path to starting.
+ */
+@Composable
+private fun FirstRunServiceAction(
+    phase: SessionPhase,
+    onStartService: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (phase) {
+            SessionPhase.IDLE, SessionPhase.ERROR -> {
+                Button(
+                    onClick = onStartService,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.first_run_start_service))
+                }
+                if (phase == SessionPhase.ERROR) {
+                    Text(
+                        text = stringResource(R.string.first_run_service_failed),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            SessionPhase.STARTING -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text(
+                    text = stringResource(R.string.first_run_service_starting),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+
+            SessionPhase.READY -> Text(
+                text = stringResource(R.string.first_run_service_ready),
+                color = Color(0xFF86EFAC),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+/**
+ * Shows the same live code as the home screen, so the reader can type it into the browser without
+ * leaving the guide. Before the service is ready there is no code to show, so the step explains
+ * that instead of rendering an empty slot.
+ */
+@Composable
+private fun FirstRunPairingCode(
+    session: SessionUiState,
+    onRequestNewBrowserPairing: () -> Unit,
+) {
+    val browserUrl = session.browserUrl.orEmpty()
+    val code = session.pairingCode
+    val displayable = session.phase == SessionPhase.READY &&
+        shouldDisplayPairingCode(
+            browserUrl = browserUrl,
+            pairingCode = code,
+            cloudPairingRegistrationStatus = session.cloudPairingRegistrationStatus,
+        )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF13212F)),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when {
+                displayable && code != null -> {
+                    Text(
+                        text = stringResource(R.string.first_run_pairing_code_label),
+                        color = Color(0xFF9FB3C8),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        text = formatPairingCodeForDisplay(code),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    OutlinedButton(
+                        onClick = onRequestNewBrowserPairing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.first_run_pairing_code_new))
+                    }
+                }
+
+                // A code exists but the cloud entry point has not published it yet.
+                code != null -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.browser_pairing_preparing_title),
+                        color = Color(0xFF9FB3C8),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                // Codes are single-use and issued on demand, so a running service normally has
+                // none published. Offer the same issue action the home screen does.
+                session.phase == SessionPhase.READY -> {
+                    Text(
+                        text = stringResource(R.string.first_run_pairing_code_issue_hint),
+                        color = Color(0xFF9FB3C8),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(
+                        onClick = onRequestNewBrowserPairing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.browser_pairing_new_button))
+                    }
+                }
+
+                else -> Text(
+                    text = stringResource(R.string.first_run_pairing_code_waiting),
+                    color = Color(0xFF9FB3C8),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -1849,17 +2009,22 @@ private data class FirstRunOnboardingStep(
 
 internal enum class FirstRunOnboardingAction {
     OPEN_ANDROID_AUTO_SETTINGS,
+    START_SERVICE,
+    SHOW_PAIRING_CODE,
 }
 
 /** Welcome is page 1, so the Android Auto server instructions are page 2 of 5. */
 internal fun firstRunOnboardingAction(pageIndex: Int): FirstRunOnboardingAction? =
-    if (pageIndex == FIRST_RUN_ANDROID_AUTO_PAGE_INDEX) {
-        FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
-    } else {
-        null
+    when (pageIndex) {
+        FIRST_RUN_ANDROID_AUTO_PAGE_INDEX -> FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
+        FIRST_RUN_SERVICE_PAGE_INDEX -> FirstRunOnboardingAction.START_SERVICE
+        FIRST_RUN_BROWSER_PAGE_INDEX -> FirstRunOnboardingAction.SHOW_PAIRING_CODE
+        else -> null
     }
 
 private const val FIRST_RUN_ANDROID_AUTO_PAGE_INDEX = 1
+private const val FIRST_RUN_SERVICE_PAGE_INDEX = 3
+private const val FIRST_RUN_BROWSER_PAGE_INDEX = 4
 
 @Composable
 private fun ServiceAutomationCard(
