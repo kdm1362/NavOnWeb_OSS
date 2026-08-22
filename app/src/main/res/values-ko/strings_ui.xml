@@ -119,7 +119,7 @@
     <string name="ui_open_source_view_gpl">GNU GPL v3 전문 보기</string>
     <string name="ui_open_source_url_required">대응 소스 주소 · 배포 전 지정 필요</string>
     <string name="ui_open_source_open_code">대응 소스 코드 열기</string>
-    <string name="ui_trademark_disclaimer">Android 및 Android Auto는 Google LLC의 상표이며 Tesla는 Tesla, Inc.의 상표입니다. 이 제품은 해당 회사의 인증·후원·보증을 받지 않았습니다.</string>
+    <string name="ui_trademark_disclaimer">Android 및 Android Auto는 Google LLC의 상표입니다. 이 제품은 Google의 인증·후원·보증을 받지 않았습니다.</string>
     <string name="ui_legal_document_load_failed">라이선스 문서를 불러오지 못했습니다.</string>
     <string name="ui_legal_third_party_title">제3자 오픈소스 고지</string>
     <string name="ui_legal_gpl_title">GNU General Public License v3</string>

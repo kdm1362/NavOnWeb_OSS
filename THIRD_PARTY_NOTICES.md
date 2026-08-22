@@ -101,4 +101,4 @@ by an individual dependency.
 
 ## Trademarks
 
-Android, Android Auto, Google Play, WebRTC, Cloudflare, Supabase, and Tesla are trademarks of their respective owners. Their names identify compatibility targets or external services and do not imply endorsement.
+Android, Android Auto, Google Play, WebRTC, Cloudflare, and Supabase are trademarks of their respective owners. Their names identify compatibility targets or external services and do not imply endorsement.

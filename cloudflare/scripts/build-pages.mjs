@@ -5,7 +5,7 @@ import path from "node:path";
 
 const cloudflareRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(cloudflareRoot, "..");
-const androidAssetRoot = path.join(repositoryRoot, "app", "src", "main", "assets", "tesla");
+const androidAssetRoot = path.join(repositoryRoot, "app", "src", "main", "assets", "web");
 const outputRoot = path.join(cloudflareRoot, "dist", "pages");
 const indexSource = path.join(androidAssetRoot, "index.html");
 const appSource = path.join(androidAssetRoot, "app.js");

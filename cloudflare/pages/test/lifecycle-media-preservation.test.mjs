@@ -8,11 +8,11 @@ import vm from "node:vm";
 const cloudflareRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repositoryRoot = path.resolve(cloudflareRoot, "..");
 const appScript = readFileSync(
-  path.join(repositoryRoot, "app", "src", "main", "assets", "tesla", "app.js"),
+  path.join(repositoryRoot, "app", "src", "main", "assets", "web", "app.js"),
   "utf8",
 );
 const indexHtml = readFileSync(
-  path.join(repositoryRoot, "app", "src", "main", "assets", "tesla", "index.html"),
+  path.join(repositoryRoot, "app", "src", "main", "assets", "web", "index.html"),
   "utf8",
 );
 
@@ -138,11 +138,11 @@ test("hidden visibility and pagehide preserve credential, JPEG reader, peer, and
     const hidePremiumPrompt = noop;
     const cancelNoticeRequestForRetry = noop;
     const stopViewportReporting = noop;
-    const stopDevelopmentTeslaCycle = noop;
+    const stopDevelopmentNarrowCycle = noop;
     const hideFullscreenHint = noop;
     const hidePresentationGuide = () => { globalThis.guideHideCalls += 1; };
     const setTheaterMode = noop;
-    const startDevelopmentTeslaCycle = noop;
+    const startDevelopmentNarrowCycle = noop;
     const syncFullscreenState = noop;
     const scheduleViewportLayoutSync = noop;
     globalThis.resumeCalls = 0;
@@ -247,7 +247,7 @@ test("non-BFCache pagehide explicitly releases media and signaling session slots
     const cancelNoticeRequestForRetry = noop;
     const resetTouchTransport = noop;
     const stopViewportReporting = noop;
-    const stopDevelopmentTeslaCycle = noop;
+    const stopDevelopmentNarrowCycle = noop;
     const stopStatusPolling = noop;
     const microphoneCaptureIsTerminal = () => true;
     const stopMicrophoneCapture = noop;

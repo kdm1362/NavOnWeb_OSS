@@ -13,7 +13,7 @@ const assetRoot = path.resolve(
   "src",
   "main",
   "assets",
-  "tesla",
+  "web",
 );
 const indexHtml = readFileSync(path.join(assetRoot, "index.html"), "utf8");
 

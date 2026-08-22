@@ -243,7 +243,7 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
     "src",
     "main",
     "assets",
-    "tesla",
+    "web",
     "app.js",
   ), "utf8");
   assert.match(localizedApp, /^\/\* NavOnWeb Pages asset format v2\. \*\//u);

@@ -51,7 +51,7 @@ class ProjectionViewportResolverTest {
     }
 
     @Test
-    fun `Tesla style width contraction changes only the centred content viewport`() {
+    fun `Narrow dashboard width contraction changes only the centred content viewport`() {
         val parked = ProjectionViewportResolver.resolve(
             encodedViewport = VideoViewport(1280, 720),
             browserWidth = 1600,

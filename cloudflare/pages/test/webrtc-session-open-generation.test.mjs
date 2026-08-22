@@ -7,7 +7,7 @@ import vm from "node:vm";
 
 const cloudflareRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const appScript = readFileSync(
-  path.resolve(cloudflareRoot, "..", "app", "src", "main", "assets", "tesla", "app.js"),
+  path.resolve(cloudflareRoot, "..", "app", "src", "main", "assets", "web", "app.js"),
   "utf8",
 );
 

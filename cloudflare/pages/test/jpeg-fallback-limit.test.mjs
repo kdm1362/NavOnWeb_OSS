@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const appScript = fs.readFileSync(
-  path.resolve(testRoot, "../../../app/src/main/assets/tesla/app.js"),
+  path.resolve(testRoot, "../../../app/src/main/assets/web/app.js"),
   "utf8",
 );
 const fallbackPolicy = fs.readFileSync(

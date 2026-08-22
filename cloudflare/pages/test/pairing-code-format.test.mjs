@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
-const assetRoot = path.resolve(testRoot, "../../../app/src/main/assets/tesla");
+const assetRoot = path.resolve(testRoot, "../../../app/src/main/assets/web");
 
 test("pairing input groups eight digits while the protocol receives no spaces", async () => {
   const script = await readFile(path.join(assetRoot, "app.js"), "utf8");

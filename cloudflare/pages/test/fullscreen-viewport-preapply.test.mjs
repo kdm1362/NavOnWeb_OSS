@@ -14,7 +14,7 @@ const assetRoot = path.resolve(
   "src",
   "main",
   "assets",
-  "tesla",
+  "web",
 );
 const appScript = readFileSync(path.join(assetRoot, "app.js"), "utf8");
 const indexHtml = readFileSync(path.join(assetRoot, "index.html"), "utf8");
@@ -36,11 +36,11 @@ function loadExpectedViewportRuntime({nativeFullscreen = true} = {}) {
   const viewer = {hidden: false};
   if (nativeFullscreen) viewer.requestFullscreen = () => Promise.resolve();
   const context = vm.createContext({
-    DEVELOPMENT_TESLA_WIDTH_SCALE: 0.68,
+    DEVELOPMENT_NARROW_WIDTH_SCALE: 0.68,
     PRESENTATION_ORIENTATIONS: Object.freeze(["auto", "landscape", "portrait"]),
     browserSessionOwnsViewport: () => true,
     browserDevicePixelRatio: () => 2,
-    developmentTeslaDriving: false,
+    developmentNarrowDriving: false,
     document: {fullscreenEnabled: true},
     expandedViewportProbe: {},
     expandedViewportTarget: null,

@@ -15,7 +15,7 @@ const appScript = readFileSync(
     "src",
     "main",
     "assets",
-    "tesla",
+    "web",
     "app.js",
   ),
   "utf8",

@@ -720,11 +720,11 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("touchPointers.size === 0"))
         assertTrue(script.contains("const NAVONWEB_DEVELOPMENT_VIEWPORT_ENABLED = false;"))
         assertTrue(script.contains("const DEVELOPMENT_VIEWPORT_QUERY = 'navonweb-dev-viewport'"))
-        assertTrue(script.contains("const DEVELOPMENT_TESLA_DRIVING_MODE = 'tesla-driving'"))
-        assertTrue(script.contains("const DEVELOPMENT_TESLA_CYCLE_MODE = 'tesla-cycle'"))
+        assertTrue(script.contains("const DEVELOPMENT_NARROW_DRIVING_MODE = 'narrow-driving'"))
+        assertTrue(script.contains("const DEVELOPMENT_NARROW_CYCLE_MODE = 'narrow-cycle'"))
         assertTrue(script.contains("window.__navOnWebDevelopmentViewport = Object.freeze({"))
         assertTrue(script.contains("snapshot: developmentViewportSnapshot"))
-        assertTrue(script.contains("setTeslaDriving: setDevelopmentTeslaDriving"))
+        assertTrue(script.contains("setNarrowDriving: setDevelopmentNarrowDriving"))
         assertTrue(script.contains("function scheduleViewportReport(value)"))
         assertTrue(script.contains("function setDevelopmentViewportDiagnostic(name, value)"))
         assertTrue(script.contains("data-navonweb-${'$'}{name}"))
@@ -776,7 +776,7 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("conflict.error === 'viewport_controller_busy'"))
         assertTrue(script.contains("VIEWPORT_CONTROLLER_BUSY_RETRY_MILLIS"))
         assertTrue(script.contains("api('/health', {cache: 'no-store'}, '')"))
-        assertTrue(script.contains("const DEVELOPMENT_TESLA_CYCLE_INTERVAL_MILLIS = 12000"))
+        assertTrue(script.contains("const DEVELOPMENT_NARROW_CYCLE_INTERVAL_MILLIS = 12000"))
         assertTrue(script.contains("function expectedExpandedProjectionViewport()"))
         assertTrue(script.contains("return expectedExpandedProjectionViewport();"))
         assertTrue(script.contains("/api/projection/viewport?${'$'}{query}"))
@@ -819,7 +819,7 @@ class BrowserProbeServerPolicyTest {
         assertTrue(script.contains("touchRecoveryCancelPending = true"))
         assertTrue(script.contains("if (response.status === 202)"))
         assertTrue(script.contains("touchRecoveryCancelPending = false"))
-        assertTrue(index.contains("body.navonweb-development-tesla-driving main"))
+        assertTrue(index.contains("body.navonweb-development-narrow-driving main"))
         assertFalse(script.contains("/api/projection/layout"))
         assertFalse(script.contains("browserCredential=${'$'}{"))
         assertFalse(index.contains('\uFFFD'))
@@ -1329,8 +1329,8 @@ class BrowserProbeServerPolicyTest {
 
     private fun readAsset(name: String): String {
         val candidates = listOf(
-            File("app/src/main/assets/tesla/$name"),
-            File("src/main/assets/tesla/$name"),
+            File("app/src/main/assets/web/$name"),
+            File("src/main/assets/web/$name"),
         )
         val asset = candidates.firstOrNull(File::isFile)
             ?: error("missing browser asset $name")

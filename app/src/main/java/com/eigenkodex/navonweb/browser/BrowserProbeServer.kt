@@ -516,14 +516,14 @@ class BrowserProbeServer(
      */
     private fun indexAsset(): CachedStaticAsset = synchronized(staticAssetLock) {
         cachedIndexAsset ?: run {
-            val body = context.assets.open("tesla/index.html").use { it.readBytes() }
+            val body = context.assets.open("web/index.html").use { it.readBytes() }
             CachedStaticAsset(body, gzipBytes(body)).also { cachedIndexAsset = it }
         }
     }
 
     private fun appScriptAsset(): CachedStaticAsset = synchronized(staticAssetLock) {
         cachedAppScriptAsset ?: run {
-            val template = context.assets.open("tesla/app.js").use { input ->
+            val template = context.assets.open("web/app.js").use { input ->
                 String(input.readBytes(), StandardCharsets.UTF_8)
             }
             val body = renderAppScript(template, isDebugBuild = BuildConfig.DEBUG)

@@ -122,7 +122,7 @@
     <string name="ui_open_source_view_gpl">View the full GNU GPL v3 license</string>
     <string name="ui_open_source_url_required">Corresponding source URL · required before release</string>
     <string name="ui_open_source_open_code">Open corresponding source code</string>
-    <string name="ui_trademark_disclaimer">Android and Android Auto are trademarks of Google LLC, and Tesla is a trademark of Tesla, Inc. This product is not certified, sponsored, or endorsed by those companies.</string>
+    <string name="ui_trademark_disclaimer">Android and Android Auto are trademarks of Google LLC. This product is not certified, sponsored, or endorsed by Google.</string>
     <string name="ui_legal_document_load_failed">The license document could not be loaded.</string>
     <string name="ui_legal_third_party_title">Third-party open-source notices</string>
     <string name="ui_legal_gpl_title">GNU General Public License v3</string>

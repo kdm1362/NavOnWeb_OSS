@@ -1358,7 +1358,7 @@ class ProjectionService : Service() {
     /**
      * Browser resize events are last-write-wins. A short settle window prevents browser chrome
      * animation from causing an Android Auto ServiceDiscovery reconnect for every intermediate
-     * width while still applying a stable Tesla driving viewport automatically.
+     * width while still applying a stable narrow driving viewport automatically.
      */
     private fun scheduleProjectionViewportApply(
         layout: ProjectionViewportLayout,

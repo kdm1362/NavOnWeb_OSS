@@ -11,7 +11,7 @@ const cloudflareRoot = path.resolve(
   "..",
 );
 const appScript = readFileSync(
-  path.resolve(cloudflareRoot, "..", "app", "src", "main", "assets", "tesla", "app.js"),
+  path.resolve(cloudflareRoot, "..", "app", "src", "main", "assets", "web", "app.js"),
   "utf8",
 );
 

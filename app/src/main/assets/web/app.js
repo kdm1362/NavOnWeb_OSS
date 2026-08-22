@@ -71,10 +71,10 @@
   const CONTROL_WEBRTC_OPEN_TIMEOUT_MILLIS = AUDIO_WEBRTC_OPEN_TIMEOUT_MILLIS;
   const CONTROL_WEBRTC_REQUEST_TIMEOUT_MILLIS = 15000;
   const DEVELOPMENT_VIEWPORT_QUERY = 'navonweb-dev-viewport';
-  const DEVELOPMENT_TESLA_DRIVING_MODE = 'tesla-driving';
-  const DEVELOPMENT_TESLA_CYCLE_MODE = 'tesla-cycle';
-  const DEVELOPMENT_TESLA_WIDTH_SCALE = 0.68;
-  const DEVELOPMENT_TESLA_CYCLE_INTERVAL_MILLIS = 12000;
+  const DEVELOPMENT_NARROW_DRIVING_MODE = 'narrow-driving';
+  const DEVELOPMENT_NARROW_CYCLE_MODE = 'narrow-cycle';
+  const DEVELOPMENT_NARROW_WIDTH_SCALE = 0.68;
+  const DEVELOPMENT_NARROW_CYCLE_INTERVAL_MILLIS = 12000;
   const VIEWPORT_REPORT_SETTLE_MILLIS = 850;
   const VIEWPORT_REPORT_RETRY_MILLIS = 1500;
   const VIEWPORT_CONTROLLER_BUSY_RETRY_MILLIS = 5000;
@@ -114,7 +114,7 @@
   const SESSION_TOUCH_MARKER_STALE_MILLIS = 12000;
   const DYNAMIC_ASPECT_BODY_CLASS = 'navonweb-dynamic-aspect';
   const AUTHENTICATED_BODY_CLASS = 'navonweb-authenticated';
-  const DEVELOPMENT_TESLA_BODY_CLASS = 'navonweb-development-tesla-driving';
+  const DEVELOPMENT_NARROW_BODY_CLASS = 'navonweb-development-narrow-driving';
   const PRESENTATION_ORIENTATIONS = Object.freeze(['auto', 'landscape', 'portrait']);
   const PRESENTATION_ALIGNMENTS = Object.freeze([
     'center', 'top', 'bottom', 'left', 'right',
@@ -629,8 +629,8 @@
   let expandedViewportTarget = null;
   let expandedViewportOrientationAxis = '';
   let developmentViewportMode = '';
-  let developmentTeslaDriving = false;
-  let developmentTeslaCycleTimer = 0;
+  let developmentNarrowDriving = false;
+  let developmentNarrowCycleTimer = 0;
   let viewportReportTimer = 0;
   let viewportReportAbortController = null;
   let viewportReportTask = null;
@@ -1476,8 +1476,8 @@
       height = swapDimensions ? screenWidth : screenHeight;
       source = 'fullscreenPreview';
     }
-    if (developmentTeslaDriving) {
-      width = Math.min(width, width * DEVELOPMENT_TESLA_WIDTH_SCALE);
+    if (developmentNarrowDriving) {
+      width = Math.min(width, width * DEVELOPMENT_NARROW_WIDTH_SCALE);
     }
     const insets = expandedViewportInsets();
     width -= insets.left + insets.right;
@@ -1820,13 +1820,13 @@
   }
 
   function refreshDevelopmentViewportWidth() {
-    if (!developmentTeslaDriving) {
+    if (!developmentNarrowDriving) {
       document.documentElement.style.removeProperty('--navonweb-development-viewport-width');
       return;
     }
     const viewport = layoutViewportDimensions();
     const fullContentWidth = viewport.width;
-    const simulatedWidth = Math.max(320, Math.round(fullContentWidth * DEVELOPMENT_TESLA_WIDTH_SCALE));
+    const simulatedWidth = Math.max(320, Math.round(fullContentWidth * DEVELOPMENT_NARROW_WIDTH_SCALE));
     document.documentElement.style.setProperty(
       '--navonweb-development-viewport-width',
       `${simulatedWidth}px`
@@ -1883,24 +1883,24 @@
     if (changed) scheduleViewportLayoutSync();
   }
 
-  function applyDevelopmentTeslaDriving(enabled) {
-    developmentTeslaDriving = Boolean(enabled);
-    document.body.classList.toggle(DEVELOPMENT_TESLA_BODY_CLASS, developmentTeslaDriving);
+  function applyDevelopmentNarrowDriving(enabled) {
+    developmentNarrowDriving = Boolean(enabled);
+    document.body.classList.toggle(DEVELOPMENT_NARROW_BODY_CLASS, developmentNarrowDriving);
     refreshDevelopmentViewportWidth();
     scheduleViewportLayoutSync();
     return developmentViewportSnapshot();
   }
 
-  function stopDevelopmentTeslaCycle() {
-    if (developmentTeslaCycleTimer) window.clearInterval(developmentTeslaCycleTimer);
-    developmentTeslaCycleTimer = 0;
+  function stopDevelopmentNarrowCycle() {
+    if (developmentNarrowCycleTimer) window.clearInterval(developmentNarrowCycleTimer);
+    developmentNarrowCycleTimer = 0;
   }
 
-  function startDevelopmentTeslaCycle() {
-    if (developmentViewportMode !== DEVELOPMENT_TESLA_CYCLE_MODE || developmentTeslaCycleTimer) return;
-    developmentTeslaCycleTimer = window.setInterval(() => {
-      applyDevelopmentTeslaDriving(!developmentTeslaDriving);
-    }, DEVELOPMENT_TESLA_CYCLE_INTERVAL_MILLIS);
+  function startDevelopmentNarrowCycle() {
+    if (developmentViewportMode !== DEVELOPMENT_NARROW_CYCLE_MODE || developmentNarrowCycleTimer) return;
+    developmentNarrowCycleTimer = window.setInterval(() => {
+      applyDevelopmentNarrowDriving(!developmentNarrowDriving);
+    }, DEVELOPMENT_NARROW_CYCLE_INTERVAL_MILLIS);
   }
 
   function developmentViewportSnapshot() {
@@ -1912,9 +1912,9 @@
     );
     return Object.freeze({
       mode: developmentViewportMode,
-      teslaDriving: developmentTeslaDriving,
-      widthScale: DEVELOPMENT_TESLA_WIDTH_SCALE,
-      simulatedWidthCssPixels: developmentTeslaDriving && simulatedWidth > 0 ? simulatedWidth : null,
+      narrowDriving: developmentNarrowDriving,
+      widthScale: DEVELOPMENT_NARROW_WIDTH_SCALE,
+      simulatedWidthCssPixels: developmentNarrowDriving && simulatedWidth > 0 ? simulatedWidth : null,
       viewport,
       padRect: Object.freeze({
         left: padRect.left,
@@ -1932,10 +1932,10 @@
     });
   }
 
-  function setDevelopmentTeslaDriving(enabled) {
-    stopDevelopmentTeslaCycle();
+  function setDevelopmentNarrowDriving(enabled) {
+    stopDevelopmentNarrowCycle();
     developmentViewportMode = 'manual';
-    return applyDevelopmentTeslaDriving(enabled);
+    return applyDevelopmentNarrowDriving(enabled);
   }
 
   function installDevelopmentViewport() {
@@ -1946,14 +1946,14 @@
     } catch (_) {
       return;
     }
-    if (requestedMode !== DEVELOPMENT_TESLA_DRIVING_MODE &&
-        requestedMode !== DEVELOPMENT_TESLA_CYCLE_MODE) return;
+    if (requestedMode !== DEVELOPMENT_NARROW_DRIVING_MODE &&
+        requestedMode !== DEVELOPMENT_NARROW_CYCLE_MODE) return;
     developmentViewportMode = requestedMode;
-    applyDevelopmentTeslaDriving(true);
-    if (requestedMode === DEVELOPMENT_TESLA_CYCLE_MODE) startDevelopmentTeslaCycle();
+    applyDevelopmentNarrowDriving(true);
+    if (requestedMode === DEVELOPMENT_NARROW_CYCLE_MODE) startDevelopmentNarrowCycle();
     window.__navOnWebDevelopmentViewport = Object.freeze({
       snapshot: developmentViewportSnapshot,
-      setTeslaDriving: setDevelopmentTeslaDriving
+      setNarrowDriving: setDevelopmentNarrowDriving
     });
   }
 
@@ -6573,7 +6573,7 @@
     cancelNoticeRequestForRetry();
     resetTouchTransport(true, true);
     stopViewportReporting();
-    stopDevelopmentTeslaCycle();
+    stopDevelopmentNarrowCycle();
     stopStatusPolling();
     if (!microphoneCaptureIsTerminal()) stopMicrophoneCapture('pagehide');
     stopAudioStreams(true);
@@ -6598,7 +6598,7 @@
   window.addEventListener('pageshow', event => {
     pageActive = true;
     resumeProjectionMediaAfterLifecyclePause();
-    startDevelopmentTeslaCycle();
+    startDevelopmentNarrowCycle();
     syncFullscreenState();
     scheduleViewportLayoutSync();
     requestViewportControlReclaim();

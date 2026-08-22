@@ -2,7 +2,7 @@
 
 이 디렉터리는 서로 독립적인 두 배포물을 만듭니다.
 
-- Cloudflare Pages: Android APK에 포함된 실제 `tesla/index.html`과 `app.js`를 그대로 사용한
+- Cloudflare Pages: Android APK에 포함된 실제 `web/index.html`과 `app.js`를 그대로 사용한
   HTTPS 웹 화면
 - Worker + Durable Object: 짧은 URL의 최초 페어링·기기 선택과 SDP/ICE를 위한 WSS signaling relay
 
@@ -17,8 +17,8 @@ Pages 원본을 별도로 복제하지 않습니다. `scripts/build-pages.mjs`�
 읽습니다.
 
 ```text
-../app/src/main/assets/tesla/index.html
-../app/src/main/assets/tesla/app.js
+../app/src/main/assets/web/index.html
+../app/src/main/assets/web/app.js
 ```
 
 Cloudflare용 소개 화면은 `pages/landing.html`과 `pages/landing.css`에서 관리하며, Android 앱의

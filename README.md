@@ -85,4 +85,4 @@ Notices for bundled and principal runtime dependencies, together with retained u
 
 Each distributed binary should identify an immutable commit or tag containing its matching source. The release-source process is described in [docs/SOURCE_DISTRIBUTION.md](docs/SOURCE_DISTRIBUTION.md).
 
-Android, Android Auto, Google Play, Cloudflare, Supabase, WebRTC, and Tesla are trademarks of their respective owners. Their names identify compatible platforms or external services and do not imply endorsement.
+Android, Android Auto, Google Play, Cloudflare, Supabase, and WebRTC are trademarks of their respective owners. Their names identify compatible platforms or external services and do not imply endorsement.

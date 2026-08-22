@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const assetRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../../app/src/main/assets/tesla",
+  "../../../app/src/main/assets/web",
 );
 const appScript = readFileSync(path.join(assetRoot, "app.js"), "utf8");
 const indexHtml = readFileSync(path.join(assetRoot, "index.html"), "utf8");

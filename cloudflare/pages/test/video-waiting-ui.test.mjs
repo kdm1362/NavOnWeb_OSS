@@ -11,11 +11,11 @@ const cloudflareRoot = path.resolve(
 );
 const repositoryRoot = path.resolve(cloudflareRoot, "..");
 const appScript = readFileSync(
-  path.join(repositoryRoot, "app", "src", "main", "assets", "tesla", "app.js"),
+  path.join(repositoryRoot, "app", "src", "main", "assets", "web", "app.js"),
   "utf8",
 );
 const indexHtml = readFileSync(
-  path.join(repositoryRoot, "app", "src", "main", "assets", "tesla", "index.html"),
+  path.join(repositoryRoot, "app", "src", "main", "assets", "web", "index.html"),
   "utf8",
 );
 
