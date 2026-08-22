@@ -110,14 +110,14 @@
     <string name="first_run_android_auto_body">Search for Android Auto in phone settings. Near the bottom, tap Version and then tap Version and permission info 10 times to enable developer mode. Open the top-right overflow menu and tap Start head unit server. If Stop head unit server is shown, it is already running.</string>
     <string name="first_run_android_auto_warning">A phone restart or Android Auto update may stop this developer server. Start it again before using NavOnWeb.</string>
     <string name="first_run_open_android_auto_settings">Open Android Auto settings</string>
-    <string name="first_run_hotspot_title">2. Connect the viewing device to this phone hotspot</string>
+    <string name="first_run_hotspot_title">2. Connect the device to this phone hotspot</string>
     <string name="first_run_hotspot_body">Turn on Mobile Hotspot in phone Settings. In the viewing device’s Wi-Fi menu, select this hotspot and enter its password.</string>
-    <string name="first_run_hotspot_warning">NavOnWeb video travels directly over the local connection between the phone and viewing device, so the video stream itself does not use the phone’s mobile data. Opening navonweb.com and setting up the connection may use a small amount of internet data. Diagnostics or service traffic, map or software updates, and music or video streaming from the viewing device can also use mobile data. Check the data allowance and automatic update or streaming settings first.</string>
+    <string name="first_run_hotspot_warning">The video stream itself does not use the phone’s mobile data. Opening navonweb.com uses a little internet data, and updates, streaming, and diagnostics on the connected device can use more, so check your data allowance and auto-update settings first.</string>
     <string name="first_run_service_title">3. Start NavOnWeb</string>
     <string name="first_run_service_body">Return to NavOnWeb and tap Start service. Review any notification or approximate-location permission request. Wait until Android Auto shows Connected and a browser address appears.</string>
     <string name="first_run_browser_title">4. Pair a web browser</string>
     <string name="first_run_browser_body">On the device where you want to view the screen, open https://navonweb.com in a web browser. Enter the 8-digit registration code shown in NavOnWeb. The approved browser is remembered for later connections.</string>
-    <string name="first_run_browser_warning">If connection is unavailable for more than 10 seconds, use Get a new pairing code in the browser, issue a fresh code in the phone app, and enter it again.</string>
+    <string name="first_run_browser_warning">If it does not connect within 10 seconds, tap Get a new pairing code in the browser, then issue and enter a fresh code from the app.</string>
     <string name="first_run_settings_title">First-use guide</string>
     <string name="first_run_settings_description">Review Android Auto server, hotspot, service start, and browser pairing in short steps.</string>
     <string name="first_run_settings_button">Open first-use guide</string>

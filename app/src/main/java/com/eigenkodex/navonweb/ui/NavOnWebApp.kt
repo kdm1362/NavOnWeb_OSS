@@ -98,6 +98,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
@@ -1736,35 +1737,48 @@ private fun FirstRunOnboardingDialog(
                     }
                 }
 
+                // The title, body, and optional action scroll; the safety/caution card stays
+                // pinned above the navigation buttons so it is always visible at the same
+                // place regardless of how long the step copy is.
                 Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
-                    Text(
-                        text = step.title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = step.body,
-                        color = Color(0xFFD7E1EC),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    if (
-                        firstRunOnboardingAction(safePage) ==
-                        FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        Button(
-                            onClick = onOpenAndroidAutoSettings,
-                            modifier = Modifier.fillMaxWidth(),
+                        Text(
+                            text = step.title,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                lineBreak = LineBreak.Heading,
+                            ),
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = step.body,
+                            color = Color(0xFFD7E1EC),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                lineBreak = LineBreak.Paragraph,
+                            ),
+                        )
+                        if (
+                            firstRunOnboardingAction(safePage) ==
+                            FirstRunOnboardingAction.OPEN_ANDROID_AUTO_SETTINGS
                         ) {
-                            Text(stringResource(R.string.first_run_open_android_auto_settings))
+                            Button(
+                                onClick = onOpenAndroidAutoSettings,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.first_run_open_android_auto_settings))
+                            }
                         }
                     }
                     step.warning?.let { warning ->
                         Card(
+                            modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF2B1D0B)),
                             shape = RoundedCornerShape(16.dp),
                         ) {
@@ -1780,7 +1794,9 @@ private fun FirstRunOnboardingDialog(
                                 Text(
                                     text = warning,
                                     color = Color(0xFFF8E6BD),
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        lineBreak = LineBreak.Paragraph,
+                                    ),
                                 )
                             }
                         }
