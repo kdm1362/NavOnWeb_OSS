@@ -90,14 +90,6 @@ const iconFileNames = [
 ];
 const marketingMediaFiles = [
   {
-    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "01-welcome.png"),
-    output: "navonweb-welcome-ko.png",
-  },
-  {
-    source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-phone-welcome-en.png"),
-    output: "navonweb-welcome-en.png",
-  },
-  {
     source: path.join(repositoryRoot, "docs", "user-guide", "screenshots", "landing-phone-main-premium-ko.png"),
     output: "navonweb-premium-running-ko.png",
   },
@@ -162,7 +154,7 @@ const landingStyleRevision = createHash("sha256")
   .digest("hex")
   .slice(0, 16);
 const revisionedScriptMarker = `<script src="/app.js?v=${appRevision}"></script>`;
-const landingWithStoreCta = sourceLanding.replace(
+const landingWithStoreCta = sourceLanding.replaceAll(
   playStoreCtaMarker,
   renderPlayStoreCta(playStoreUrl),
 );
@@ -173,6 +165,14 @@ const builtLanding = marketingMediaFiles.reduce(
   ),
   landingWithStoreCta,
 );
+// The topband banner is pinned to the very top of the page, ahead of the pairing
+// panel, while the rest of the marketing stays between the panel and the viewer.
+const topbandEnd = builtLanding.indexOf("</aside>");
+if (topbandEnd < 0) {
+  throw new Error("Landing page is missing the topband <aside> block");
+}
+const landingTopband = builtLanding.slice(0, topbandEnd + "</aside>".length);
+const landingMarketing = builtLanding.slice(topbandEnd + "</aside>".length).trim();
 const builtIndexes = new Map(siteVariants.map((variant) => [
   variant.outputPath,
   sourceIndex
@@ -188,8 +188,8 @@ const builtIndexes = new Map(siteVariants.map((variant) => [
       `${renderSeoHeadMarkup(variant)}\n${pwaHeadMarkup}\n` +
         `  <link rel="stylesheet" href="/landing.css?v=${landingStyleRevision}">\n${headMarker}`,
     )
-    .replace(bodyMarker, '<body class="navonweb-marketing-page">')
-    .replace(viewerMarker, `${builtLanding}\n\n${viewerMarker}`)
+    .replace(bodyMarker, `<body class="navonweb-marketing-page">\n${landingTopband}`)
+    .replace(viewerMarker, `${landingMarketing}\n\n${viewerMarker}`)
     .replace(
       scriptMarker,
       `<script src="/cloud-config.js"></script>\n${revisionedScriptMarker}`,

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">الخدمة متوقفة.</string>
+    <string name="session_local_browser_starting">في انتظار الفيديو...</string>
+    <string name="session_browser_ready">اتصال المتصفح جاهز.</string>
+    <string name="session_native_status_checking">جارٍ التحقق</string>
+    <string name="session_stopped_by_user">أوقف المستخدم الخدمة.</string>
+    <string name="session_closed_after_service_stop">توقفت الخدمة وتم إغلاق الاتصال.</string>
+    <string name="notification_permission_start_denied">لم يتم بدء خدمة الخلفية لأنه لم يتم منح إذن الإشعارات.</string>
+
+    <string name="android_auto_state_connected">‏Android Auto متصل</string>
+    <string name="android_auto_state_reconnecting">جارٍ إعادة الاتصال بـ Android Auto</string>
+    <string name="android_auto_state_disconnected">‏Android Auto غير متصل</string>
+    <string name="android_auto_reason_streaming">جارٍ استقبال فيديو Android Auto</string>
+    <string name="android_auto_reason_link_ready">في انتظار الفيديو...</string>
+    <string name="android_auto_reason_waiting_for_phone">في انتظار الهاتف</string>
+    <string name="android_auto_reason_retrying">جارٍ إعادة محاولة الاتصال بـ Android Auto</string>
+    <string name="android_auto_reason_decoder_recovery">في انتظار الفيديو...</string>
+    <string name="android_auto_reason_phone_ended_session">أنهى الهاتف اتصال Android Auto</string>
+    <string name="android_auto_reason_head_unit_server_stopped">خادم الوحدة الرئيسية في Android Auto متوقف على هذا الهاتف</string>
+    <string name="android_auto_reason_network_interrupted">انقطع الاتصال بالهاتف</string>
+    <string name="android_auto_reason_authentication_failed">فشلت مصادقة Android Auto</string>
+    <string name="android_auto_reason_incompatible_version">إصدار Android Auto هذا غير متوافق</string>
+    <string name="android_auto_reason_protocol_error">حدث خطأ في الاتصال بـ Android Auto</string>
+    <string name="android_auto_reason_decoder_unavailable">وحدة فك ترميز فيديو Android Auto غير متاحة على هذا الجهاز</string>
+    <string name="android_auto_reason_display_unavailable">شاشة الإسقاط غير متاحة</string>
+    <string name="android_auto_reason_not_configured">لم يتم إعداد اتصال Android Auto</string>
+    <string name="android_auto_reason_session_stopped">اتصال Android Auto متوقف</string>
+    <string name="android_auto_reason_unknown">فُقد اتصال Android Auto</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">تلقائي</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">اختيار برنامج ترميز يدعمه هذا الجهاز والمتصفح معًا تلقائيًا</string>
+    <string name="codec_h264_description">برنامج ترميز عبر الأجهزة محسَّن للتوافق</string>
+    <string name="codec_vp8_description">برنامج الترميز الأساسي المتوافق مع WebRTC</string>
+    <string name="codec_vp9_description">للاستخدام على الأجهزة التي تدعم كفاءة ضغط أعلى</string>
+    <string name="codec_av1_description">أعلى كفاءة ضغط على الأجهزة الحديثة المدعومة</string>
+    <string name="codec_policy_pending">يُستخدم برنامج الترميز المحدد في تفاوض WebRTC، وتتم إعادة التفاوض عليه تلقائيًا أثناء الاتصال.</string>
+    <string name="codec_saved">تم حفظ %1$s وطلب إعادة تفاوض WebRTC.</string>
+    <string name="codec_save_failed">تعذّر حفظ اختيار برنامج الترميز. الإعداد السابق لم يتغير.</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">%1$s عند البدء / %2$s كحد أقصى</string>
+    <string name="projection_bitrate_mbps">%1$s ميغابت/ث</string>
+    <string name="projection_profile_waiting_for_service">في انتظار خدمة الإسقاط.</string>
+    <string name="projection_profile_service_not_connected">خدمة الإسقاط غير متصلة.</string>
+    <string name="projection_profile_checking">جارٍ التحقق من حالة ملف التعريف.</string>
+    <string name="projection_profile_reconnecting_status">جارٍ إعادة الاتصال تلقائيًا لتطبيق ملف التعريف %1$s.</string>
+    <string name="projection_profile_active_status">ملف التعريف %1$s نشط.</string>
+    <string name="projection_profile_applied_immediately">تم تطبيق ملف التعريف %1$d×%2$d فورًا.</string>
+    <string name="projection_profile_auto_apply_failed">تعذّر تطبيق ملف التعريف تلقائيًا. الإعداد السابق لم يتغير.</string>
+    <string name="projection_service_connect_first">اتصل بخدمة الإسقاط ثم أعد المحاولة.</string>
+    <string name="projection_profile_request_failed">تعذّرت معالجة طلب ملف التعريف.</string>
+    <string name="projection_profile_applied">تم تطبيق ملف التعريف %1$d×%2$d.</string>
+    <string name="projection_profile_reconnecting">جارٍ إعادة الاتصال تلقائيًا لتطبيق ملف التعريف %1$d×%2$d.</string>
+    <string name="projection_profile_not_entitled">ملف التعريف هذا غير متاح في مستوى الوصول الحالي.</string>
+    <string name="projection_profile_persistence_failed">تم إلغاء التغيير لأنه تعذّر حفظ إعداد ملف التعريف بأمان.</string>
+    <string name="projection_profile_unknown">لا توفر الخدمة ملف التعريف هذا.</string>
+    <string name="projection_dpi_saved">تم حفظ %1$d DPI.</string>
+    <string name="projection_dpi_saved_reconnecting">تم حفظ %1$d DPI وتجري إعادة الاتصال بـ Android Auto. تبقى جلسة الوسائط في المتصفح نشطة.</string>
+    <string name="projection_dpi_reset_saved">تمت استعادة القيمة الموصى بها %1$d DPI.</string>
+    <string name="projection_dpi_save_failed">تعذّر حفظ إعداد DPI. القيمة السابقة لم تتغير.</string>
+    <string name="projection_dpi_invalid">اختر عددًا صحيحًا لقيمة DPI من 72 إلى 320.</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">تم إلغاء حفظ ملف السجل.</string>
+    <string name="diagnostic_export_succeeded">تم حفظ ملف سجل التشخيص.</string>
+    <string name="diagnostic_export_failed">تعذّر حفظ ملف سجل التشخيص.</string>
+    <string name="diagnostic_no_logs_to_save">لا توجد سجلات تشخيص لحفظها.</string>
+    <string name="diagnostic_upload_queued">جارٍ إرسال بيانات التشخيص المعتمَدة. تقتصر عمليات التحميل الجديدة على عملية واحدة كل 30 دقيقة، وستتم إعادة محاولة هذا العنصر بعد 30 دقيقة على الأقل في حال حدوث فشل مؤقت.</string>
+    <string name="diagnostic_description_required">صِف ما كان يحدث عند وقوع الخطأ.</string>
+    <string name="diagnostic_description_too_long">اجعل الوصف في حدود 500 حرف و2 كيبيبايت.</string>
+    <string name="diagnostic_description_invalid_character">يحتوي الوصف على حرف تحكم غير مسموح به.</string>
+    <string name="diagnostic_no_logs_to_upload">لا توجد سجلات تشخيص لإرسالها.</string>
+    <string name="diagnostic_outbox_full">هناك ثلاثة سجلات أخطاء في انتظار الإرسال بالفعل. أعد المحاولة بعد انتهاء إحدى عمليات التحميل.</string>
+    <string name="diagnostic_rate_limited">تقتصر عمليات تحميل بيانات التشخيص الجديدة على عملية واحدة كل 30 دقيقة بعد موافقة المستخدم. أعد المحاولة بعد حوالي %1$d دقيقة.</string>
+    <string name="diagnostic_persistence_failed">تعذّر تحضير ملف تحميل سجل الأخطاء بأمان.</string>
+    <string name="diagnostic_scheduling_failed">تعذّرت جدولة تحميل سجل الأخطاء.</string>
+    <string name="diagnostic_recovery_failed">تعذّرت استعادة مهمة التحميل لعدد %1$d من سجلات الأخطاء المعلّقة.</string>
+    <string name="diagnostic_cancel_none">لا توجد سجلات أخطاء معلّقة لإلغائها.</string>
+    <string name="diagnostic_cancel_succeeded">تم إلغاء %1$d من سجلات الأخطاء المعلّقة وحذفها.</string>
+    <string name="diagnostic_cancel_partial">تم إلغاء %1$d من سجلات الأخطاء، وتعذّر إلغاء %2$d منها.</string>
+    <string name="diagnostic_clear_succeeded">تم حذف سجلات التشخيص.</string>
+    <string name="diagnostic_clear_failed">تعذّر حذف سجلات التشخيص.</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">تعذّر بدء الخدمة لأن تأكيد حالة توقف السيارة لم يكن متاحًا.</string>
+    <string name="projection_preflight_reconnecting">جارٍ إعادة الاتصال بـ Android Auto · فحص مسبق محلي</string>
+    <string name="projection_preflight_failed">فشل الفحص المسبق المحلي.</string>
+    <string name="projection_service_start_failed">تعذّر بدء Android Auto.</string>
+    <string name="browser_server_start_failed">تعذّر بدء خادم المتصفح.</string>
+    <string name="browser_ready_notification">المتصفح جاهز · %1$s</string>
+    <string name="projection_profile_applying">جارٍ تطبيق ملف تعريف العرض الآن.</string>
+    <string name="projection_profile_safety_cancelled">تم إلغاء تغيير ملف تعريف العرض لأنه تعذّر التحقق من حالة الأمان.</string>
+    <string name="projection_profile_applied_jpeg_fallback">تم تطبيق ملف التعريف %1$d×%2$d. لا يتوفر برنامج ترميز مدعوم في WebRTC، لذا فإن عرض JPEG الاحتياطي نشط.</string>
+    <string name="projection_profile_applied_reconnecting">تم تطبيق ملف التعريف %1$d×%2$d وتجري إعادة الاتصال بـ Android Auto.</string>
+    <string name="projection_viewport_safety_cancelled">تم إلغاء تطبيق نسبة العرض إلى الارتفاع الديناميكية لأنه تعذّر التحقق من حالة الأمان.</string>
+    <string name="projection_viewport_applying">جارٍ ملاءمة شاشة Android Auto مع حجم المتصفح.</string>
+    <string name="projection_viewport_applied">تم تطبيق نسبة العرض إلى الارتفاع للمتصفح وتجري إعادة الاتصال بـ Android Auto.</string>
+    <string name="projection_surface_lost">اختفت شاشة الإسقاط، لذا تم إغلاق الاتصال بأمان.</string>
+    <string name="notification_stop_action">إيقاف</string>
+    <string name="projection_notification_channel">خدمة Android Auto على الويب</string>
+    <string name="connection_notification_channel">تنبيهات اتصال Android Auto</string>
+    <string name="connection_notification_channel_description">ينبّه مرة واحدة عند انقطاع جلسة Android Auto المتصلة.</string>
+</resources>

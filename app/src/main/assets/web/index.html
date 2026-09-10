@@ -469,10 +469,9 @@
     #expanded-viewport-probe {
       position: fixed;
       inset: 0;
-      padding: max(12px, env(safe-area-inset-top))
-        max(12px, env(safe-area-inset-right))
-        max(12px, env(safe-area-inset-bottom))
-        max(12px, env(safe-area-inset-left));
+      /* Expanded views give the projection every pixel; only hardware safe areas remain. */
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+        env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
       visibility: hidden;
       pointer-events: none;
     }
@@ -564,8 +563,8 @@
     #viewer:fullscreen {
       width: 100vw;
       height: 100vh;
-      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+        env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
       grid-template-rows: minmax(0, 1fr);
       gap: 0;
       background: #000;
@@ -584,8 +583,8 @@
       position: fixed;
       inset: 0;
       z-index: 1000;
-      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+        env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
       grid-template-rows: minmax(0, 1fr);
       gap: 0;
       background: #000;

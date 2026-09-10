@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">服务已停止。</string>
+    <string name="session_local_browser_starting">正在等待视频…</string>
+    <string name="session_browser_ready">浏览器连接已就绪。</string>
+    <string name="session_native_status_checking">正在检查</string>
+    <string name="session_stopped_by_user">用户已停止服务。</string>
+    <string name="session_closed_after_service_stop">服务已停止并关闭了连接。</string>
+    <string name="notification_permission_start_denied">由于未授予通知权限，后台服务未启动。</string>
+
+    <string name="android_auto_state_connected">Android Auto 已连接</string>
+    <string name="android_auto_state_reconnecting">正在重新连接到 Android Auto</string>
+    <string name="android_auto_state_disconnected">Android Auto 已断开连接</string>
+    <string name="android_auto_reason_streaming">正在接收 Android Auto 视频</string>
+    <string name="android_auto_reason_link_ready">正在等待视频…</string>
+    <string name="android_auto_reason_waiting_for_phone">正在等待手机</string>
+    <string name="android_auto_reason_retrying">正在重试 Android Auto 连接</string>
+    <string name="android_auto_reason_decoder_recovery">正在等待视频…</string>
+    <string name="android_auto_reason_phone_ended_session">手机已结束 Android Auto 连接</string>
+    <string name="android_auto_reason_head_unit_server_stopped">此手机上的 Android Auto 车机服务器已关闭</string>
+    <string name="android_auto_reason_network_interrupted">与手机的连接已中断</string>
+    <string name="android_auto_reason_authentication_failed">Android Auto 身份验证失败</string>
+    <string name="android_auto_reason_incompatible_version">此 Android Auto 版本不兼容</string>
+    <string name="android_auto_reason_protocol_error">发生了 Android Auto 通信错误</string>
+    <string name="android_auto_reason_decoder_unavailable">此设备上的 Android Auto 视频解码器不可用</string>
+    <string name="android_auto_reason_display_unavailable">投屏画面不可用</string>
+    <string name="android_auto_reason_not_configured">尚未配置 Android Auto 连接</string>
+    <string name="android_auto_reason_session_stopped">Android Auto 连接已停止</string>
+    <string name="android_auto_reason_unknown">Android Auto 连接已丢失</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">自动</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">自动选择此设备和浏览器都支持的编解码器</string>
+    <string name="codec_h264_description">针对兼容性优化的硬件编解码器</string>
+    <string name="codec_vp8_description">基础的 WebRTC 兼容编解码器</string>
+    <string name="codec_vp9_description">在支持更高压缩效率的设备上使用</string>
+    <string name="codec_av1_description">在受支持的新款设备上提供最高的压缩效率</string>
+    <string name="codec_policy_pending">所选编解码器用于 WebRTC 协商，并会在连接期间自动重新协商。</string>
+    <string name="codec_saved">已保存 %1$s，并已请求 WebRTC 重新协商。</string>
+    <string name="codec_save_failed">无法保存编解码器选择。之前的设置保持不变。</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">起始 %1$s / 最高 %2$s</string>
+    <string name="projection_bitrate_mbps">%1$s Mbps</string>
+    <string name="projection_profile_waiting_for_service">正在等待投屏服务。</string>
+    <string name="projection_profile_service_not_connected">投屏服务未连接。</string>
+    <string name="projection_profile_checking">正在检查配置状态。</string>
+    <string name="projection_profile_reconnecting_status">正在自动重新连接以应用 %1$s 配置。</string>
+    <string name="projection_profile_active_status">正在使用 %1$s 配置。</string>
+    <string name="projection_profile_applied_immediately">已立即应用 %1$d×%2$d 配置。</string>
+    <string name="projection_profile_auto_apply_failed">自动应用配置失败。之前的设置保持不变。</string>
+    <string name="projection_service_connect_first">请连接到投屏服务，然后重试。</string>
+    <string name="projection_profile_request_failed">无法处理配置请求。</string>
+    <string name="projection_profile_applied">已应用 %1$d×%2$d 配置。</string>
+    <string name="projection_profile_reconnecting">正在自动重新连接以应用 %1$d×%2$d 配置。</string>
+    <string name="projection_profile_not_entitled">当前的使用权限不支持此配置。</string>
+    <string name="projection_profile_persistence_failed">由于无法安全保存配置设置，更改已取消。</string>
+    <string name="projection_profile_unknown">服务未提供此配置。</string>
+    <string name="projection_dpi_saved">已保存 %1$d DPI。</string>
+    <string name="projection_dpi_saved_reconnecting">已保存 %1$d DPI，正在重新连接 Android Auto。浏览器媒体会话保持活动状态。</string>
+    <string name="projection_dpi_reset_saved">已恢复推荐值 %1$d DPI。</string>
+    <string name="projection_dpi_save_failed">无法保存 DPI 设置。之前的值保持不变。</string>
+    <string name="projection_dpi_invalid">请选择 72 到 320 之间的整数 DPI。</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">已取消保存日志文件。</string>
+    <string name="diagnostic_export_succeeded">诊断日志文件已保存。</string>
+    <string name="diagnostic_export_failed">无法保存诊断日志文件。</string>
+    <string name="diagnostic_no_logs_to_save">没有可保存的诊断日志。</string>
+    <string name="diagnostic_upload_queued">正在发送已批准的诊断数据。新上传限制为每 30 分钟一次，此项目若暂时失败，将在至少 30 分钟后重试。</string>
+    <string name="diagnostic_description_required">请描述发生错误时的情况。</string>
+    <string name="diagnostic_description_too_long">描述请控制在 500 个字符和 2 KiB 以内。</string>
+    <string name="diagnostic_description_invalid_character">描述中包含不允许使用的控制字符。</string>
+    <string name="diagnostic_no_logs_to_upload">没有可发送的诊断日志。</string>
+    <string name="diagnostic_outbox_full">已有三个错误日志正在等待发送。请在上传完成后重试。</string>
+    <string name="diagnostic_rate_limited">经用户批准后，新的诊断上传限制为每 30 分钟一次。请在约 %1$d 分钟后重试。</string>
+    <string name="diagnostic_persistence_failed">无法安全地准备错误日志上传文件。</string>
+    <string name="diagnostic_scheduling_failed">无法安排错误日志上传。</string>
+    <string name="diagnostic_recovery_failed">无法恢复 %1$d 个待发送错误日志的上传任务。</string>
+    <string name="diagnostic_cancel_none">没有可取消的待发送错误日志。</string>
+    <string name="diagnostic_cancel_succeeded">已取消并删除 %1$d 个待发送的错误日志。</string>
+    <string name="diagnostic_cancel_partial">已取消 %1$d 个错误日志；%2$d 个无法取消。</string>
+    <string name="diagnostic_clear_succeeded">诊断日志已删除。</string>
+    <string name="diagnostic_clear_failed">无法删除诊断日志。</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">由于无法确认停车状态，服务无法启动。</string>
+    <string name="projection_preflight_reconnecting">正在重新连接到 Android Auto · 本地预检</string>
+    <string name="projection_preflight_failed">本地预检失败。</string>
+    <string name="projection_service_start_failed">无法启动 Android Auto。</string>
+    <string name="browser_server_start_failed">无法启动浏览器服务器。</string>
+    <string name="browser_ready_notification">浏览器已就绪 · %1$s</string>
+    <string name="projection_profile_applying">正在应用视频配置。</string>
+    <string name="projection_profile_safety_cancelled">由于无法验证安全状态，视频配置更改已取消。</string>
+    <string name="projection_profile_applied_jpeg_fallback">已应用 %1$d×%2$d 配置。WebRTC 没有受支持的编解码器，因此正在使用 JPEG 回退显示。</string>
+    <string name="projection_profile_applied_reconnecting">已应用 %1$d×%2$d 配置，正在重新连接 Android Auto。</string>
+    <string name="projection_viewport_safety_cancelled">由于无法验证安全状态，动态宽高比应用已取消。</string>
+    <string name="projection_viewport_applying">正在使 Android Auto 画面适应浏览器尺寸。</string>
+    <string name="projection_viewport_applied">已应用浏览器宽高比，正在重新连接 Android Auto。</string>
+    <string name="projection_surface_lost">投屏画面已消失，因此已安全关闭连接。</string>
+    <string name="notification_stop_action">停止</string>
+    <string name="projection_notification_channel">Android Auto 网页服务</string>
+    <string name="connection_notification_channel">Android Auto 连接提醒</string>
+    <string name="connection_notification_channel_description">当已连接的 Android Auto 会话中断时提醒一次。</string>
+</resources>

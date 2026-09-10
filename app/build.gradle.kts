@@ -415,8 +415,8 @@ android {
         applicationId = "com.eigenkodex.navonweb"
         minSdk = 26
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.1.21-p0"
+        versionCode = 32
+        versionName = "0.1.22-p0"
 
         buildConfigField(
             "String",

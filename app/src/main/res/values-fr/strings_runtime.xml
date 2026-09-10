@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">Le service est arrêté.</string>
+    <string name="session_local_browser_starting">En attente de la vidéo…</string>
+    <string name="session_browser_ready">La connexion du navigateur est prête.</string>
+    <string name="session_native_status_checking">Vérification</string>
+    <string name="session_stopped_by_user">L’utilisateur a arrêté le service.</string>
+    <string name="session_closed_after_service_stop">Le service s’est arrêté et a fermé la connexion.</string>
+    <string name="notification_permission_start_denied">Le service en arrière-plan n’a pas été démarré, car l’autorisation de notification n’a pas été accordée.</string>
+
+    <string name="android_auto_state_connected">Android Auto connecté</string>
+    <string name="android_auto_state_reconnecting">Reconnexion à Android Auto</string>
+    <string name="android_auto_state_disconnected">Android Auto déconnecté</string>
+    <string name="android_auto_reason_streaming">Réception de la vidéo Android Auto</string>
+    <string name="android_auto_reason_link_ready">En attente de la vidéo…</string>
+    <string name="android_auto_reason_waiting_for_phone">En attente du téléphone</string>
+    <string name="android_auto_reason_retrying">Nouvelle tentative de connexion à Android Auto</string>
+    <string name="android_auto_reason_decoder_recovery">En attente de la vidéo…</string>
+    <string name="android_auto_reason_phone_ended_session">Le téléphone a mis fin à la connexion Android Auto</string>
+    <string name="android_auto_reason_head_unit_server_stopped">Le serveur d’unité principale Android Auto est désactivé sur ce téléphone</string>
+    <string name="android_auto_reason_network_interrupted">La connexion avec le téléphone a été interrompue</string>
+    <string name="android_auto_reason_authentication_failed">Échec de l’authentification Android Auto</string>
+    <string name="android_auto_reason_incompatible_version">Cette version d’Android Auto n’est pas compatible</string>
+    <string name="android_auto_reason_protocol_error">Une erreur de communication Android Auto s’est produite</string>
+    <string name="android_auto_reason_decoder_unavailable">Le décodeur vidéo Android Auto n’est pas disponible sur cet appareil</string>
+    <string name="android_auto_reason_display_unavailable">L’écran de projection n’est pas disponible</string>
+    <string name="android_auto_reason_not_configured">La connexion Android Auto n’est pas configurée</string>
+    <string name="android_auto_reason_session_stopped">La connexion Android Auto est arrêtée</string>
+    <string name="android_auto_reason_unknown">La connexion Android Auto a été perdue</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">Auto</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">Choisit automatiquement un codec pris en charge à la fois par cet appareil et par le navigateur</string>
+    <string name="codec_h264_description">Codec matériel optimisé pour la compatibilité</string>
+    <string name="codec_vp8_description">Codec de base compatible WebRTC</string>
+    <string name="codec_vp9_description">À utiliser sur les appareils prenant en charge une meilleure efficacité de compression</string>
+    <string name="codec_av1_description">Efficacité de compression maximale sur les appareils récents compatibles</string>
+    <string name="codec_policy_pending">Le codec sélectionné est utilisé pour la négociation WebRTC et renégocié automatiquement pendant la connexion.</string>
+    <string name="codec_saved">%1$s enregistré et renégociation WebRTC demandée.</string>
+    <string name="codec_save_failed">Impossible d’enregistrer la sélection du codec. Le paramètre précédent est conservé.</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">%1$s au démarrage, %2$s max.</string>
+    <string name="projection_bitrate_mbps">%1$s Mbit/s</string>
+    <string name="projection_profile_waiting_for_service">En attente du service de projection.</string>
+    <string name="projection_profile_service_not_connected">Le service de projection n’est pas connecté.</string>
+    <string name="projection_profile_checking">Vérification de l’état du profil.</string>
+    <string name="projection_profile_reconnecting_status">Reconnexion automatique pour appliquer le profil %1$s.</string>
+    <string name="projection_profile_active_status">Le profil %1$s est actif.</string>
+    <string name="projection_profile_applied_immediately">Le profil %1$d×%2$d a été appliqué immédiatement.</string>
+    <string name="projection_profile_auto_apply_failed">L’application automatique du profil a échoué. Le paramètre précédent est conservé.</string>
+    <string name="projection_service_connect_first">Connectez-vous au service de projection, puis réessayez.</string>
+    <string name="projection_profile_request_failed">La demande de profil n’a pas pu être traitée.</string>
+    <string name="projection_profile_applied">Le profil %1$d×%2$d a été appliqué.</string>
+    <string name="projection_profile_reconnecting">Reconnexion automatique pour appliquer le profil %1$d×%2$d.</string>
+    <string name="projection_profile_not_entitled">Ce profil n’est pas disponible avec le niveau d’accès actuel.</string>
+    <string name="projection_profile_persistence_failed">La modification a été annulée, car le paramètre de profil n’a pas pu être enregistré en toute sécurité.</string>
+    <string name="projection_profile_unknown">Ce profil n’est pas fourni par le service.</string>
+    <string name="projection_dpi_saved">%1$d DPI enregistré.</string>
+    <string name="projection_dpi_saved_reconnecting">%1$d DPI enregistré, reconnexion d’Android Auto en cours. La session multimédia du navigateur reste active.</string>
+    <string name="projection_dpi_reset_saved">Valeur recommandée de %1$d DPI rétablie.</string>
+    <string name="projection_dpi_save_failed">Impossible d’enregistrer le paramètre DPI. La valeur précédente est conservée.</string>
+    <string name="projection_dpi_invalid">Choisissez une valeur DPI entière comprise entre 72 et 320.</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">L’enregistrement du fichier journal a été annulé.</string>
+    <string name="diagnostic_export_succeeded">Le fichier journal de diagnostic a été enregistré.</string>
+    <string name="diagnostic_export_failed">Le fichier journal de diagnostic n’a pas pu être enregistré.</string>
+    <string name="diagnostic_no_logs_to_save">Aucun journal de diagnostic à enregistrer.</string>
+    <string name="diagnostic_upload_queued">Les données de diagnostic approuvées sont en cours d’envoi. Les nouveaux envois sont limités à un toutes les 30 minutes, et en cas d’échec temporaire de cet élément, une nouvelle tentative aura lieu après au moins 30 minutes.</string>
+    <string name="diagnostic_description_required">Décrivez ce qui se passait lorsque l’erreur s’est produite.</string>
+    <string name="diagnostic_description_too_long">La description ne doit pas dépasser 500 caractères et 2 Kio.</string>
+    <string name="diagnostic_description_invalid_character">La description contient un caractère de contrôle non autorisé.</string>
+    <string name="diagnostic_no_logs_to_upload">Aucun journal de diagnostic à envoyer.</string>
+    <string name="diagnostic_outbox_full">Trois journaux d’erreurs sont déjà en attente. Réessayez lorsqu’un envoi sera terminé.</string>
+    <string name="diagnostic_rate_limited">Les nouveaux envois de diagnostic sont limités à un toutes les 30 minutes après approbation de l’utilisateur. Réessayez dans environ %1$d minutes.</string>
+    <string name="diagnostic_persistence_failed">Le fichier d’envoi du journal d’erreurs n’a pas pu être préparé en toute sécurité.</string>
+    <string name="diagnostic_scheduling_failed">L’envoi du journal d’erreurs n’a pas pu être planifié.</string>
+    <string name="diagnostic_recovery_failed">Impossible de restaurer la tâche d’envoi pour %1$d journaux d’erreurs en attente.</string>
+    <string name="diagnostic_cancel_none">Aucun journal d’erreurs en attente à annuler.</string>
+    <string name="diagnostic_cancel_succeeded">%1$d journaux d’erreurs en attente ont été annulés et supprimés.</string>
+    <string name="diagnostic_cancel_partial">%1$d journaux d’erreurs annulés ; %2$d n’ont pas pu être annulés.</string>
+    <string name="diagnostic_clear_succeeded">Les journaux de diagnostic ont été supprimés.</string>
+    <string name="diagnostic_clear_failed">Les journaux de diagnostic n’ont pas pu être supprimés.</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">Le service n’a pas pu démarrer, car la confirmation de l’état de stationnement n’était pas disponible.</string>
+    <string name="projection_preflight_reconnecting">Reconnexion à Android Auto · vérification préalable locale</string>
+    <string name="projection_preflight_failed">La vérification préalable locale a échoué.</string>
+    <string name="projection_service_start_failed">Android Auto n’a pas pu être démarré.</string>
+    <string name="browser_server_start_failed">Le serveur du navigateur n’a pas pu être démarré.</string>
+    <string name="browser_ready_notification">Navigateur prêt · %1$s</string>
+    <string name="projection_profile_applying">Application du profil d’affichage en cours.</string>
+    <string name="projection_profile_safety_cancelled">Le changement de profil d’affichage a été annulé, car l’état de sécurité n’a pas pu être vérifié.</string>
+    <string name="projection_profile_applied_jpeg_fallback">Le profil %1$d×%2$d a été appliqué. WebRTC ne dispose d’aucun codec pris en charge, l’affichage de secours JPEG est donc actif.</string>
+    <string name="projection_profile_applied_reconnecting">Le profil %1$d×%2$d a été appliqué, reconnexion d’Android Auto en cours.</string>
+    <string name="projection_viewport_safety_cancelled">L’application dynamique du format d’image a été annulée, car l’état de sécurité n’a pas pu être vérifié.</string>
+    <string name="projection_viewport_applying">Ajustement de l’affichage Android Auto à la taille du navigateur.</string>
+    <string name="projection_viewport_applied">Le format d’image du navigateur a été appliqué, reconnexion d’Android Auto en cours.</string>
+    <string name="projection_surface_lost">L’écran de projection a disparu, la connexion a donc été fermée en toute sécurité.</string>
+    <string name="notification_stop_action">Arrêter</string>
+    <string name="projection_notification_channel">Service web Android Auto</string>
+    <string name="connection_notification_channel">Alertes de connexion Android Auto</string>
+    <string name="connection_notification_channel_description">Vous alerte une seule fois lorsqu’une session Android Auto connectée est interrompue.</string>
+</resources>

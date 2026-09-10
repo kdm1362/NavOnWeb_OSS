@@ -15,53 +15,83 @@ import org.w3c.dom.Node
 
 class AndroidStringResourceParityTest {
     @Test
-    fun `Korean resources cover every default string and plurals resource`() {
+    fun `every translated locale covers every default string and plurals resource`() {
         val defaultResources = readTextResources(findResourceDirectory("values"))
-        val koreanResources = readTextResources(findResourceDirectory("values-ko"))
-
         assertTrue(
             "Default resources contain duplicate string or plurals names: " +
                 defaultResources.duplicates.sorted().joinToString(),
             defaultResources.duplicates.isEmpty(),
         )
-        assertTrue(
-            "Korean resources contain duplicate string or plurals names: " +
-                koreanResources.duplicates.sorted().joinToString(),
-            koreanResources.duplicates.isEmpty(),
-        )
 
-        val missingInKorean = defaultResources.entries.keys - koreanResources.entries.keys
-        val extraInKorean = koreanResources.entries.keys - defaultResources.entries.keys
-        assertTrue(
-            "Korean resources are missing: ${missingInKorean.sorted().joinToString()}",
-            missingInKorean.isEmpty(),
-        )
-        assertTrue(
-            "Korean resources have no default counterpart: ${extraInKorean.sorted().joinToString()}",
-            extraInKorean.isEmpty(),
-        )
+        val localeDirectories = translatedResourceDirectories()
+        assertTrue("values-ko must be translated", localeDirectories.any { it.fileName.toString() == "values-ko" })
 
-        defaultResources.entries.toSortedMap().forEach { (name, defaultEntry) ->
-            val koreanEntry = koreanResources.entries.getValue(name)
-            assertEquals(
-                "Resource kind differs for $name",
-                defaultEntry.javaClass,
-                koreanEntry.javaClass,
+        localeDirectories.forEach { directory ->
+            val qualifier = directory.fileName.toString()
+            val translated = readTextResources(directory)
+            assertTrue(
+                "$qualifier contains duplicate string or plurals names: " +
+                    translated.duplicates.sorted().joinToString(),
+                translated.duplicates.isEmpty(),
             )
-            when (defaultEntry) {
-                is TextResource.StringValue -> assertEquals(
-                    "printf placeholders differ for string/$name",
-                    printfPlaceholders(defaultEntry.text),
-                    printfPlaceholders((koreanEntry as TextResource.StringValue).text),
-                )
 
-                is TextResource.PluralsValue -> comparePluralPlaceholders(
-                    name = name,
-                    defaultValue = defaultEntry,
-                    koreanValue = koreanEntry as TextResource.PluralsValue,
+            val missing = defaultResources.entries.keys - translated.entries.keys
+            val extra = translated.entries.keys - defaultResources.entries.keys
+            assertTrue(
+                "$qualifier is missing: ${missing.sorted().joinToString()}",
+                missing.isEmpty(),
+            )
+            assertTrue(
+                "$qualifier has no default counterpart for: ${extra.sorted().joinToString()}",
+                extra.isEmpty(),
+            )
+
+            defaultResources.entries.toSortedMap().forEach { (name, defaultEntry) ->
+                val translatedEntry = translated.entries.getValue(name)
+                assertEquals(
+                    "Resource kind differs for $qualifier/$name",
+                    defaultEntry.javaClass,
+                    translatedEntry.javaClass,
                 )
+                when (defaultEntry) {
+                    is TextResource.StringValue -> assertEquals(
+                        "printf placeholders differ for $qualifier string/$name",
+                        printfPlaceholders(defaultEntry.text),
+                        printfPlaceholders((translatedEntry as TextResource.StringValue).text),
+                    )
+
+                    is TextResource.PluralsValue -> comparePluralPlaceholders(
+                        name = "$qualifier/$name",
+                        defaultValue = defaultEntry,
+                        koreanValue = translatedEntry as TextResource.PluralsValue,
+                    )
+                }
             }
         }
+    }
+
+    @Test
+    fun `locales_config lists exactly the bundled translations`() {
+        // The per-app language picker (Android 13+) shows what locales_config declares, so it
+        // must match the resource directories one-to-one: en (default) plus every values-*.
+        val expected = translatedResourceDirectories()
+            .map { directory ->
+                val qualifier = directory.fileName.toString().removePrefix("values-")
+                when (qualifier) {
+                    "in" -> "id"
+                    "zh-rCN" -> "zh-CN"
+                    else -> qualifier.replace("-r", "-")
+                }
+            }
+            .plus("en")
+            .toSortedSet()
+        val localesConfig = findResourceDirectory("xml").resolve("locales_config.xml")
+        val factory = DocumentBuilderFactory.newInstance()
+        val document = Files.newInputStream(localesConfig).use { factory.newDocumentBuilder().parse(it) }
+        val declared = document.getElementsByTagName("locale").let { nodes ->
+            (0 until nodes.length).map { (nodes.item(it) as Element).getAttribute("android:name") }
+        }.toSortedSet()
+        assertEquals(expected, declared)
     }
 
     @Test
@@ -185,6 +215,19 @@ class AndroidStringResourceParityTest {
                 printfPlaceholders(defaultText),
                 printfPlaceholders(translatedText),
             )
+        }
+    }
+
+    private fun translatedResourceDirectories(): List<Path> {
+        val resourceRoot = findResourceDirectory("values").parent
+        return Files.list(resourceRoot).use { directories ->
+            directories
+                .filter { Files.isDirectory(it) && it.fileName.toString().startsWith("values-") }
+                .filter { directory ->
+                    Files.list(directory).use { files -> files.anyMatch { it.fileName.toString().startsWith("strings") } }
+                }
+                .sorted()
+                .toList()
         }
     }
 

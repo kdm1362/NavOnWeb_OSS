@@ -34,6 +34,20 @@ function sourceBetween(startMarker, endMarker) {
   return appScript.slice(start, end);
 }
 
+// The locale tables are declared ahead of the I18N dictionary because the resolvers run while
+// the module initializes (a const declared later would be a temporal-dead-zone error).
+const localeConstantsSource = sourceBetween(
+  "  const SUPPORTED_LOCALES = Object.freeze([",
+  "  const I18N = Object.freeze({",
+);
+
+test("locale tables are initialized before the module resolves the active locale", () => {
+  const tables = appScript.indexOf("  const SUPPORTED_LOCALES = Object.freeze([");
+  const firstUse = appScript.indexOf("let ACTIVE_LOCALE = PATH_LOCALE || resolveSystemLocale()");
+  assert.ok(tables >= 0 && firstUse > tables);
+  assert.ok(appScript.indexOf("  const DATE_TIME_FALLBACK_LOCALES") < firstUse);
+});
+
 function loadLocaleResolvers(navigatorValue = {}) {
   const source = sourceBetween(
     "  function resolveBrowserLanguageCandidates",
@@ -41,7 +55,7 @@ function loadLocaleResolvers(navigatorValue = {}) {
   );
   return Function(
     "navigator",
-    `"use strict";\n${source}\nreturn {\n` +
+    `"use strict";\n${localeConstantsSource}\n${source}\nreturn {\n` +
       "  resolveBrowserLanguageCandidates,\n" +
       "  resolveSystemLocale,\n" +
       "  resolvePathLocale,\n" +
@@ -51,7 +65,7 @@ function loadLocaleResolvers(navigatorValue = {}) {
   )(navigatorValue);
 }
 
-test("system locale resolver selects Korean or English and safely falls back", () => {
+test("system locale resolver picks the first bundled language and safely falls back", () => {
   const {
     resolveBrowserLanguageCandidates,
     resolveSystemLocale,
@@ -67,9 +81,27 @@ test("system locale resolver selects Korean or English and safely falls back", (
   );
   assert.equal(resolveSystemLocale(["ko-KR"]), "ko");
   assert.equal(resolveSystemLocale(["en-GB"]), "en");
-  assert.equal(resolveSystemLocale(["ja-JP", "ko-KR"]), "ko");
-  assert.equal(resolveSystemLocale(["ja-JP"]), "en");
+  assert.equal(resolveSystemLocale(["sw-KE", "ko-KR"]), "ko");
+  assert.equal(resolveSystemLocale(["sw-KE"]), "en");
   assert.equal(resolveSystemLocale([]), "en");
+  // Every bundled dictionary resolves from its regional tags; unsupported languages skip ahead.
+  assert.equal(resolveSystemLocale(["ja-JP"]), "ja");
+  assert.equal(resolveSystemLocale(["es-419"]), "es");
+  assert.equal(resolveSystemLocale(["pt-BR"]), "pt");
+  assert.equal(resolveSystemLocale(["pt-PT"]), "pt");
+  assert.equal(resolveSystemLocale(["ar-SA"]), "ar");
+  assert.equal(resolveSystemLocale(["hi-IN"]), "hi");
+  assert.equal(resolveSystemLocale(["id-ID"]), "id");
+  assert.equal(resolveSystemLocale(["in-ID"]), "id", "legacy Indonesian tag");
+  assert.equal(resolveSystemLocale(["de-AT"]), "de");
+  assert.equal(resolveSystemLocale(["fr-CA"]), "fr");
+  assert.equal(resolveSystemLocale(["ru-RU"]), "ru");
+  assert.equal(resolveSystemLocale(["tr-TR"]), "tr");
+  assert.equal(resolveSystemLocale(["zh-CN"]), "zh");
+  assert.equal(resolveSystemLocale(["zh-Hans-SG"]), "zh");
+  assert.equal(resolveSystemLocale(["zh-TW", "en-US"]), "en", "only Simplified Chinese is bundled");
+  assert.equal(resolveSystemLocale(["zh-Hant-HK", "ja-JP"]), "ja");
+  assert.equal(resolveSystemLocale(["sw-KE", "de-DE", "ko-KR"]), "de", "first supported candidate wins");
   assert.deepEqual(
     [...resolveNoticeLocaleCandidates(["ko-KR", "en-GB"], "ko")],
     ["ko-kr", "ko", "en-gb", "en"],
@@ -107,6 +139,9 @@ test("notice dates use the browser region and retain a deterministic fallback", 
   assert.match(british, /^en-GB$/iu);
   assert.equal(resolveDateTimeLocale(["not_a_locale"], "ko"), "ko-KR");
   assert.equal(resolveDateTimeLocale([], "en"), "en-US");
+  assert.equal(resolveDateTimeLocale([], "pt"), "pt-BR");
+  assert.equal(resolveDateTimeLocale([], "zh"), "zh-CN");
+  assert.equal(resolveDateTimeLocale([], "xx"), "en-US");
 
   const source = sourceBetween(
     "  function formattedNoticeTime",
@@ -268,19 +303,23 @@ test("locale failure cannot leave the page permanently hidden", () => {
   );
 });
 
-test("debug console language switch keeps the existing ko and en locale standard", () => {
+test("debug console language switch accepts exactly the bundled locales", () => {
+  const supportedSource = localeConstantsSource;
   const normalizeSource = sourceBetween(
     "  function normalizeDebugLocale",
     "  function changeDebugLanguage",
   );
   const normalizeDebugLocale = Function(
-    `"use strict";\n${normalizeSource}\nreturn normalizeDebugLocale;`,
+    `"use strict";\n${supportedSource}\n${normalizeSource}\nreturn normalizeDebugLocale;`,
   )();
 
   assert.equal(normalizeDebugLocale("KO"), "ko");
   assert.equal(normalizeDebugLocale(" en "), "en");
+  assert.equal(normalizeDebugLocale("ja"), "ja");
+  assert.equal(normalizeDebugLocale("ZH"), "zh");
   assert.throws(() => normalizeDebugLocale("kr"), /accepts only/u);
-  assert.throws(() => normalizeDebugLocale("ja"), /accepts only/u);
+  assert.throws(() => normalizeDebugLocale("sw"), /accepts only/u);
+  assert.throws(() => normalizeDebugLocale("zh-TW"), /accepts only/u);
   const switchSource = sourceBetween(
     "  function normalizeDebugLocale",
     "  function loadRememberedCredential",
@@ -300,6 +339,7 @@ test("debug console language switch keeps the existing ko and en locale standard
 let ACTIVE_LOCALE = "ko";
 let NOTICE_LOCALE_CANDIDATES = Object.freeze(["ko", "en"]);
 let NOTICE_DATE_TIME_LOCALE = "ko-KR";
+${supportedSource}
 ${switchSource}
 return {
   getState: () => ({

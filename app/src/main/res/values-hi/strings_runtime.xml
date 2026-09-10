@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">सर्विस बंद है.</string>
+    <string name="session_local_browser_starting">वीडियो का इंतज़ार है...</string>
+    <string name="session_browser_ready">ब्राउज़र कनेक्शन तैयार है.</string>
+    <string name="session_native_status_checking">जांच हो रही है</string>
+    <string name="session_stopped_by_user">उपयोगकर्ता ने सर्विस बंद कर दी.</string>
+    <string name="session_closed_after_service_stop">सर्विस बंद हो गई और कनेक्शन बंद कर दिया गया.</string>
+    <string name="notification_permission_start_denied">सूचना की अनुमति नहीं मिली, इसलिए बैकग्राउंड सर्विस शुरू नहीं की गई.</string>
+
+    <string name="android_auto_state_connected">Android Auto कनेक्ट है</string>
+    <string name="android_auto_state_reconnecting">Android Auto से फिर से कनेक्ट हो रहा है</string>
+    <string name="android_auto_state_disconnected">Android Auto डिसकनेक्ट है</string>
+    <string name="android_auto_reason_streaming">Android Auto वीडियो मिल रहा है</string>
+    <string name="android_auto_reason_link_ready">वीडियो का इंतज़ार है...</string>
+    <string name="android_auto_reason_waiting_for_phone">फ़ोन का इंतज़ार है</string>
+    <string name="android_auto_reason_retrying">Android Auto कनेक्शन की फिर से कोशिश हो रही है</string>
+    <string name="android_auto_reason_decoder_recovery">वीडियो का इंतज़ार है...</string>
+    <string name="android_auto_reason_phone_ended_session">फ़ोन ने Android Auto कनेक्शन खत्म कर दिया</string>
+    <string name="android_auto_reason_head_unit_server_stopped">इस फ़ोन पर Android Auto हेड यूनिट सर्वर बंद है</string>
+    <string name="android_auto_reason_network_interrupted">फ़ोन से कनेक्शन बीच में टूट गया</string>
+    <string name="android_auto_reason_authentication_failed">Android Auto की पुष्टि नहीं हो सकी</string>
+    <string name="android_auto_reason_incompatible_version">Android Auto का यह वर्शन संगत नहीं है</string>
+    <string name="android_auto_reason_protocol_error">Android Auto संचार में गड़बड़ी हुई</string>
+    <string name="android_auto_reason_decoder_unavailable">इस डिवाइस पर Android Auto वीडियो डिकोडर उपलब्ध नहीं है</string>
+    <string name="android_auto_reason_display_unavailable">प्रोजेक्शन डिसप्ले उपलब्ध नहीं है</string>
+    <string name="android_auto_reason_not_configured">Android Auto कनेक्शन कॉन्फ़िगर नहीं किया गया है</string>
+    <string name="android_auto_reason_session_stopped">Android Auto कनेक्शन बंद है</string>
+    <string name="android_auto_reason_unknown">Android Auto कनेक्शन टूट गया</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">ऑटो</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">इस डिवाइस और ब्राउज़र, दोनों पर काम करने वाला कोडेक अपने-आप चुनें</string>
+    <string name="codec_h264_description">संगतता के लिए ऑप्टिमाइज़ किया गया हार्डवेयर कोडेक</string>
+    <string name="codec_vp8_description">WebRTC के साथ काम करने वाला बुनियादी कोडेक</string>
+    <string name="codec_vp9_description">ज़्यादा कंप्रेशन क्षमता वाले डिवाइस पर इस्तेमाल करें</string>
+    <string name="codec_av1_description">समर्थित नए डिवाइस पर सबसे ज़्यादा कंप्रेशन क्षमता</string>
+    <string name="codec_policy_pending">चुना गया कोडेक WebRTC नेगोशिएशन में इस्तेमाल होता है और कनेक्ट रहने पर अपने-आप फिर से नेगोशिएट किया जाता है.</string>
+    <string name="codec_saved">%1$s सेव किया गया और WebRTC री-नेगोशिएशन का अनुरोध किया गया.</string>
+    <string name="codec_save_failed">कोडेक का चयन सेव नहीं किया जा सका. पिछली सेटिंग जस की तस है.</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">शुरू %1$s / अधिकतम %2$s</string>
+    <string name="projection_bitrate_mbps">%1$s Mbps</string>
+    <string name="projection_profile_waiting_for_service">प्रोजेक्शन सर्विस का इंतज़ार है.</string>
+    <string name="projection_profile_service_not_connected">प्रोजेक्शन सर्विस कनेक्ट नहीं है.</string>
+    <string name="projection_profile_checking">प्रोफ़ाइल की स्थिति जांची जा रही है.</string>
+    <string name="projection_profile_reconnecting_status">%1$s प्रोफ़ाइल लागू करने के लिए अपने-आप फिर से कनेक्ट हो रहा है.</string>
+    <string name="projection_profile_active_status">%1$s प्रोफ़ाइल चालू है.</string>
+    <string name="projection_profile_applied_immediately">%1$d×%2$d प्रोफ़ाइल तुरंत लागू कर दी गई.</string>
+    <string name="projection_profile_auto_apply_failed">प्रोफ़ाइल अपने-आप लागू नहीं हो सकी. पिछली सेटिंग जस की तस है.</string>
+    <string name="projection_service_connect_first">प्रोजेक्शन सर्विस से कनेक्ट करके फिर से कोशिश करें.</string>
+    <string name="projection_profile_request_failed">प्रोफ़ाइल का अनुरोध प्रोसेस नहीं किया जा सका.</string>
+    <string name="projection_profile_applied">%1$d×%2$d प्रोफ़ाइल लागू कर दी गई.</string>
+    <string name="projection_profile_reconnecting">%1$d×%2$d प्रोफ़ाइल लागू करने के लिए अपने-आप फिर से कनेक्ट हो रहा है.</string>
+    <string name="projection_profile_not_entitled">यह प्रोफ़ाइल मौजूदा ऐक्सेस स्तर पर उपलब्ध नहीं है.</string>
+    <string name="projection_profile_persistence_failed">प्रोफ़ाइल सेटिंग सुरक्षित रूप से सेव नहीं की जा सकी, इसलिए बदलाव रद्द कर दिया गया.</string>
+    <string name="projection_profile_unknown">यह प्रोफ़ाइल सर्विस की ओर से उपलब्ध नहीं कराई जाती.</string>
+    <string name="projection_dpi_saved">%1$d DPI सेव किया गया.</string>
+    <string name="projection_dpi_saved_reconnecting">%1$d DPI सेव किया गया और Android Auto फिर से कनेक्ट हो रहा है. ब्राउज़र का मीडिया सेशन चालू रहेगा.</string>
+    <string name="projection_dpi_reset_saved">सुझाया गया मान %1$d DPI वापस लागू कर दिया गया.</string>
+    <string name="projection_dpi_save_failed">DPI सेटिंग सेव नहीं की जा सकी. पिछला मान जस का तस है.</string>
+    <string name="projection_dpi_invalid">72 से 320 के बीच का कोई पूर्णांक DPI चुनें.</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">लॉग फ़ाइल सेव करना रद्द कर दिया गया.</string>
+    <string name="diagnostic_export_succeeded">डायग्नोस्टिक लॉग फ़ाइल सेव कर दी गई.</string>
+    <string name="diagnostic_export_failed">डायग्नोस्टिक लॉग फ़ाइल सेव नहीं की जा सकी.</string>
+    <string name="diagnostic_no_logs_to_save">सेव करने के लिए कोई डायग्नोस्टिक लॉग नहीं है.</string>
+    <string name="diagnostic_upload_queued">मंज़ूर किया गया डायग्नोस्टिक डेटा भेजा जा रहा है. नए अपलोड हर 30 मिनट में सिर्फ़ एक तक सीमित हैं, और इस आइटम के कुछ समय के लिए विफल होने पर कम से कम 30 मिनट बाद फिर से कोशिश की जाएगी.</string>
+    <string name="diagnostic_description_required">बताएं कि गड़बड़ी होने के समय क्या हो रहा था.</string>
+    <string name="diagnostic_description_too_long">विवरण 500 वर्णों और 2 KiB के अंदर रखें.</string>
+    <string name="diagnostic_description_invalid_character">विवरण में ऐसा कंट्रोल कैरेक्टर है, जिसकी अनुमति नहीं है.</string>
+    <string name="diagnostic_no_logs_to_upload">भेजने के लिए कोई डायग्नोस्टिक लॉग नहीं है.</string>
+    <string name="diagnostic_outbox_full">तीन एरर लॉग पहले से इंतज़ार में हैं. कोई अपलोड पूरा होने के बाद फिर से कोशिश करें.</string>
+    <string name="diagnostic_rate_limited">उपयोगकर्ता की मंज़ूरी के बाद नए डायग्नोस्टिक अपलोड हर 30 मिनट में सिर्फ़ एक तक सीमित हैं. करीब %1$d मिनट बाद फिर से कोशिश करें.</string>
+    <string name="diagnostic_persistence_failed">एरर लॉग अपलोड फ़ाइल सुरक्षित रूप से तैयार नहीं की जा सकी.</string>
+    <string name="diagnostic_scheduling_failed">एरर लॉग अपलोड शेड्यूल नहीं किया जा सका.</string>
+    <string name="diagnostic_recovery_failed">%1$d लंबित एरर लॉग के लिए अपलोड टास्क वापस शुरू नहीं किया जा सका.</string>
+    <string name="diagnostic_cancel_none">रद्द करने के लिए कोई लंबित एरर लॉग नहीं है.</string>
+    <string name="diagnostic_cancel_succeeded">%1$d लंबित एरर लॉग रद्द करके मिटा दिए गए.</string>
+    <string name="diagnostic_cancel_partial">%1$d एरर लॉग रद्द किए गए; %2$d रद्द नहीं किए जा सके.</string>
+    <string name="diagnostic_clear_succeeded">डायग्नोस्टिक लॉग मिटा दिए गए.</string>
+    <string name="diagnostic_clear_failed">डायग्नोस्टिक लॉग नहीं मिटाए जा सके.</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">गाड़ी के पार्क होने की पुष्टि उपलब्ध नहीं थी, इसलिए सर्विस शुरू नहीं हो सकी.</string>
+    <string name="projection_preflight_reconnecting">Android Auto से फिर से कनेक्ट हो रहा है · लोकल शुरुआती जांच</string>
+    <string name="projection_preflight_failed">लोकल शुरुआती जांच विफल रही.</string>
+    <string name="projection_service_start_failed">Android Auto शुरू नहीं किया जा सका.</string>
+    <string name="browser_server_start_failed">ब्राउज़र सर्वर शुरू नहीं किया जा सका.</string>
+    <string name="browser_ready_notification">ब्राउज़र तैयार · %1$s</string>
+    <string name="projection_profile_applying">डिसप्ले प्रोफ़ाइल अभी लागू की जा रही है.</string>
+    <string name="projection_profile_safety_cancelled">सुरक्षा स्थिति की पुष्टि नहीं हो सकी, इसलिए डिसप्ले प्रोफ़ाइल का बदलाव रद्द कर दिया गया.</string>
+    <string name="projection_profile_applied_jpeg_fallback">%1$d×%2$d प्रोफ़ाइल लागू कर दी गई. WebRTC के लिए कोई समर्थित कोडेक नहीं है, इसलिए JPEG फ़ॉलबैक डिसप्ले चालू है.</string>
+    <string name="projection_profile_applied_reconnecting">%1$d×%2$d प्रोफ़ाइल लागू कर दी गई और Android Auto फिर से कनेक्ट हो रहा है.</string>
+    <string name="projection_viewport_safety_cancelled">सुरक्षा स्थिति की पुष्टि नहीं हो सकी, इसलिए डाइनैमिक आसपेक्ट रेशियो लागू करना रद्द कर दिया गया.</string>
+    <string name="projection_viewport_applying">Android Auto डिसप्ले को ब्राउज़र के आकार के हिसाब से फ़िट किया जा रहा है.</string>
+    <string name="projection_viewport_applied">ब्राउज़र का आसपेक्ट रेशियो लागू कर दिया गया और Android Auto फिर से कनेक्ट हो रहा है.</string>
+    <string name="projection_surface_lost">प्रोजेक्शन डिसप्ले गायब हो गया, इसलिए कनेक्शन सुरक्षित रूप से बंद कर दिया गया.</string>
+    <string name="notification_stop_action">बंद करें</string>
+    <string name="projection_notification_channel">Android Auto वेब सर्विस</string>
+    <string name="connection_notification_channel">Android Auto कनेक्शन अलर्ट</string>
+    <string name="connection_notification_channel_description">कनेक्ट किया गया Android Auto सेशन बीच में टूटने पर एक बार अलर्ट करता है.</string>
+</resources>

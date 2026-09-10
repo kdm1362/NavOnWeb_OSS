@@ -882,21 +882,38 @@ class BrowserProbeServerPolicyTest {
         val index = readAsset("index.html")
         val script = readAsset("app.js")
 
-        fun localeKeys(locale: String, nextMarker: String): Set<String> {
+        // Every dictionary in the I18N table (en, ko and the bundled translations) must carry
+        // exactly the English key set; a missing key would silently fall back to English text.
+        val localeBlocks = Regex("(?m)^    ([a-z]{2}): Object\\.freeze\\(\\{")
+            .findAll(script)
+            .map { it.groupValues[1] }
+            .toList()
+        assertTrue("locale blocks: $localeBlocks", localeBlocks.first() == "en" && "ko" in localeBlocks)
+        assertTrue("expected the bundled translations, found $localeBlocks", localeBlocks.size >= 13)
+
+        fun localeKeys(locale: String): Set<String> {
             val marker = "    $locale: Object.freeze({"
             val start = script.indexOf(marker)
-            val end = script.indexOf(nextMarker, start + marker.length)
-            assertTrue("missing locale block $locale", start >= 0 && end > start)
+            assertTrue("missing locale block $locale", start >= 0)
+            val end = script.indexOf("\n    })", start + marker.length)
+            assertTrue("unterminated locale block $locale", end > start)
             return Regex("(?m)^      ([A-Za-z][A-Za-z0-9]*):")
                 .findAll(script.substring(start, end))
                 .map { it.groupValues[1] }
                 .toSet()
         }
 
-        val englishKeys = localeKeys("en", "    ko: Object.freeze({")
-        val koreanKeys = localeKeys("ko", "  });\n  const PATH_LOCALE")
-        assertEquals(englishKeys, koreanKeys)
+        val englishKeys = localeKeys("en")
         assertTrue(englishKeys.size >= 25)
+        localeBlocks.forEach { locale ->
+            assertEquals("dictionary keys differ for $locale", englishKeys, localeKeys(locale))
+        }
+        // The locale tables are consulted while the module initializes, so they must be
+        // declared ahead of that first use (a later const would be a temporal-dead-zone error).
+        assertTrue(
+            script.indexOf("const SUPPORTED_LOCALES = Object.freeze([") <
+                script.indexOf("let ACTIVE_LOCALE = PATH_LOCALE || resolveSystemLocale()"),
+        )
 
         assertTrue(index.contains("<html lang=\"en\""))
         assertTrue(index.contains("data-i18n-pending"))
@@ -912,20 +929,21 @@ class BrowserProbeServerPolicyTest {
 
         assertTrue(script.contains("if (Array.isArray(navigator.languages))"))
         assertTrue(script.contains("if (typeof navigator.language === 'string')"))
-        assertTrue(script.contains("if (base === 'ko' || base === 'en') return base"))
+        assertTrue(script.contains("const locale = supportedLocaleForLanguageTag(candidate);"))
+        assertTrue(script.contains("return SUPPORTED_LOCALES.includes(language) ? language : '';"))
         assertTrue(script.contains("return 'en';"))
         assertTrue(script.contains("const PATH_LOCALE = resolvePathLocale(window.location.pathname)"))
         assertTrue(script.contains("let ACTIVE_LOCALE = PATH_LOCALE || resolveSystemLocale()"))
-        assertTrue(script.contains("document.documentElement.lang = ACTIVE_LOCALE"))
+        assertTrue(script.contains("document.documentElement.lang = documentLanguageTag(ACTIVE_LOCALE)"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n]')"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n-aria-label]')"))
         assertTrue(script.contains("document.querySelectorAll('[data-i18n-alt]')"))
         assertTrue(script.contains("applyDocumentLocale();"))
         assertTrue(script.contains("Object.defineProperty(window, 'dbg'"))
         assertTrue(script.contains("changeLang: changeDebugLanguage"))
-        assertTrue(script.contains("requested === 'ko' || requested === 'en'"))
+        assertTrue(script.contains("if (SUPPORTED_LOCALES.includes(requested)) return requested;"))
         assertFalse(script.contains("requested === 'kr'"))
-        assertTrue(script.contains("accepts only \"ko\" or \"en\""))
+        assertTrue(script.contains("'dbg.changeLang(locale) accepts only '"))
         assertTrue(script.contains("applyDocumentLocale(previousLocale)"))
 
         assertTrue(script.contains("setStreamState('androidAutoWaiting')"))
@@ -1158,13 +1176,19 @@ class BrowserProbeServerPolicyTest {
             ),
         )
 
+        val localeBlockCount = Regex("(?m)^    [a-z]{2}: Object\\.freeze\\(\\{").findAll(script).count()
+        assertTrue("expected en, ko and the bundled translations", localeBlockCount >= 13)
         listOf(
             "localNetworkPrompt:",
             "localNetworkDenied:",
             "localNetworkAllow:",
             "localNetworkRetry:",
         ).forEach { marker ->
-            assertEquals("missing one translation per locale: $marker", 2, Regex(marker).findAll(script).count())
+            assertEquals(
+                "missing one translation per locale: $marker",
+                localeBlockCount,
+                Regex(marker).findAll(script).count(),
+            )
         }
         assertTrue(script.contains("navigator.permissions.query({name: 'local-network'})"))
         assertTrue(script.contains("navigator.permissions.query({name: 'local-network-access'})"))

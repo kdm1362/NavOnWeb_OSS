@@ -114,7 +114,7 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
   assert.match(landingCss, /@media \(max-width: 860px\)/u);
   assert.match(landingCss, /@media \(max-width: 520px\)/u);
   assert.match(landingCss, /@media \(prefers-reduced-motion: reduce\)/u);
-  assert.match(landingCss, /min-height: calc\(100svh - var\(--marketing-peek-height\)\)/u);
+  assert.match(landingCss, /min-height: calc\(100svh - var\(--marketing-peek-height\) - var\(--marketing-topband-height, 64px\)\)/u);
   assert.doesNotMatch(index, /<br\s*\/?\s*>/iu);
   assert.match(
     landingCss,
@@ -196,14 +196,6 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
   );
 
   const screenshotSources = new Map([
-    [
-      "navonweb-welcome-ko.png",
-      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "01-welcome.png"),
-    ],
-    [
-      "navonweb-welcome-en.png",
-      path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-phone-welcome-en.png"),
-    ],
     [
       "navonweb-premium-running-ko.png",
       path.resolve(cloudflareRoot, "..", "docs", "user-guide", "screenshots", "landing-phone-main-premium-ko.png"),

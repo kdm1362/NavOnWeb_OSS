@@ -15,7 +15,7 @@ body.navonweb-marketing-page:not(.navonweb-authenticated) main {
 
 body.navonweb-marketing-page:not(.navonweb-authenticated) #pairing-panel {
   width: min(460px, calc(100% - 32px));
-  min-height: calc(100svh - var(--marketing-peek-height));
+  min-height: calc(100svh - var(--marketing-peek-height) - var(--marketing-topband-height, 64px));
   margin: 0 auto;
   padding: clamp(72px, 12vh, 128px) 0;
   display: grid;
@@ -265,23 +265,32 @@ body.navonweb-authenticated #prepairing-marketing {
 }
 
 .marketing-phone-primary {
-  top: 1%;
-  left: 9%;
+  width: min(240px, 46%);
+  left: 0;
+  bottom: 0;
   transform: rotate(-4deg);
+  z-index: 1;
 }
 
-.marketing-phone-secondary {
-  right: 7%;
-  bottom: 1%;
-  transform: rotate(5deg);
-}
-
-.marketing-preview figcaption {
+.marketing-browser-shot {
   position: absolute;
-  right: 3%;
-  bottom: -36px;
-  color: #75889a;
-  font-size: 12px;
+  bottom: 55px;
+  right: -76px;
+  width: min(550px, 104%);
+  z-index: 2;
+  overflow: hidden;
+  transform: rotate(1.5deg);
+  border: 1px solid #67e8f936;
+  border-radius: 16px;
+  background: #05080c;
+  box-shadow: 0 34px 90px #000b, 0 0 0 8px #ffffff05;
+}
+
+.marketing-browser-shot img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1505 / 1045;
+  display: block;
 }
 
 .marketing-browser-showcase {
@@ -299,7 +308,8 @@ body.navonweb-authenticated #prepairing-marketing {
 
 .marketing-browser-preview img {
   width: 100%;
-  aspect-ratio: 1184 / 822;
+  height: auto;
+  aspect-ratio: 1505 / 1045;
   display: block;
   object-fit: cover;
   border: 1px solid #67e8f936;
@@ -495,8 +505,7 @@ body.navonweb-authenticated #prepairing-marketing {
   }
 
   .marketing-phone-primary { left: 0; }
-  .marketing-phone-secondary { right: 0; }
-  .marketing-preview figcaption { right: 0; }
+  .marketing-browser-shot { width: min(100%, 480px); right: -24px; bottom: 120px; border-radius: 12px; }
 
   .marketing-footer {
     grid-template-columns: 1fr;
@@ -523,8 +532,8 @@ body.navonweb-authenticated #prepairing-marketing {
     animation: marketing-float-primary 6.5s ease-in-out infinite;
   }
 
-  .marketing-phone-secondary {
-    animation: marketing-float-secondary 7.5s ease-in-out infinite reverse;
+  .marketing-browser-shot {
+    animation: marketing-float-browser 7.5s ease-in-out infinite;
   }
 
   .marketing-peek-arrow {
@@ -557,9 +566,9 @@ body.navonweb-authenticated #prepairing-marketing {
   50% { transform: rotate(-3deg) translateY(-12px); }
 }
 
-@keyframes marketing-float-secondary {
-  0%, 100% { transform: rotate(5deg) translateY(0); }
-  50% { transform: rotate(4deg) translateY(-10px); }
+@keyframes marketing-float-browser {
+  0%, 100% { transform: rotate(1.5deg) translateY(0); }
+  50% { transform: rotate(.8deg) translateY(-9px); }
 }
 
 @keyframes marketing-peek-bounce {
@@ -717,4 +726,91 @@ body.navonweb-authenticated #prepairing-marketing {
   }
   .privacy-document tr { margin-bottom: 16px; }
   .privacy-document th { border-bottom: 0; }
+}
+
+/* ---------------------------------------------------------------- */
+/* Topband: slim brand bar pinned to the top of the page. Hidden     */
+/* together with the rest of the pre-pairing marketing once the      */
+/* browser authenticates.                                            */
+
+body.navonweb-marketing-page {
+  --marketing-topband-height: 64px;
+}
+
+body.navonweb-authenticated #prepairing-topband {
+  display: none;
+}
+
+.marketing-topband {
+  --marketing-green: #78f2b5;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  border-bottom: 1px solid #ffffff12;
+  background: #071019f0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.marketing-topband-inner {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  min-height: var(--marketing-topband-height, 64px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: clamp(16px, 3vw, 36px);
+  align-items: center;
+}
+
+.marketing-topband-brand {
+  margin: 0;
+  color: #67e8f9;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -.03em;
+}
+
+.marketing-topband-title {
+  margin: 0;
+  color: #d7e3ee;
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.marketing-topband-actions {
+  display: flex;
+  align-items: center;
+}
+
+.marketing-topband-actions .marketing-store-cta {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: 0 8px 24px #67e8f91c;
+}
+
+@media (max-width: 760px) {
+  body.navonweb-marketing-page {
+    --marketing-topband-height: 56px;
+  }
+
+  .marketing-topband-inner {
+    width: min(100% - 28px, 1180px);
+    grid-template-columns: auto 1fr;
+  }
+
+  .marketing-topband-title {
+    display: none;
+  }
+
+  .marketing-topband-actions {
+    justify-self: end;
+  }
 }

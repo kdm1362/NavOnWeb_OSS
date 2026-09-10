@@ -362,10 +362,18 @@ test("all expanded-view entry paths preapply the viewport before native or theat
 });
 
 test("expanded viewport probe uses the exact fullscreen safe-area padding", () => {
-  assert.match(
-    indexHtml,
-    /#expanded-viewport-probe \{[\s\S]*padding: max\(12px, env\(safe-area-inset-top\)\)[\s\S]*max\(12px, env\(safe-area-inset-left\)\);/u,
-  );
+  // The probe must carry exactly the padding of both expanded views: only hardware safe areas,
+  // so the projection gets every pixel the browser can show.
+  const expandedPadding =
+    "padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)\n" +
+    "        env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);";
+  const probeBlock = indexHtml.slice(indexHtml.indexOf("#expanded-viewport-probe {"));
+  assert.ok(probeBlock.slice(0, probeBlock.indexOf("}")).includes(expandedPadding));
+  const nativeBlock = indexHtml.slice(indexHtml.indexOf("#viewer:fullscreen {"));
+  assert.ok(nativeBlock.slice(0, nativeBlock.indexOf("}")).includes(expandedPadding));
+  const theaterBlock = indexHtml.slice(indexHtml.indexOf("body.theater-mode #viewer {"));
+  assert.ok(theaterBlock.slice(0, theaterBlock.indexOf("}")).includes(expandedPadding));
+  assert.doesNotMatch(probeBlock.slice(0, probeBlock.indexOf("}")), /12px/u);
   assert.match(indexHtml, /<div id="expanded-viewport-probe" aria-hidden="true"><\/div>/u);
   assert.match(
     indexHtml,

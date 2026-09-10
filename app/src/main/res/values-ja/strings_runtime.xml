@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">サービスは停止しています。</string>
+    <string name="session_local_browser_starting">映像を待機中…</string>
+    <string name="session_browser_ready">ブラウザ接続の準備ができました。</string>
+    <string name="session_native_status_checking">確認中</string>
+    <string name="session_stopped_by_user">ユーザーがサービスを停止しました。</string>
+    <string name="session_closed_after_service_stop">サービスが停止したため、接続を閉じました。</string>
+    <string name="notification_permission_start_denied">通知の権限が許可されていないため、バックグラウンドサービスを開始しませんでした。</string>
+
+    <string name="android_auto_state_connected">Android Auto接続済み</string>
+    <string name="android_auto_state_reconnecting">Android Autoに再接続中</string>
+    <string name="android_auto_state_disconnected">Android Auto切断</string>
+    <string name="android_auto_reason_streaming">Android Autoの映像を受信中</string>
+    <string name="android_auto_reason_link_ready">映像を待機中…</string>
+    <string name="android_auto_reason_waiting_for_phone">スマートフォンを待機中</string>
+    <string name="android_auto_reason_retrying">Android Auto接続を再試行中</string>
+    <string name="android_auto_reason_decoder_recovery">映像を待機中…</string>
+    <string name="android_auto_reason_phone_ended_session">スマートフォンがAndroid Auto接続を終了しました</string>
+    <string name="android_auto_reason_head_unit_server_stopped">このスマートフォンでAndroid Autoヘッドユニットサーバーがオフになっています</string>
+    <string name="android_auto_reason_network_interrupted">スマートフォンとの接続が中断されました</string>
+    <string name="android_auto_reason_authentication_failed">Android Autoの認証に失敗しました</string>
+    <string name="android_auto_reason_incompatible_version">このAndroid Autoのバージョンには対応していません</string>
+    <string name="android_auto_reason_protocol_error">Android Autoの通信エラーが発生しました</string>
+    <string name="android_auto_reason_decoder_unavailable">このデバイスではAndroid Autoの映像デコーダーを使用できません</string>
+    <string name="android_auto_reason_display_unavailable">プロジェクションディスプレイを使用できません</string>
+    <string name="android_auto_reason_not_configured">Android Auto接続が設定されていません</string>
+    <string name="android_auto_reason_session_stopped">Android Auto接続は停止しています</string>
+    <string name="android_auto_reason_unknown">Android Auto接続が失われました</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">自動</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">このデバイスとブラウザの両方が対応するコーデックを自動的に選択します</string>
+    <string name="codec_h264_description">互換性を重視したハードウェアコーデック</string>
+    <string name="codec_vp8_description">WebRTC対応の基本コーデック</string>
+    <string name="codec_vp9_description">より高い圧縮効率に対応するデバイスで使用します</string>
+    <string name="codec_av1_description">対応する最新デバイスで最高の圧縮効率を実現します</string>
+    <string name="codec_policy_pending">選択したコーデックはWebRTCのネゴシエーションに使用され、接続中は自動的に再ネゴシエーションされます。</string>
+    <string name="codec_saved">%1$sを保存し、WebRTCの再ネゴシエーションを要求しました。</string>
+    <string name="codec_save_failed">コーデックの選択を保存できませんでした。以前の設定は変更されていません。</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">開始 %1$s / 最大 %2$s</string>
+    <string name="projection_bitrate_mbps">%1$s Mbps</string>
+    <string name="projection_profile_waiting_for_service">プロジェクションサービスを待機しています。</string>
+    <string name="projection_profile_service_not_connected">プロジェクションサービスに接続されていません。</string>
+    <string name="projection_profile_checking">プロファイルの状態を確認しています。</string>
+    <string name="projection_profile_reconnecting_status">%1$sプロファイルを適用するため、自動的に再接続しています。</string>
+    <string name="projection_profile_active_status">%1$sプロファイルが有効です。</string>
+    <string name="projection_profile_applied_immediately">%1$d×%2$dプロファイルを直ちに適用しました。</string>
+    <string name="projection_profile_auto_apply_failed">プロファイルの自動適用に失敗しました。以前の設定は変更されていません。</string>
+    <string name="projection_service_connect_first">プロジェクションサービスに接続してから、もう一度お試しください。</string>
+    <string name="projection_profile_request_failed">プロファイルの要求を処理できませんでした。</string>
+    <string name="projection_profile_applied">%1$d×%2$dプロファイルを適用しました。</string>
+    <string name="projection_profile_reconnecting">%1$d×%2$dプロファイルを適用するため、自動的に再接続しています。</string>
+    <string name="projection_profile_not_entitled">現在の利用権限では、このプロファイルを使用できません。</string>
+    <string name="projection_profile_persistence_failed">プロファイル設定を安全に保存できなかったため、変更をキャンセルしました。</string>
+    <string name="projection_profile_unknown">このプロファイルはサービスで提供されていません。</string>
+    <string name="projection_dpi_saved">%1$d DPIを保存しました。</string>
+    <string name="projection_dpi_saved_reconnecting">%1$d DPIを保存し、Android Autoを再接続しています。ブラウザのメディアセッションは維持されます。</string>
+    <string name="projection_dpi_reset_saved">推奨値の%1$d DPIに戻しました。</string>
+    <string name="projection_dpi_save_failed">DPI設定を保存できませんでした。以前の値は変更されていません。</string>
+    <string name="projection_dpi_invalid">72～320の整数のDPIを指定してください。</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">ログファイルの保存をキャンセルしました。</string>
+    <string name="diagnostic_export_succeeded">診断ログファイルを保存しました。</string>
+    <string name="diagnostic_export_failed">診断ログファイルを保存できませんでした。</string>
+    <string name="diagnostic_no_logs_to_save">保存する診断ログがありません。</string>
+    <string name="diagnostic_upload_queued">承認された診断データを送信しています。新しいアップロードは30分に1回に制限されており、この項目が一時的に失敗した場合は30分以上経過してから再試行されます。</string>
+    <string name="diagnostic_description_required">エラー発生時の状況を入力してください。</string>
+    <string name="diagnostic_description_too_long">説明は500文字以内かつ2 KiB以内にしてください。</string>
+    <string name="diagnostic_description_invalid_character">説明に使用できない制御文字が含まれています。</string>
+    <string name="diagnostic_no_logs_to_upload">送信する診断ログがありません。</string>
+    <string name="diagnostic_outbox_full">すでに3件のエラーログが送信待ちです。アップロードが完了してから、もう一度お試しください。</string>
+    <string name="diagnostic_rate_limited">新しい診断データのアップロードは、ユーザーの承認後30分に1回に制限されています。約%1$d分後にもう一度お試しください。</string>
+    <string name="diagnostic_persistence_failed">エラーログのアップロードファイルを安全に準備できませんでした。</string>
+    <string name="diagnostic_scheduling_failed">エラーログのアップロードをスケジュールできませんでした。</string>
+    <string name="diagnostic_recovery_failed">送信待ちのエラーログ%1$d件のアップロードタスクを復元できませんでした。</string>
+    <string name="diagnostic_cancel_none">キャンセルする送信待ちのエラーログがありません。</string>
+    <string name="diagnostic_cancel_succeeded">送信待ちのエラーログ%1$d件をキャンセルして削除しました。</string>
+    <string name="diagnostic_cancel_partial">エラーログ%1$d件をキャンセルしました。%2$d件はキャンセルできませんでした。</string>
+    <string name="diagnostic_clear_succeeded">診断ログを削除しました。</string>
+    <string name="diagnostic_clear_failed">診断ログを削除できませんでした。</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">駐車状態を確認できなかったため、サービスを開始できませんでした。</string>
+    <string name="projection_preflight_reconnecting">Android Autoに再接続中 · ローカル事前チェック</string>
+    <string name="projection_preflight_failed">ローカル事前チェックに失敗しました。</string>
+    <string name="projection_service_start_failed">Android Autoを開始できませんでした。</string>
+    <string name="browser_server_start_failed">ブラウザサーバーを開始できませんでした。</string>
+    <string name="browser_ready_notification">ブラウザ準備完了 · %1$s</string>
+    <string name="projection_profile_applying">映像プロファイルを適用しています。</string>
+    <string name="projection_profile_safety_cancelled">安全状態を確認できなかったため、映像プロファイルの変更をキャンセルしました。</string>
+    <string name="projection_profile_applied_jpeg_fallback">%1$d×%2$dプロファイルを適用しました。WebRTCに対応コーデックがないため、JPEGフォールバック表示を使用しています。</string>
+    <string name="projection_profile_applied_reconnecting">%1$d×%2$dプロファイルを適用し、Android Autoを再接続しています。</string>
+    <string name="projection_viewport_safety_cancelled">安全状態を確認できなかったため、動的アスペクト比の適用をキャンセルしました。</string>
+    <string name="projection_viewport_applying">Android Autoの表示をブラウザのサイズに合わせています。</string>
+    <string name="projection_viewport_applied">ブラウザのアスペクト比を適用し、Android Autoを再接続しています。</string>
+    <string name="projection_surface_lost">プロジェクションディスプレイが失われたため、接続を安全に閉じました。</string>
+    <string name="notification_stop_action">停止</string>
+    <string name="projection_notification_channel">Android Autoウェブサービス</string>
+    <string name="connection_notification_channel">Android Auto接続アラート</string>
+    <string name="connection_notification_channel_description">接続中のAndroid Autoセッションが中断されたときに1回通知します。</string>
+</resources>

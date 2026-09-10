@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Session and connection status -->
+    <string name="session_service_stopped">Hizmet durduruldu.</string>
+    <string name="session_local_browser_starting">Video bekleniyor...</string>
+    <string name="session_browser_ready">Tarayıcı bağlantısı hazır.</string>
+    <string name="session_native_status_checking">Kontrol ediliyor</string>
+    <string name="session_stopped_by_user">Hizmet kullanıcı tarafından durduruldu.</string>
+    <string name="session_closed_after_service_stop">Hizmet durdu ve bağlantıyı kapattı.</string>
+    <string name="notification_permission_start_denied">Bildirim izni verilmediği için arka plan hizmeti başlatılmadı.</string>
+
+    <string name="android_auto_state_connected">Android Auto bağlandı</string>
+    <string name="android_auto_state_reconnecting">Android Auto’ya yeniden bağlanılıyor</string>
+    <string name="android_auto_state_disconnected">Android Auto bağlantısı kesildi</string>
+    <string name="android_auto_reason_streaming">Android Auto videosu alınıyor</string>
+    <string name="android_auto_reason_link_ready">Video bekleniyor...</string>
+    <string name="android_auto_reason_waiting_for_phone">Telefon bekleniyor</string>
+    <string name="android_auto_reason_retrying">Android Auto bağlantısı yeniden deneniyor</string>
+    <string name="android_auto_reason_decoder_recovery">Video bekleniyor...</string>
+    <string name="android_auto_reason_phone_ended_session">Telefon, Android Auto bağlantısını sonlandırdı</string>
+    <string name="android_auto_reason_head_unit_server_stopped">Bu telefonda Android Auto Ana Birim Sunucusu kapalı</string>
+    <string name="android_auto_reason_network_interrupted">Telefonla bağlantı kesintiye uğradı</string>
+    <string name="android_auto_reason_authentication_failed">Android Auto kimlik doğrulaması başarısız oldu</string>
+    <string name="android_auto_reason_incompatible_version">Bu Android Auto sürümü uyumlu değil</string>
+    <string name="android_auto_reason_protocol_error">Android Auto iletişim hatası oluştu</string>
+    <string name="android_auto_reason_decoder_unavailable">Android Auto video kod çözücüsü bu cihazda kullanılamıyor</string>
+    <string name="android_auto_reason_display_unavailable">Yansıtma ekranı kullanılamıyor</string>
+    <string name="android_auto_reason_not_configured">Android Auto bağlantısı yapılandırılmamış</string>
+    <string name="android_auto_reason_session_stopped">Android Auto bağlantısı durduruldu</string>
+    <string name="android_auto_reason_unknown">Android Auto bağlantısı koptu</string>
+
+    <!-- Projection and codec settings -->
+    <string name="codec_auto_name">Otomatik</string>
+    <string name="codec_h264_name">H.264</string>
+    <string name="codec_vp8_name">VP8</string>
+    <string name="codec_vp9_name">VP9</string>
+    <string name="codec_av1_name">AV1</string>
+    <string name="codec_auto_description">Hem bu cihazın hem de tarayıcının desteklediği bir codec’i otomatik olarak seçer</string>
+    <string name="codec_h264_description">Uyumluluk için optimize edilmiş donanım codec’i</string>
+    <string name="codec_vp8_description">Temel WebRTC uyumlu codec</string>
+    <string name="codec_vp9_description">Daha yüksek sıkıştırma verimliliğini destekleyen cihazlarda kullanın</string>
+    <string name="codec_av1_description">Desteklenen modern cihazlarda en yüksek sıkıştırma verimliliği</string>
+    <string name="codec_policy_pending">Seçilen codec, WebRTC müzakeresinde kullanılır ve bağlantı sürerken otomatik olarak yeniden müzakere edilir.</string>
+    <string name="codec_saved">%1$s kaydedildi ve WebRTC yeniden müzakeresi istendi.</string>
+    <string name="codec_save_failed">Codec seçimi kaydedilemedi. Önceki ayar değişmedi.</string>
+
+    <string name="projection_profile_free_title">Basic 800×480</string>
+    <string name="projection_profile_720p_title">HD 1280×720</string>
+    <string name="projection_profile_1080p_title">Full HD 1920×1080</string>
+    <string name="projection_profile_detail">Başlangıç %1$s / en fazla %2$s</string>
+    <string name="projection_bitrate_mbps">%1$s Mbps</string>
+    <string name="projection_profile_waiting_for_service">Yansıtma hizmeti bekleniyor.</string>
+    <string name="projection_profile_service_not_connected">Yansıtma hizmeti bağlı değil.</string>
+    <string name="projection_profile_checking">Profil durumu kontrol ediliyor.</string>
+    <string name="projection_profile_reconnecting_status">%1$s profilini uygulamak için otomatik olarak yeniden bağlanılıyor.</string>
+    <string name="projection_profile_active_status">%1$s profili etkin.</string>
+    <string name="projection_profile_applied_immediately">%1$d×%2$d profili hemen uygulandı.</string>
+    <string name="projection_profile_auto_apply_failed">Profil otomatik olarak uygulanamadı. Önceki ayar değişmedi.</string>
+    <string name="projection_service_connect_first">Yansıtma hizmetine bağlanıp tekrar deneyin.</string>
+    <string name="projection_profile_request_failed">Profil isteği işlenemedi.</string>
+    <string name="projection_profile_applied">%1$d×%2$d profili uygulandı.</string>
+    <string name="projection_profile_reconnecting">%1$d×%2$d profilini uygulamak için otomatik olarak yeniden bağlanılıyor.</string>
+    <string name="projection_profile_not_entitled">Bu profil, mevcut erişim düzeyinde kullanılamaz.</string>
+    <string name="projection_profile_persistence_failed">Profil ayarı güvenli bir şekilde kaydedilemediği için değişiklik iptal edildi.</string>
+    <string name="projection_profile_unknown">Bu profil hizmet tarafından sağlanmıyor.</string>
+    <string name="projection_dpi_saved">%1$d DPI kaydedildi.</string>
+    <string name="projection_dpi_saved_reconnecting">%1$d DPI kaydedildi; Android Auto yeniden bağlanıyor. Tarayıcı medya oturumu etkin kalır.</string>
+    <string name="projection_dpi_reset_saved">Önerilen değer olan %1$d DPI geri yüklendi.</string>
+    <string name="projection_dpi_save_failed">DPI ayarı kaydedilemedi. Önceki değer değişmedi.</string>
+    <string name="projection_dpi_invalid">72 ile 320 arasında bir tam sayı DPI değeri seçin.</string>
+
+    <!-- Diagnostic feedback -->
+    <string name="diagnostic_export_cancelled">Günlük dosyasını kaydetme işlemi iptal edildi.</string>
+    <string name="diagnostic_export_succeeded">Tanılama günlüğü dosyası kaydedildi.</string>
+    <string name="diagnostic_export_failed">Tanılama günlüğü dosyası kaydedilemedi.</string>
+    <string name="diagnostic_no_logs_to_save">Kaydedilecek tanılama günlüğü yok.</string>
+    <string name="diagnostic_upload_queued">Onaylanan tanılama verileri gönderiliyor. Yeni yüklemeler 30 dakikada bir ile sınırlıdır ve bu öğe geçici olarak başarısız olursa en az 30 dakika sonra yeniden denenir.</string>
+    <string name="diagnostic_description_required">Hata oluştuğunda ne olduğunu açıklayın.</string>
+    <string name="diagnostic_description_too_long">Açıklamayı 500 karakter ve 2 KiB sınırı içinde tutun.</string>
+    <string name="diagnostic_description_invalid_character">Açıklama, izin verilmeyen bir kontrol karakteri içeriyor.</string>
+    <string name="diagnostic_no_logs_to_upload">Gönderilecek tanılama günlüğü yok.</string>
+    <string name="diagnostic_outbox_full">Zaten üç hata günlüğü bekliyor. Bir yükleme tamamlandıktan sonra tekrar deneyin.</string>
+    <string name="diagnostic_rate_limited">Yeni tanılama yüklemeleri, kullanıcı onayından sonra 30 dakikada bir ile sınırlıdır. Yaklaşık %1$d dakika sonra tekrar deneyin.</string>
+    <string name="diagnostic_persistence_failed">Hata günlüğü yükleme dosyası güvenli bir şekilde hazırlanamadı.</string>
+    <string name="diagnostic_scheduling_failed">Hata günlüğü yüklemesi zamanlanamadı.</string>
+    <string name="diagnostic_recovery_failed">Bekleyen %1$d hata günlüğünün yükleme görevi geri yüklenemedi.</string>
+    <string name="diagnostic_cancel_none">İptal edilecek bekleyen hata günlüğü yok.</string>
+    <string name="diagnostic_cancel_succeeded">Bekleyen %1$d hata günlüğü iptal edildi ve silindi.</string>
+    <string name="diagnostic_cancel_partial">%1$d hata günlüğü iptal edildi; %2$d tanesi iptal edilemedi.</string>
+    <string name="diagnostic_clear_succeeded">Tanılama günlükleri silindi.</string>
+    <string name="diagnostic_clear_failed">Tanılama günlükleri silinemedi.</string>
+
+    <!-- Projection service and notifications -->
+    <string name="projection_start_rejected_safety">Park durumu onayı alınamadığı için hizmet başlatılamadı.</string>
+    <string name="projection_preflight_reconnecting">Android Auto’ya yeniden bağlanılıyor · yerel ön kontrol</string>
+    <string name="projection_preflight_failed">Yerel ön kontrol başarısız oldu.</string>
+    <string name="projection_service_start_failed">Android Auto başlatılamadı.</string>
+    <string name="browser_server_start_failed">Tarayıcı sunucusu başlatılamadı.</string>
+    <string name="browser_ready_notification">Tarayıcı hazır · %1$s</string>
+    <string name="projection_profile_applying">Ekran profili şimdi uygulanıyor.</string>
+    <string name="projection_profile_safety_cancelled">Güvenlik durumu doğrulanamadığı için ekran profili değişikliği iptal edildi.</string>
+    <string name="projection_profile_applied_jpeg_fallback">%1$d×%2$d profili uygulandı. WebRTC’de desteklenen codec olmadığından yedek JPEG görüntüsü etkin.</string>
+    <string name="projection_profile_applied_reconnecting">%1$d×%2$d profili uygulandı; Android Auto yeniden bağlanıyor.</string>
+    <string name="projection_viewport_safety_cancelled">Güvenlik durumu doğrulanamadığı için dinamik en boy oranı uygulaması iptal edildi.</string>
+    <string name="projection_viewport_applying">Android Auto ekranı tarayıcı boyutuna sığdırılıyor.</string>
+    <string name="projection_viewport_applied">Tarayıcının en boy oranı uygulandı; Android Auto yeniden bağlanıyor.</string>
+    <string name="projection_surface_lost">Yansıtma ekranı kaybolduğu için bağlantı güvenli bir şekilde kapatıldı.</string>
+    <string name="notification_stop_action">Durdur</string>
+    <string name="projection_notification_channel">Android Auto web hizmeti</string>
+    <string name="connection_notification_channel">Android Auto bağlantı uyarıları</string>
+    <string name="connection_notification_channel_description">Bağlı bir Android Auto oturumu kesintiye uğradığında bir kez uyarır.</string>
+</resources>
