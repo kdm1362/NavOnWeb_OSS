@@ -98,6 +98,43 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
     assert.match(localizedIndex, /hreflang="en" href="https:\/\/navonweb\.com\/en\/"/u);
     assert.match(localizedIndex, /hreflang="x-default" href="https:\/\/navonweb\.com\/"/u);
   }
+  const localizedPages = [
+    ["ko", "ko", "ko_KR"], ["en", "en", "en_US"], ["es", "es", "es_LA"], ["pt", "pt-BR", "pt_BR"],
+    ["ar", "ar", "ar_AR"], ["hi", "hi", "hi_IN"], ["id", "id", "id_ID"], ["de", "de", "de_DE"],
+    ["fr", "fr", "fr_FR"], ["ja", "ja", "ja_JP"], ["zh", "zh-CN", "zh_CN"], ["ru", "ru", "ru_RU"],
+    ["tr", "tr", "tr_TR"],
+  ];
+  for (const [language, languageTag, openGraphLocale] of localizedPages) {
+    const page = readFileSync(path.join(outputRoot, language, "index.html"), "utf8");
+    assert.ok(
+      page.includes(`<html lang="${languageTag}" data-navonweb-language="${language}" data-i18n-pending>`),
+      `${language} page declares its language`,
+    );
+    assert.ok(page.includes(`<link rel="canonical" href="https://navonweb.com/${language}/">`));
+    assert.ok(page.includes(`<meta property="og:locale" content="${openGraphLocale}">`));
+    assert.ok(!page.includes(`<meta property="og:locale:alternate" content="${openGraphLocale}">`));
+    for (const [otherLanguage, otherTag] of localizedPages) {
+      assert.ok(
+        page.includes(`<link rel="alternate" hreflang="${otherTag}" href="https://navonweb.com/${otherLanguage}/">`),
+        `${language} page links the ${otherLanguage} alternate`,
+      );
+    }
+    assert.ok(page.includes('<link rel="alternate" hreflang="x-default" href="https://navonweb.com/">'));
+    assert.equal((page.match(/<title>/gu) || []).length, 1);
+  }
+  for (const [language, languageTag] of localizedPages) {
+    assert.ok(
+      index.includes(`<link rel="alternate" hreflang="${languageTag}" href="https://navonweb.com/${language}/">`),
+    );
+  }
+  assert.ok(
+    readFileSync(path.join(outputRoot, "es", "index.html"), "utf8")
+      .includes("<title>NavOnWeb | Proyección del teléfono en el navegador del vehículo</title>"),
+  );
+  assert.ok(
+    readFileSync(path.join(outputRoot, "zh", "index.html"), "utf8")
+      .includes("<title>NavOnWeb | 在车载浏览器中投射手机画面</title>"),
+  );
   assert.match(
     index,
     /<meta name="google-site-verification" content="SEisdu4RJBadbJcdZvUbthHGqn2ViQTVXjYZANruvCE">/u,
@@ -278,20 +315,50 @@ test("Pages build publishes installable NavOnWeb identity and icons", () => {
   assert.match(sitemap, /<loc>https:\/\/navonweb\.com\/ko\/<\/loc>/u);
   assert.match(sitemap, /<loc>https:\/\/navonweb\.com\/en\/<\/loc>/u);
   assert.match(sitemap, /<loc>https:\/\/navonweb\.com\/privacy<\/loc>/u);
+  for (const language of ["es", "pt", "ar", "hi", "id", "de", "fr", "ja", "zh", "ru", "tr"]) {
+    assert.ok(sitemap.includes(`<loc>https://navonweb.com/${language}/</loc>`), `sitemap lists /${language}/`);
+  }
   const redirects = readFileSync(path.join(outputRoot, "_redirects"), "utf8");
+  const redirectLines = redirects.split(String.fromCharCode(10)).map((line) => line.trim());
+  for (const language of ["ko", "en", "es", "pt", "ar", "hi", "id", "de", "fr", "ja", "zh", "ru", "tr"]) {
+    assert.ok(redirectLines.includes(`/${language} /${language}/ 301`), `/${language} redirects to /${language}/`);
+  }
   assert.match(redirects, /^\/w \/ 301$/mu);
   assert.match(redirects, /^\/index\.html \/ 301$/mu);
   assert.match(redirects, /^\/landing\.html \/ 301$/mu);
   const notFound = readFileSync(path.join(outputRoot, "404.html"), "utf8");
   assert.match(notFound, /<meta name="robots" content="noindex,follow">/u);
   assert.match(notFound, /페이지를 찾을 수 없습니다/u);
+  for (const [languageTag, language] of [
+    ["es", "es"], ["pt-BR", "pt"], ["ar", "ar"], ["hi", "hi"], ["id", "id"], ["de", "de"],
+    ["fr", "fr"], ["ja", "ja"], ["zh-CN", "zh"], ["ru", "ru"], ["tr", "tr"],
+  ]) {
+    assert.ok(notFound.includes(`<li lang="${languageTag}"`), `404 page has a ${languageTag} line`);
+    assert.ok(notFound.includes(`<a href="/${language}/">`), `404 page links /${language}/`);
+  }
+  assert.ok(notFound.includes('<li lang="ar" dir="rtl">'));
   const privacy = readFileSync(path.join(outputRoot, "privacy.html"), "utf8");
   assert.match(index, /href="\/privacy" data-i18n="landingPrivacyPolicy"/u);
   assert.match(privacy, /<h2>NavOnWeb 개인정보 처리방침<\/h2>/u);
   assert.match(privacy, /<h2>NavOnWeb Privacy Policy<\/h2>/u);
   assert.match(privacy, /보고서는 전송일로부터 30일 후 삭제/u);
   assert.match(privacy, /Reports are deleted 30 days after submission/u);
+  // Notices, anonymous sign-in and diagnostic reports run on the self-hosted server since 2026-08-23.
+  assert.ok(!privacy.toLowerCase().includes("supabase"), "the policy no longer names the retired hosted Supabase");
+  assert.ok(privacy.includes("<strong>NavOnWeb 자체 서버</strong>"));
+  assert.ok(privacy.includes("<strong>NavOnWeb's own server</strong>"));
+  assert.equal((privacy.match(/class="privacy-effective-date"/gu) || []).length, 13);
   assert.match(privacy, /https:\/\/github\.com\/kdm1362\/NavOnWeb_OSS\/issues/u);
+  for (const language of ["es", "pt-BR", "ar", "hi", "id", "de", "fr", "ja", "zh-CN", "ru", "tr"]) {
+    assert.ok(privacy.includes(`<a href="#${language}" lang="${language}"`), `privacy page links ${language}`);
+    assert.ok(
+      privacy.includes(`<article id="${language}" class="privacy-document" lang="${language}"`),
+      `privacy page has the ${language} article`,
+    );
+  }
+  assert.ok(privacy.includes('<article id="ar" class="privacy-document" lang="ar" dir="rtl">'));
+  assert.equal((privacy.match(/class="privacy-translation-note"/gu) || []).length, 11);
+  assert.equal((privacy.match(/<h3>/gu) || []).length, 13 * 7);
   assert.equal(
     readFileSync(path.join(outputRoot, "google08d940d1ee3c9069.html"), "utf8").trim(),
     "google-site-verification: google08d940d1ee3c9069.html",

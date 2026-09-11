@@ -121,6 +121,17 @@ test("locale URL overrides navigator language only on explicit locale paths", ()
   assert.equal(resolvePathLocale("/"), "");
   assert.equal(resolvePathLocale("/korean/"), "");
   assert.equal(resolvePathLocale("/enough"), "");
+  // Every bundled language has an entry page at /xx/ (build-pages.mjs), and only those paths count.
+  const bundledLocales = ["en", "ko", "es", "pt", "ar", "hi", "id", "de", "fr", "ja", "zh", "ru", "tr"];
+  assert.ok(appScript.includes(`'${bundledLocales.join("', '")}',`), "list matches SUPPORTED_LOCALES");
+  for (const locale of bundledLocales) {
+    assert.equal(resolvePathLocale(`/${locale}/`), locale);
+    assert.equal(resolvePathLocale(`/${locale}`), locale);
+  }
+  assert.equal(resolvePathLocale("/ID/"), "id");
+  assert.equal(resolvePathLocale("/pt-br/"), "");
+  assert.equal(resolvePathLocale("/xx/"), "");
+  assert.equal(resolvePathLocale("/identity"), "");
   assert.equal(resolvePathLocale("/" ) || resolveSystemLocale(), "en");
   assert.match(
     appScript,

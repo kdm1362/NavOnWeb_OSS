@@ -39,37 +39,159 @@ const siteVariants = Object.freeze([
   {
     outputPath: "index.html",
     language: null,
+    languageTag: null,
     canonicalUrl: "https://navonweb.com/",
     title: "NavOnWeb | Vehicle browser projection · 차량 브라우저 연결",
     description: "Connect a supported phone-projection session to a nearby vehicle browser over a local network. 휴대전화의 차량용 화면을 같은 로컬 네트워크의 브라우저에서 연결합니다.",
     openGraphTitle: "NavOnWeb | Phone projection in a vehicle browser",
     openGraphDescription: "View, hear and control a supported phone-projection session from a compatible browser on the same local network.",
     openGraphLocale: "en_US",
-    openGraphAlternateLocale: "ko_KR",
   },
   {
     outputPath: path.join("ko", "index.html"),
     language: "ko",
+    languageTag: "ko",
     canonicalUrl: "https://navonweb.com/ko/",
     title: "NavOnWeb | 차량 브라우저에서 휴대전화 화면 연결",
     description: "NavOnWeb로 지원되는 휴대전화 프로젝션 화면을 같은 네트워크의 차량 브라우저에서 보고 듣고 제어하세요.",
     openGraphTitle: "NavOnWeb | 차량 브라우저 프로젝션",
     openGraphDescription: "지원되는 휴대전화 프로젝션 화면을 같은 네트워크의 차량 브라우저에서 연결합니다.",
     openGraphLocale: "ko_KR",
-    openGraphAlternateLocale: "en_US",
   },
   {
     outputPath: path.join("en", "index.html"),
     language: "en",
+    languageTag: "en",
     canonicalUrl: "https://navonweb.com/en/",
     title: "NavOnWeb | Phone projection in a vehicle browser",
     description: "View, hear, and control a supported phone-projection session from a compatible vehicle browser on the same network.",
     openGraphTitle: "NavOnWeb | Phone projection in a vehicle browser",
     openGraphDescription: "Connect a supported phone-projection session to a compatible vehicle browser on the same network.",
     openGraphLocale: "en_US",
-    openGraphAlternateLocale: "ko_KR",
+  },
+  {
+    outputPath: path.join("es", "index.html"),
+    language: "es",
+    languageTag: "es",
+    canonicalUrl: "https://navonweb.com/es/",
+    title: "NavOnWeb | Proyección del teléfono en el navegador del vehículo",
+    description: "Mira, escucha y controla una sesión compatible de proyección del teléfono desde el navegador de un vehículo en la misma red.",
+    openGraphTitle: "NavOnWeb | Proyección en el navegador del vehículo",
+    openGraphDescription: "Conecta una sesión compatible de proyección del teléfono al navegador de un vehículo en la misma red.",
+    openGraphLocale: "es_LA",
+  },
+  {
+    outputPath: path.join("pt", "index.html"),
+    language: "pt",
+    languageTag: "pt-BR",
+    canonicalUrl: "https://navonweb.com/pt/",
+    title: "NavOnWeb | Projeção do celular no navegador do veículo",
+    description: "Veja, ouça e controle uma sessão compatível de projeção do celular pelo navegador de um veículo na mesma rede.",
+    openGraphTitle: "NavOnWeb | Projeção no navegador do veículo",
+    openGraphDescription: "Conecte uma sessão compatível de projeção do celular ao navegador de um veículo na mesma rede.",
+    openGraphLocale: "pt_BR",
+  },
+  {
+    outputPath: path.join("ar", "index.html"),
+    language: "ar",
+    languageTag: "ar",
+    canonicalUrl: "https://navonweb.com/ar/",
+    title: "NavOnWeb | عرض الهاتف في متصفح السيارة",
+    description: "شاهد جلسة عرض الهاتف المدعومة واستمع إليها وتحكّم بها من متصفح السيارة على الشبكة نفسها.",
+    openGraphTitle: "NavOnWeb | العرض في متصفح السيارة",
+    openGraphDescription: "اربط جلسة عرض الهاتف المدعومة بمتصفح السيارة على الشبكة نفسها.",
+    openGraphLocale: "ar_AR",
+  },
+  {
+    outputPath: path.join("hi", "index.html"),
+    language: "hi",
+    languageTag: "hi",
+    canonicalUrl: "https://navonweb.com/hi/",
+    title: "NavOnWeb | वाहन के ब्राउज़र में फ़ोन प्रोजेक्शन",
+    description: "उसी नेटवर्क पर वाहन के ब्राउज़र से समर्थित फ़ोन प्रोजेक्शन सत्र देखें, सुनें और नियंत्रित करें।",
+    openGraphTitle: "NavOnWeb | वाहन के ब्राउज़र में प्रोजेक्शन",
+    openGraphDescription: "समर्थित फ़ोन प्रोजेक्शन सत्र को उसी नेटवर्क पर वाहन के ब्राउज़र से जोड़ें।",
+    openGraphLocale: "hi_IN",
+  },
+  {
+    outputPath: path.join("id", "index.html"),
+    language: "id",
+    languageTag: "id",
+    canonicalUrl: "https://navonweb.com/id/",
+    title: "NavOnWeb | Proyeksi ponsel di browser kendaraan",
+    description: "Lihat, dengar, dan kendalikan sesi proyeksi ponsel yang didukung dari browser kendaraan di jaringan yang sama.",
+    openGraphTitle: "NavOnWeb | Proyeksi di browser kendaraan",
+    openGraphDescription: "Hubungkan sesi proyeksi ponsel yang didukung ke browser kendaraan di jaringan yang sama.",
+    openGraphLocale: "id_ID",
+  },
+  {
+    outputPath: path.join("de", "index.html"),
+    language: "de",
+    languageTag: "de",
+    canonicalUrl: "https://navonweb.com/de/",
+    title: "NavOnWeb | Smartphone-Projektion im Fahrzeugbrowser",
+    description: "Unterstützte Smartphone-Projektion im Browser deines Fahrzeugs im selben Netzwerk ansehen, hören und steuern.",
+    openGraphTitle: "NavOnWeb | Projektion im Fahrzeugbrowser",
+    openGraphDescription: "Verbinde eine unterstützte Smartphone-Projektion mit dem Browser deines Fahrzeugs im selben Netzwerk.",
+    openGraphLocale: "de_DE",
+  },
+  {
+    outputPath: path.join("fr", "index.html"),
+    language: "fr",
+    languageTag: "fr",
+    canonicalUrl: "https://navonweb.com/fr/",
+    title: "NavOnWeb | Projection du téléphone dans le navigateur du véhicule",
+    description: "Regardez, écoutez et contrôlez une session de projection du téléphone prise en charge depuis le navigateur d’un véhicule sur le même réseau.",
+    openGraphTitle: "NavOnWeb | Projection dans le navigateur du véhicule",
+    openGraphDescription: "Connectez une session de projection du téléphone prise en charge au navigateur d’un véhicule sur le même réseau.",
+    openGraphLocale: "fr_FR",
+  },
+  {
+    outputPath: path.join("ja", "index.html"),
+    language: "ja",
+    languageTag: "ja",
+    canonicalUrl: "https://navonweb.com/ja/",
+    title: "NavOnWeb | 車のブラウザでスマートフォンの画面を表示",
+    description: "同じネットワーク上の車載ブラウザで、対応するスマートフォンの投影セッションを表示し、音声を聞き、操作できます。",
+    openGraphTitle: "NavOnWeb | 車載ブラウザへの投影",
+    openGraphDescription: "対応するスマートフォンの投影セッションを、同じネットワーク上の車載ブラウザに接続します。",
+    openGraphLocale: "ja_JP",
+  },
+  {
+    outputPath: path.join("zh", "index.html"),
+    language: "zh",
+    languageTag: "zh-CN",
+    canonicalUrl: "https://navonweb.com/zh/",
+    title: "NavOnWeb | 在车载浏览器中投射手机画面",
+    description: "在同一网络中的车载浏览器上观看、收听并控制受支持的手机投射会话。",
+    openGraphTitle: "NavOnWeb | 车载浏览器投射",
+    openGraphDescription: "将受支持的手机投射会话连接到同一网络中的车载浏览器。",
+    openGraphLocale: "zh_CN",
+  },
+  {
+    outputPath: path.join("ru", "index.html"),
+    language: "ru",
+    languageTag: "ru",
+    canonicalUrl: "https://navonweb.com/ru/",
+    title: "NavOnWeb | Проекция телефона в браузере автомобиля",
+    description: "Смотрите, слушайте и управляйте поддерживаемым сеансом проекции телефона из браузера автомобиля в той же сети.",
+    openGraphTitle: "NavOnWeb | Проекция в браузере автомобиля",
+    openGraphDescription: "Подключите поддерживаемый сеанс проекции телефона к браузеру автомобиля в той же сети.",
+    openGraphLocale: "ru_RU",
+  },
+  {
+    outputPath: path.join("tr", "index.html"),
+    language: "tr",
+    languageTag: "tr",
+    canonicalUrl: "https://navonweb.com/tr/",
+    title: "NavOnWeb | Araç tarayıcısında telefon yansıtma",
+    description: "Desteklenen bir telefon yansıtma oturumunu aynı ağdaki bir araç tarayıcısından izleyin, dinleyin ve kontrol edin.",
+    openGraphTitle: "NavOnWeb | Araç tarayıcısında yansıtma",
+    openGraphDescription: "Desteklenen bir telefon yansıtma oturumunu aynı ağdaki bir araç tarayıcısına bağlayın.",
+    openGraphLocale: "tr_TR",
   },
 ]);
+const localizedVariants = siteVariants.filter((variant) => variant.language);
 const pwaHeadMarkup = [
   '  <meta name="theme-color" content="#05080c">',
   '  <meta name="application-name" content="NavOnWeb">',
@@ -179,7 +301,7 @@ const builtIndexes = new Map(siteVariants.map((variant) => [
     .replace(
       htmlMarker,
       variant.language
-        ? `<html lang="${variant.language}" data-navonweb-language="${variant.language}" data-i18n-pending>`
+        ? `<html lang="${variant.languageTag}" data-navonweb-language="${variant.language}" data-i18n-pending>`
         : htmlMarker,
     )
     .replace(titleMarker, `<title>${variant.title}</title>`)
@@ -212,8 +334,9 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
 await mkdir(path.join(outputRoot, "icons"), { recursive: true });
 await mkdir(path.join(outputRoot, "media"), { recursive: true });
-await mkdir(path.join(outputRoot, "ko"), { recursive: true });
-await mkdir(path.join(outputRoot, "en"), { recursive: true });
+for (const variant of localizedVariants) {
+  await mkdir(path.join(outputRoot, path.dirname(variant.outputPath)), { recursive: true });
+}
 await Promise.all([
   ...[...builtIndexes].map(([outputPath, content]) =>
     writeFile(path.join(outputRoot, outputPath), content, "utf8")),
@@ -251,14 +374,17 @@ function renderSeoHeadMarkup(variant) {
     `  <meta name="description" content="${variant.description}">`,
     '  <meta name="robots" content="index,follow,max-image-preview:large">',
     `  <link rel="canonical" href="${variant.canonicalUrl}">`,
-    '  <link rel="alternate" hreflang="ko" href="https://navonweb.com/ko/">',
-    '  <link rel="alternate" hreflang="en" href="https://navonweb.com/en/">',
+    ...localizedVariants.map((localized) =>
+      `  <link rel="alternate" hreflang="${localized.languageTag}" href="${localized.canonicalUrl}">`),
     '  <link rel="alternate" hreflang="x-default" href="https://navonweb.com/">',
     '  <meta name="google-site-verification" content="SEisdu4RJBadbJcdZvUbthHGqn2ViQTVXjYZANruvCE">',
     '  <meta property="og:type" content="website">',
     '  <meta property="og:site_name" content="NavOnWeb">',
     `  <meta property="og:locale" content="${variant.openGraphLocale}">`,
-    `  <meta property="og:locale:alternate" content="${variant.openGraphAlternateLocale}">`,
+    ...localizedVariants
+      .map((localized) => localized.openGraphLocale)
+      .filter((locale, index, all) => locale !== variant.openGraphLocale && all.indexOf(locale) === index)
+      .map((locale) => `  <meta property="og:locale:alternate" content="${locale}">`),
     `  <meta property="og:title" content="${variant.openGraphTitle}">`,
     `  <meta property="og:description" content="${variant.openGraphDescription}">`,
     `  <meta property="og:url" content="${variant.canonicalUrl}">`,

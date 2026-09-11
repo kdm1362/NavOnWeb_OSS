@@ -701,7 +701,7 @@ body.navonweb-authenticated #prepairing-marketing {
 .privacy-document td {
   padding: 12px;
   border: 1px solid #ffffff1c;
-  text-align: left;
+  text-align: start;
   vertical-align: top;
 }
 
@@ -711,6 +711,13 @@ body.navonweb-authenticated #prepairing-marketing {
 }
 
 .privacy-effective-date {
+  color: #8fa4b7;
+  font-size: 14px;
+}
+
+.privacy-translation-note {
+  padding: 10px 14px;
+  border-inline-start: 3px solid #67e8f955;
   color: #8fa4b7;
   font-size: 14px;
 }

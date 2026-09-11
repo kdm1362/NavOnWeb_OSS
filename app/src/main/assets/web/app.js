@@ -2030,8 +2030,10 @@
   }
 
   function resolvePathLocale(pathname) {
-    const match = /^\/(ko|en)(?:\/|$)/i.exec(String(pathname || ''));
-    return match ? match[1].toLowerCase() : '';
+    // Every bundled language has a /xx/ entry page; the first path segment picks it.
+    const match = /^\/([a-z]{2})(?:\/|$)/i.exec(String(pathname || ''));
+    const locale = match ? match[1].toLowerCase() : '';
+    return SUPPORTED_LOCALES.includes(locale) ? locale : '';
   }
 
   function resolveNoticeLocaleCandidates(

@@ -3420,13 +3420,24 @@ internal fun shouldDisplayPairingCode(
     return !cloudAddress || cloudPairingRegistrationStatus == CloudPairingRegistrationStatus.READY
 }
 
-internal fun formatPairingCodeForDisplay(pairingCode: String): String =
-    if (pairingCode.length == 6 || pairingCode.length == 8) {
+/**
+ * Groups the code for reading and keeps it left to right in every language. Digits carry no
+ * direction of their own, so an RTL layout such as Arabic would place the second group first and
+ * show "1712 2744" for 27441712. The left-to-right isolate fixes the order of the code without
+ * changing the direction of the text around it.
+ */
+internal fun formatPairingCodeForDisplay(pairingCode: String): String {
+    val grouped = if (pairingCode.length == 6 || pairingCode.length == 8) {
         val midpoint = pairingCode.length / 2
         "${pairingCode.take(midpoint)} ${pairingCode.drop(midpoint)}"
     } else {
         pairingCode
     }
+    return "$LEFT_TO_RIGHT_ISOLATE$grouped$POP_DIRECTIONAL_ISOLATE"
+}
+
+private val LEFT_TO_RIGHT_ISOLATE = Char(0x2066)
+private val POP_DIRECTIONAL_ISOLATE = Char(0x2069)
 
 private const val PROJECTION_WIDTH = 800
 private const val PROJECTION_HEIGHT = 480
